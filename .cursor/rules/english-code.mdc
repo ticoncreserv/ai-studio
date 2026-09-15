@@ -1,0 +1,6 @@
+---
+description: English-only identifiers and comments
+---
+
+Write identifiers, file names, comments, and commit subjects in English.
+Never put Portuguese in code. User-visible strings belong in i18n catalogs.

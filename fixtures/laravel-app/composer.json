@@ -1,0 +1,21 @@
+{
+  "name": "atelier/fixture-app",
+  "description": "Minimal Laravel 13 + Inertia fixture used by Atelier ProcessRuntime.",
+  "type": "project",
+  "require": {
+    "php": "^8.5",
+    "laravel/framework": "^13.31"
+  },
+  "require-dev": {
+    "laravel/boost": "^2.8",
+    "laravel/pint": "^1.24"
+  },
+  "scripts": {
+    "dev": [
+      "Composer\\Config::disableProcessTimeout",
+      "npx concurrently \"php artisan queue:work --tries=1\" \"npm run dev\""
+    ],
+    "lint": "pint --parallel",
+    "test": "php artisan test"
+  }
+}

@@ -1,0 +1,22 @@
+#!/usr/bin/env php
+<?php
+
+$command = $argv[1] ?? 'list';
+
+if ($command === 'route:list' && in_array('--json', $argv, true)) {
+    echo json_encode([
+        ['method' => 'GET', 'uri' => '/', 'name' => 'home', 'action' => 'App\\Http\\Controllers\\HomeController@index'],
+        ['method' => 'GET', 'uri' => 'quotes', 'name' => 'quotes.index', 'action' => 'App\\Http\\Controllers\\QuoteController@index'],
+        ['method' => 'GET', 'uri' => 'customers', 'name' => 'customers.index', 'action' => 'App\\Http\\Controllers\\CustomerController@index'],
+        ['method' => 'GET', 'uri' => 'up', 'name' => 'health', 'action' => 'Closure'],
+    ], JSON_PRETTY_PRINT);
+    exit(0);
+}
+
+if ($command === 'about' && in_array('--json', $argv, true)) {
+    echo json_encode(['environment' => ['php' => '8.5', 'laravel' => '13.31', 'app' => 'fixture']], JSON_PRETTY_PRINT);
+    exit(0);
+}
+
+fwrite(STDERR, "Fixture artisan stub. Use the Atelier preview server for HTTP.\n");
+exit(0);

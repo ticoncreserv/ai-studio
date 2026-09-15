@@ -1,0 +1,27 @@
+{
+  "name": "@atelier/supervisor",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "test": "vitest run",
+    "eval": "tsx src/eval.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@atelier/contracts": "workspace:*",
+    "@atelier/db": "workspace:*",
+    "@atelier/domain": "workspace:*",
+    "bullmq": "^5.58.5",
+    "ioredis": "^5.8.0",
+    "tsx": "^4.20.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

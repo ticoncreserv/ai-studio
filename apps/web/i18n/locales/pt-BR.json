@@ -1,0 +1,156 @@
+{
+  "app": {
+    "name": "Atelier",
+    "tagline": "Crie telas no repositório Laravel com o Cursor, uma branch por pessoa e preview ao vivo.",
+    "product": "Criação assistida para ticoncreserv/app"
+  },
+  "auth": {
+    "title": "Entre no estúdio",
+    "subtitle": "O GitHub é a fonte de acesso. Neste ambiente o login local vale até existirem os segredos do GitHub App.",
+    "github": "Continuar com GitHub",
+    "dev": "Continuar localmente",
+    "loginLabel": "Usuário do GitHub",
+    "loginPlaceholder": "seu-usuario",
+    "localeLabel": "Idioma da interface",
+    "english": "English",
+    "portuguese": "Português (Brasil)",
+    "error": "Falha no acesso. Tente de novo."
+  },
+  "nav": {
+    "sessions": "Sessões",
+    "newSession": "Nova sessão",
+    "search": "Buscar sessões",
+    "invite": "Convidar",
+    "share": "Compartilhar preview",
+    "rules": "Regras",
+    "connections": "Conexões",
+    "signOut": "Sair",
+    "openWorkspace": "Abrir workspace"
+  },
+  "workspace": {
+    "warming": "Aquecendo o workspace até ready…",
+    "ready": "Workspace pronto. Abrir o preview só acende php-fpm e Caddy.",
+    "hibernated": "Workspace hibernado. Retome para ligar os processos de preview.",
+    "error": "O workspace falhou ao iniciar.",
+    "branch": "Branch",
+    "status": "Status",
+    "resume": "Retomar preview",
+    "hibernate": "Hibernar",
+    "syncBase": "Sincronizar com a base",
+    "busy": "Outra sessão segura o lock de execução.",
+    "spectator": "Modo espectador — você acompanha, sem enviar prompt.",
+    "pendingAccess": "Acesso pendente no GitHub",
+    "divergence": "Divergência de schema",
+    "pendingMigrations": "{count} migrations da sua branch ainda não foram aplicadas.",
+    "extraMigrations": "{count} migrations existem no banco e não na sua branch.",
+    "diskQuota": "Cota de disco",
+    "presence": "{count} pessoas aqui"
+  },
+  "chat": {
+    "empty": "Descreva a tela ou a mudança. Mencione rotas com @ e anexe arquivos ou um print.",
+    "placeholder": "Peça uma página, um campo ou uma correção…",
+    "send": "Enviar",
+    "cancel": "Cancelar execução",
+    "acceptHunk": "Aceitar hunk",
+    "rejectHunk": "Rejeitar hunk",
+    "acceptFile": "Aceitar arquivo",
+    "rejectFile": "Rejeitar arquivo",
+    "restore": "Restaurar checkpoint",
+    "fixThis": "Corrigir isto",
+    "droppedContext": "{count} blocos de contexto não couberam no orçamento do prompt.",
+    "budget": "Execução interrompida pelo orçamento",
+    "planTitle": "Plano",
+    "acceptPlan": "Aceitar plano",
+    "rejectPlan": "Rejeitar plano",
+    "questionTitle": "O agente precisa de uma escolha",
+    "permissionTitle": "Permissão pedida",
+    "allowOnce": "Permitir uma vez",
+    "allowAlways": "Permitir sempre",
+    "rejectOnce": "Recusar",
+    "untitled": "Sessão sem título",
+    "toolRunning": "Executando {name}",
+    "toolDone": "Concluiu {name}",
+    "checkpoint": "Checkpoint",
+    "conflict": "Conflito de sincronização",
+    "queue": "Follow-up na fila",
+    "modeAgent": "Agente",
+    "modePlan": "Plano",
+    "modeAsk": "Perguntar",
+    "attach": "Anexar",
+    "recipe": "Receita"
+  },
+  "preview": {
+    "title": "Preview",
+    "mobile": "Celular",
+    "tablet": "Tablet",
+    "desktop": "Desktop",
+    "openTab": "Abrir em nova aba",
+    "openWindow": "Abrir em nova janela",
+    "booting": "O preview está subindo…",
+    "down": "O preview não está no ar.",
+    "hibernated": "O preview está hibernado.",
+    "error": "O preview falhou no health check.",
+    "longQuery": "Ainda consultando o ERP ({seconds}s). O timeout do SQL é 300s.",
+    "debugTime": "{ms} ms",
+    "debugQueries": "{count} consultas",
+    "debugMemory": "{mb} MB",
+    "nPlusOne": "N+1 detectado",
+    "rotate": "Girar"
+  },
+  "command": {
+    "placeholder": "Digite um comando…",
+    "prompt": "Focar o compositor",
+    "cancel": "Cancelar execução",
+    "acceptHunk": "Aceitar hunk atual",
+    "viewportMobile": "Viewport: celular",
+    "viewportTablet": "Viewport: tablet",
+    "viewportDesktop": "Viewport: desktop",
+    "openPreview": "Abrir preview numa aba",
+    "restore": "Restaurar último checkpoint",
+    "newSession": "Começar nova sessão"
+  },
+  "rules": {
+    "title": "Regras",
+    "platform": "Plataforma",
+    "project": "Projeto",
+    "user": "Usuário",
+    "save": "Materializar no worktree",
+    "hint": "As regras compiladas viram AGENTS.md e .cursor/rules. O idioma do agente segue o seu locale; o código continua em inglês."
+  },
+  "invite": {
+    "title": "Convidar alguém do time",
+    "created": "Link de convite criado. A pessoa precisa ter acesso GitHub a ticoncreserv/app.",
+    "accept": "Aceitar convite",
+    "pending": "Você entrou, mas o GitHub ainda não concede acesso ao repositório.",
+    "revalidate": "Revalidar acesso no GitHub",
+    "githubAccess": "Abrir configurações de acesso do repositório"
+  },
+  "share": {
+    "title": "Preview compartilhado",
+    "hint": "Somente leitura. Sem conta no GitHub.",
+    "expired": "Este link de compartilhamento expirou.",
+    "copy": "Copiar link"
+  },
+  "connections": {
+    "title": "Conexões externas",
+    "homologation": "Homologação",
+    "erpReadOnly": "As conexões de ERP são somente leitura.",
+    "appMigrate": "Migrations para frente na conexão do portal, com lock global."
+  },
+  "flags": {
+    "publish": "Publicar",
+    "multiProvider": "Vários provedores",
+    "spectator": "Espectador",
+    "recipes": "Receitas"
+  },
+  "errors": {
+    "generic": "Algo deu errado.",
+    "sessionMissing": "Sessão não encontrada.",
+    "unauthorized": "Você precisa entrar."
+  },
+  "time": {
+    "justNow": "agora",
+    "minutesAgo": "há {count} min",
+    "hoursAgo": "há {count} h"
+  }
+}

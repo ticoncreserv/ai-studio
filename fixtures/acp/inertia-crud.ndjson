@@ -1,0 +1,4 @@
+{"type":"assistant_message","id":"a1","at":"2026-04-01T00:00:00.000Z","text":"Creating an Inertia CRUD for Customer.","streaming":false}
+{"type":"tool_call","id":"t1","at":"2026-04-01T00:00:01.000Z","toolCallId":"call_1","name":"write","status":"completed","output":"Wrote resources/js/Pages/Customers/Index.vue"}
+{"type":"diff","id":"d1","at":"2026-04-01T00:00:02.000Z","filePath":"resources/js/Pages/Customers/Index.vue","hunks":[{"id":"h1","filePath":"resources/js/Pages/Customers/Index.vue","oldStart":0,"newStart":1,"oldLines":"","newLines":"<script setup lang=\"ts\">\ndefineProps<{ customers: Array<{ id: number; name: string }> }>()\n</script>\n<template>\n  <div class=\"page\"><h1>Customers</h1></div>\n</template>\n","status":"pending"}]}
+{"type":"checkpoint","id":"c1","at":"2026-04-01T00:00:03.000Z","gitSha":"fixture-crud","label":"Customer CRUD"}

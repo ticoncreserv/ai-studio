@@ -1,0 +1,6 @@
+---
+description: User-facing text must use i18n
+---
+
+Semantic English keys (`workspace.preview.device.mobile`). Default locale is `en`.
+Keep `en.json` and `pt-BR.json` in key parity. Do not put raw user-facing text in Vue templates.

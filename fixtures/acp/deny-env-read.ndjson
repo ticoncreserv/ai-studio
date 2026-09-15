@@ -1,0 +1,3 @@
+{"type":"permission","id":"p1","at":"2026-04-01T00:00:00.000Z","toolCallId":"call_env","title":"Read .env","options":["allow-once","reject-once"],"outcome":"pending"}
+{"type":"tool_call","id":"t1","at":"2026-04-01T00:00:01.000Z","toolCallId":"call_env","name":"read","status":"failed","output":"Denied: .env is not readable in preview workspaces"}
+{"type":"assistant_message","id":"a1","at":"2026-04-01T00:00:02.000Z","text":"I cannot read .env. Using the workspace spec instead.","streaming":false}

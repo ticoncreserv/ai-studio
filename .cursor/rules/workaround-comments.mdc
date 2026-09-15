@@ -1,0 +1,6 @@
+---
+description: Workaround comments are normative
+---
+
+Code with an explanatory workaround comment is not a cleanup candidate.
+The agent must not remove or rewrite it without an explicit user request.

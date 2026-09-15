@@ -1,0 +1,17 @@
+node_modules
+.nuxt
+.output
+.nitro
+dist
+*.log
+.env
+.env.local
+var/
+apps/web/.nuxt
+apps/web/.output
+**/*.tsbuildinfo
+.DS_Store
+coverage
+fixtures/laravel-app/vendor
+fixtures/laravel-app/node_modules
+agent-tools

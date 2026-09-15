@@ -1,0 +1,2 @@
+{"type":"assistant_message","id":"a1","at":"2026-04-01T00:00:00.000Z","text":"Adding a delivery_window field to the Quote model.","streaming":false}
+{"type":"diff","id":"d1","at":"2026-04-01T00:00:01.000Z","filePath":"app/Models/Quote.php","hunks":[{"id":"h1","filePath":"app/Models/Quote.php","oldStart":8,"newStart":8,"oldLines":"        'customer',\n        'total',","newLines":"        'customer',\n        'total',\n        'delivery_window',","status":"pending"}]}

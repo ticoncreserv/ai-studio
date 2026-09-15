@@ -1,0 +1,156 @@
+{
+  "app": {
+    "name": "Atelier",
+    "tagline": "Create screens on the Laravel repository with Cursor, a branch per person, and a live preview.",
+    "product": "Assisted creation for ticoncreserv/app"
+  },
+  "auth": {
+    "title": "Sign in to the studio",
+    "subtitle": "GitHub is the source of access. This environment falls back to a local login until the GitHub App secrets exist.",
+    "github": "Continue with GitHub",
+    "dev": "Continue locally",
+    "loginLabel": "GitHub username",
+    "loginPlaceholder": "your-handle",
+    "localeLabel": "Interface language",
+    "english": "English",
+    "portuguese": "Português (Brasil)",
+    "error": "Sign-in failed. Try again."
+  },
+  "nav": {
+    "sessions": "Sessions",
+    "newSession": "New session",
+    "search": "Search sessions",
+    "invite": "Invite",
+    "share": "Share preview",
+    "rules": "Rules",
+    "connections": "Connections",
+    "signOut": "Sign out",
+    "openWorkspace": "Open workspace"
+  },
+  "workspace": {
+    "warming": "Warming the workspace to ready…",
+    "ready": "Workspace ready. Opening the preview lights php-fpm and Caddy.",
+    "hibernated": "Workspace hibernated. Resume to start preview processes.",
+    "error": "Workspace failed to start.",
+    "branch": "Branch",
+    "status": "Status",
+    "resume": "Resume preview",
+    "hibernate": "Hibernate",
+    "syncBase": "Sync with base",
+    "busy": "Another session holds the run lock.",
+    "spectator": "Spectator mode — you can watch, not prompt.",
+    "pendingAccess": "Access pending on GitHub",
+    "divergence": "Schema divergence",
+    "pendingMigrations": "{count} migrations in your branch are not applied.",
+    "extraMigrations": "{count} migrations exist in the database but not in your branch.",
+    "diskQuota": "Disk quota",
+    "presence": "{count} people here"
+  },
+  "chat": {
+    "empty": "Describe the screen or change you want. Mention routes with @ and attach files or a screenshot.",
+    "placeholder": "Ask the agent to add a page, field, or fix…",
+    "send": "Send",
+    "cancel": "Cancel run",
+    "acceptHunk": "Accept hunk",
+    "rejectHunk": "Reject hunk",
+    "acceptFile": "Accept file",
+    "rejectFile": "Reject file",
+    "restore": "Restore checkpoint",
+    "fixThis": "Fix this",
+    "droppedContext": "{count} context blocks did not fit the prompt budget.",
+    "budget": "Run stopped by budget",
+    "planTitle": "Plan",
+    "acceptPlan": "Accept plan",
+    "rejectPlan": "Reject plan",
+    "questionTitle": "The agent needs a choice",
+    "permissionTitle": "Permission requested",
+    "allowOnce": "Allow once",
+    "allowAlways": "Allow always",
+    "rejectOnce": "Reject",
+    "untitled": "Untitled session",
+    "toolRunning": "Running {name}",
+    "toolDone": "Finished {name}",
+    "checkpoint": "Checkpoint",
+    "conflict": "Sync conflict",
+    "queue": "Follow-up queued",
+    "modeAgent": "Agent",
+    "modePlan": "Plan",
+    "modeAsk": "Ask",
+    "attach": "Attach",
+    "recipe": "Recipe"
+  },
+  "preview": {
+    "title": "Preview",
+    "mobile": "Mobile",
+    "tablet": "Tablet",
+    "desktop": "Desktop",
+    "openTab": "Open in new tab",
+    "openWindow": "Open in new window",
+    "booting": "Preview is starting…",
+    "down": "Preview is not running.",
+    "hibernated": "Preview is hibernated.",
+    "error": "Preview failed the health check.",
+    "longQuery": "Still querying the ERP ({seconds}s). The SQL timeout is 300s.",
+    "debugTime": "{ms} ms",
+    "debugQueries": "{count} queries",
+    "debugMemory": "{mb} MB",
+    "nPlusOne": "N+1 detected",
+    "rotate": "Rotate"
+  },
+  "command": {
+    "placeholder": "Type a command…",
+    "prompt": "Focus composer",
+    "cancel": "Cancel run",
+    "acceptHunk": "Accept current hunk",
+    "viewportMobile": "Viewport: mobile",
+    "viewportTablet": "Viewport: tablet",
+    "viewportDesktop": "Viewport: desktop",
+    "openPreview": "Open preview in a tab",
+    "restore": "Restore last checkpoint",
+    "newSession": "Start a new session"
+  },
+  "rules": {
+    "title": "Rules",
+    "platform": "Platform",
+    "project": "Project",
+    "user": "User",
+    "save": "Materialize into the worktree",
+    "hint": "Compiled rules become AGENTS.md and .cursor/rules. The agent language follows your locale; code stays in English."
+  },
+  "invite": {
+    "title": "Invite a teammate",
+    "created": "Invite link created. They must have GitHub access to ticoncreserv/app.",
+    "accept": "Accept invite",
+    "pending": "You signed in, but GitHub does not yet grant access to the repository.",
+    "revalidate": "Revalidate GitHub access",
+    "githubAccess": "Open repository access settings"
+  },
+  "share": {
+    "title": "Shared preview",
+    "hint": "Read-only. No GitHub account required.",
+    "expired": "This share link has expired.",
+    "copy": "Copy link"
+  },
+  "connections": {
+    "title": "External connections",
+    "homologation": "Homologation",
+    "erpReadOnly": "ERP connections are read-only.",
+    "appMigrate": "Forward migrations allowed on the portal connection, with a global lock."
+  },
+  "flags": {
+    "publish": "Publish",
+    "multiProvider": "Multi-provider",
+    "spectator": "Spectator",
+    "recipes": "Recipes"
+  },
+  "errors": {
+    "generic": "Something went wrong.",
+    "sessionMissing": "Session not found.",
+    "unauthorized": "You need to sign in."
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{count} min ago",
+    "hoursAgo": "{count} h ago"
+  }
+}

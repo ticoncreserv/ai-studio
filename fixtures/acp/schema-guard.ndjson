@@ -1,0 +1,3 @@
+{"type":"assistant_message","id":"a1","at":"2026-04-01T00:00:00.000Z","text":"migrate:fresh is blocked on the shared homologation database. I will only add a forward migration.","streaming":false}
+{"type":"tool_call","id":"t1","at":"2026-04-01T00:00:01.000Z","toolCallId":"call_1","name":"shell","status":"failed","output":"auto-deny: migrate:fresh"}
+{"type":"migration","id":"m1","at":"2026-04-01T00:00:02.000Z","author":"studio","branch":"user/studio/studio","name":"2026_04_01_add_quote_window","output":"queued behind connection lock"}

@@ -1,0 +1,28 @@
+{
+  "name": "atelier",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @atelier/web dev",
+    "dev:supervisor": "pnpm --filter @atelier/supervisor start",
+    "build": "pnpm -r build",
+    "test": "pnpm -r --if-present test",
+    "lint": "eslint .",
+    "i18n:check": "node scripts/ci/check-i18n.mjs",
+    "fixture:create": "bash scripts/create-fixture-app.sh",
+    "eval": "pnpm --filter @atelier/supervisor eval",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "dependency-cruiser": "^16.10.4",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.44.0",
+    "vitest": "^3.2.4"
+  }
+}
