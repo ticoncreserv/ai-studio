@@ -1,4 +1,4 @@
-import { platform } from "../../utils/platform";
+import { platform } from "../../../utils/platform";
 
 export default defineEventHandler(async (event) => {
   const token = getRouterParam(event, "token")!;
