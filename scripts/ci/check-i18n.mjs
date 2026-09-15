@@ -24,4 +24,24 @@ if (missing.length || extra.length) {
   if (extra.length) console.error("extra in pt-BR:", extra.join(", "));
   process.exit(1);
 }
+function walk(obj, prefix, visit) {
+  for (const [k, v] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === "object") walk(v, path, visit);
+    else visit(path, String(v));
+  }
+}
+
+const rawAt = [];
+walk(en, "", (path, value) => {
+  if (value.includes("@") && !value.includes("{'@'}")) rawAt.push(path);
+});
+walk(pt, "", (path, value) => {
+  if (value.includes("@") && !value.includes("{'@'}")) rawAt.push(path);
+});
+if (rawAt.length) {
+  console.error("unescaped @ in locale messages (vue-i18n linked format):", rawAt.join(", "));
+  process.exit(1);
+}
+
 console.info(`i18n parity ok (${enKeys.size} keys)`);

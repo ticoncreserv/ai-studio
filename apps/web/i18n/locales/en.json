@@ -47,7 +47,7 @@
     "presence": "{count} people here"
   },
   "chat": {
-    "empty": "Describe the screen or change you want. Mention routes with @ and attach files or a screenshot.",
+    "empty": "Describe the screen or change you want. Mention routes with {'@'} and attach files or a screenshot.",
     "placeholder": "Ask the agent to add a page, field, or fix…",
     "send": "Send",
     "cancel": "Cancel run",

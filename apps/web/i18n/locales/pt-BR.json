@@ -47,7 +47,7 @@
     "presence": "{count} pessoas aqui"
   },
   "chat": {
-    "empty": "Descreva a tela ou a mudança. Mencione rotas com @ e anexe arquivos ou um print.",
+    "empty": "Descreva a tela ou a mudança. Mencione rotas com {'@'} e anexe arquivos ou um print.",
     "placeholder": "Peça uma página, um campo ou uma correção…",
     "send": "Enviar",
     "cancel": "Cancelar execução",
