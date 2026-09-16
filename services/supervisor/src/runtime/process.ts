@@ -9,7 +9,8 @@ import { allocatePort } from "./ports.js";
 import { artisanOfflineEnv, mergeWorktreeEnv } from "./env-file.js";
 import { mergeWorktreeMcp } from "../mcp/layers.js";
 import { provisionWorktree, type CloneInput } from "./clone.js";
-import { waitForHealth } from "./health.js";
+import { waitForPort } from "./health.js";
+import { hydrateDependencySnapshots, persistDependencySnapshots } from "./deps-cache.js";
 import { publicViteOrigin, writeViteAtelierConfig, writeViteHotFile } from "./vite-preview.js";
 import { ensureWayfinderFormMethods } from "./wayfinder-forms.js";
 import { appendPreviewLog, readPreviewLogs, writePreviewLogs } from "./preview-logs.js";
@@ -143,6 +144,8 @@ function assertPreviewToolchain(worktree: string): void {
 }
 
 async function installDependencies(worktree: string): Promise<void> {
+  if (!process.env.VITEST) hydrateDependencySnapshots(worktree);
+  const jobs: Promise<unknown>[] = [];
   if (existsSync(join(worktree, "composer.json")) && !existsSync(join(worktree, "vendor"))) {
     if (!commandExists("php") || !commandExists("composer")) {
       // Fixture worktrees ship composer.json without vendor/. Skip the install in tests when PHP is absent.
@@ -150,15 +153,22 @@ async function installDependencies(worktree: string): Promise<void> {
         throw new Error("PHP 8.5 and Composer are required to install Laravel vendor/ for preview.");
       }
     } else {
-      await execFileAsync("composer", ["install", "--no-interaction", "--prefer-dist"], {
-        cwd: worktree,
-        timeout: 300_000,
-      });
+      jobs.push(
+        execFileAsync("composer", ["install", "--no-interaction", "--prefer-dist"], {
+          cwd: worktree,
+          timeout: 300_000,
+        }),
+      );
     }
   }
   if (existsSync(join(worktree, "package.json")) && !existsSync(join(worktree, "node_modules"))) {
-    await execFileAsync("npm", ["install"], { cwd: worktree, timeout: 180_000 });
+    const npmArgs = existsSync(join(worktree, "package-lock.json"))
+      ? ["ci", "--no-audit", "--no-fund"]
+      : ["install", "--no-audit", "--no-fund"];
+    jobs.push(execFileAsync("npm", npmArgs, { cwd: worktree, timeout: 180_000 }));
   }
+  if (jobs.length) await Promise.all(jobs);
+  if (!process.env.VITEST) persistDependencySnapshots(worktree);
 }
 
 export class ProcessRuntime implements WorkspaceRuntime {
@@ -201,10 +211,8 @@ export class ProcessRuntime implements WorkspaceRuntime {
     const viteOrigin = publicViteOrigin(input.publicUrl);
     const existing = handles.get(input.workspaceId);
     if (existing) {
-      const artisanUp = await waitForHealth(`http://127.0.0.1:${existing.port}${spec.healthCheck.path}`, 2_500);
-      const viteUp = existing.vitePort
-        ? await waitForHealth(`http://127.0.0.1:${existing.vitePort}/@vite/client`, 2_500)
-        : false;
+      const artisanUp = await waitForPort(existing.port, 2_500);
+      const viteUp = existing.vitePort ? await waitForPort(existing.vitePort, 2_500) : false;
       if (artisanUp && (!existsSync(join(input.worktree, "package.json")) || viteUp)) {
         if (existing.vitePort) writeViteHotFile(input.worktree, viteOrigin);
         return existing;
@@ -316,20 +324,21 @@ export class ProcessRuntime implements WorkspaceRuntime {
       },
     };
     handles.set(input.workspaceId, handle);
-    const healthy = await waitForHealth(`http://127.0.0.1:${port}${spec.healthCheck.path}`, spec.healthCheck.timeoutMs);
-    if (!healthy) {
+    // Homologation /up can hang on 10.x DBs. Open only waits until artisan accepts TCP.
+    const listening = await waitForPort(port, Math.min(spec.healthCheck.timeoutMs, 8_000));
+    if (!listening) {
       await handle.stop();
       const detail = artisanLog.trim().slice(-400);
-      const message = `Preview did not become healthy on /up for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check that PHP 8.5 can boot artisan serve."}`;
+      const message = `Preview artisan did not listen on port ${port} for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check that PHP 8.5 can boot artisan serve."}`;
       writePreviewLogs(input.workspaceId, { artisan: artisanLog, vite: viteLog, error: message });
       throw new Error(message);
     }
     if (vitePort) {
-      const viteReady = await waitForHealth(`http://127.0.0.1:${vitePort}/@vite/client`, 30_000);
+      const viteReady = await waitForPort(vitePort, 15_000);
       if (!viteReady) {
         await handle.stop();
         const detail = viteLog.trim().slice(-400);
-        const message = `Vite did not start in dev mode for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check node_modules/.bin/vite and that PORT is not shared with artisan."}`;
+        const message = `Vite did not listen on port ${vitePort} for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check node_modules/.bin/vite and that PORT is not shared with artisan."}`;
         writePreviewLogs(input.workspaceId, { artisan: artisanLog, vite: viteLog, error: message });
         throw new Error(message);
       }

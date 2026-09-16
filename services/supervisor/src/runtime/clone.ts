@@ -52,11 +52,10 @@ async function cloneFromGitHub(input: CloneInput): Promise<void> {
   const publicUrl = `https://github.com/${repo}.git`;
   mkdirSync(join(repoRoot(), "var", "cache"), { recursive: true });
   if (!existsSync(cache)) {
-    await git(repoRoot(), ["clone", "--bare", authed, cache], input.user);
-  } else {
-    await git(cache, ["fetch", authed, "+refs/heads/*:refs/heads/*"], input.user).catch(() => undefined);
+    await git(repoRoot(), ["clone", "--bare", "--single-branch", authed, cache], input.user);
   }
-  await git(repoRoot(), ["clone", cache, input.worktree], input.user);
+  await fetchNeededBranches(cache, authed, input.branch, input.user);
+  await git(repoRoot(), ["clone", "--local", cache, input.worktree], input.user);
   await git(input.worktree, ["remote", "set-url", "origin", publicUrl], input.user);
   const head = await git(input.worktree, ["symbolic-ref", "refs/remotes/origin/HEAD"]).catch(() => "refs/remotes/origin/main");
   const defaultBranch = head.replace("refs/remotes/origin/", "") || "main";
@@ -81,4 +80,24 @@ async function cloneFromSource(input: CloneInput): Promise<void> {
     }
   }
   await git(input.worktree, ["checkout", "-B", input.branch], input.user);
+}
+
+export function neededFetchRefs(defaultBranch: string, userBranch: string): string[] {
+  const head = defaultBranch.replace(/^refs\/heads\//, "") || "main";
+  const refs = [`+refs/heads/${head}:refs/heads/${head}`];
+  const studio = userBranch.replace(/^refs\/heads\//, "");
+  if (studio && studio !== head) refs.push(`+refs/heads/${studio}:refs/heads/${studio}`);
+  return refs;
+}
+
+async function fetchNeededBranches(
+  cache: string,
+  authed: string,
+  userBranch: string,
+  user: CloneInput["user"],
+): Promise<void> {
+  const head = await git(cache, ["symbolic-ref", "--short", "HEAD"]).catch(() => "main");
+  for (const ref of neededFetchRefs(head, userBranch)) {
+    await git(cache, ["fetch", authed, ref], user).catch(() => undefined);
+  }
 }
