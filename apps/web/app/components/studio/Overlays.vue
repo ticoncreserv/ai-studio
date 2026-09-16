@@ -185,6 +185,10 @@ function submitQuestion() {
     <div class="mt-2 h-2 overflow-hidden rounded-full bg-ink-100">
       <div class="h-full bg-coral-500" :style="{ width: `${Math.min(100, (data.quota.usedMb / data.quota.limitMb) * 100)}%` }" />
     </div>
+    <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("settings.envFileTitle") }}</p>
+    <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.envFileHint", { path: data.worktreeEnvPath }) }}</p>
+    <p class="mt-1 font-mono text-[11px] text-ink-700">{{ data.worktreeEnvPath }}</p>
+    <p class="mt-2 text-[12px] text-ink-500">{{ t("settings.platformEnvHint") }}</p>
     <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("workspace.envIsolation") }}</p>
     <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.isolationHint") }}</p>
     <ul class="mt-2 space-y-1 font-mono text-[11px] text-ink-600">

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { viteDevAssetPath } from "@atelier/supervisor";
-import { rewriteLocation, rewritePreviewDocument, rewriteSetCookie, rewriteViteBareImports } from "./preview-rewrite";
+import {
+  rewriteLocation,
+  rewritePreviewDocument,
+  rewritePreviewLocation,
+  rewriteSetCookie,
+  rewriteViteBareImports,
+  scopePreviewHref,
+} from "./preview-rewrite";
 
 describe("preview proxy rewrites", () => {
   it("scopes Laravel cookies to the preview prefix", () => {
@@ -15,6 +22,14 @@ describe("preview proxy rewrites", () => {
     expect(rewriteLocation("http://127.0.0.1:45410/@vite/client", 45410, "/-/p/tok/__vite")).toBe(
       "/-/p/tok/__vite/@vite/client",
     );
+    expect(rewriteLocation("/login", 45401, "/-/p/tok")).toBe("/-/p/tok/login");
+    expect(rewritePreviewLocation("http://127.0.0.1:43123/login", 45407, "/-/p/tok", 45408)).toBe(
+      "/-/p/tok/login",
+    );
+    expect(rewritePreviewLocation("http://127.0.0.1:45408/@vite/client", 45407, "/-/p/tok", 45408)).toBe(
+      "/-/p/tok/__vite/@vite/client",
+    );
+    expect(rewritePreviewLocation("/-/p/tok/login", 45407, "/-/p/tok", 45408)).toBe("/-/p/tok/login");
   });
 
   it("forwards Vite module URLs under the preview prefix", () => {
@@ -36,5 +51,21 @@ describe("preview proxy rewrites", () => {
         "/-/p/tok",
       ),
     ).toBe(`<script src="/-/p/tok/__vite/@vite/client"></script><link href="/-/p/tok/favicon.png">`);
+  });
+
+  it("keeps Inertia page.url and history under the preview prefix", () => {
+    const html = rewritePreviewDocument(
+      `<html><head></head><body><script data-page="app" type="application/json">{"component":"auth/Login","props":{},"url":"/login","version":""}</script></body></html>`,
+      45407,
+      "/-/p/tok",
+    );
+    expect(html).toContain('"url":"/-/p/tok/login"');
+    expect(html).toContain("window.__atelierPreviewScope");
+    expect(html).toContain("/-/p/tok");
+    expect(scopePreviewHref("/login", "/-/p/tok")).toBe("/-/p/tok/login");
+    expect(scopePreviewHref("/-/p/tok/login", "/-/p/tok/__vite")).toBe("/-/p/tok/login");
+    expect(
+      rewritePreviewDocument(`{"component":"auth/Login","props":{},"url":"\\/login","version":""}`, 45407, "/-/p/tok"),
+    ).toContain('"/-/p/tok/login"');
   });
 });

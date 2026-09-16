@@ -300,7 +300,10 @@
   "settings": {
     "title": "Workspace",
     "language": "Idioma",
-    "isolationHint": "QUEUE_NAME, CACHE_PREFIX, SESSION_COOKIE e APP_URL são únicos por workspace."
+    "isolationHint": "QUEUE_NAME, CACHE_PREFIX, SESSION_COOKIE e APP_URL são únicos por workspace.",
+    "envFileTitle": "Arquivo .env do repositório clonado",
+    "envFileHint": "Edite {path} no disco e clique em Retomar preview. O Atelier sobrescreve APP_URL, SESSION_COOKIE, QUEUE_NAME e CACHE_PREFIX para isolar o workspace.",
+    "platformEnvHint": "Credenciais da plataforma (GitHub, Cursor, ATELIER_PUBLIC_URL) ficam no .env da raiz do Atelier, não neste worktree."
   },
   "errors": {
     "generic": "Algo deu errado.",

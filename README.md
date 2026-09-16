@@ -80,6 +80,19 @@ Cursor ACP is a different credential. Set `CURSOR_API_KEY` in `.env`. The studio
 
 Commits in a workspace set `user.name` / `user.email` and `commit.gpgsign=false` per invocation.
 
+## Environment files
+
+There is no in-app `.env` editor. Two files matter:
+
+| File | What it configures |
+| --- | --- |
+| `.env` at the Atelier repo root | Platform: `ATELIER_PUBLIC_URL`, GitHub App/OAuth, `CURSOR_API_KEY`. Restart `pnpm dev` after changes. |
+| `var/workspaces/{workspaceId}/.env` | Cloned `ticoncreserv/app` secrets (MySQL/SQL Server hosts, mail, etc.). Edit on disk, then **Resume preview**. |
+
+Workspace settings in the studio lists the worktree path and the isolation overlay. On every preview start the studio overwrites `APP_URL`, `SESSION_COOKIE`, `QUEUE_NAME`, and `CACHE_PREFIX` so workspaces do not collide. Homologation `10.x` hosts stay as they are in the cloned file.
+
+`DATABASE_URL` and `REDIS_URL` in the platform `.env` are unused (JSON store + in-process queue).
+
 ## Preview
 
 `ProcessRuntime` clones `ticoncreserv/app` (cached bare clone in `var/cache`), writes a worktree `.env` from `.env.example` plus isolation, runs `composer install` / `npm install` when needed, then `php artisan serve` on a free loopback port. Vite runs in **dev mode** on a second loopback port (not a production `public/build` manifest). Laravel reads `public/hot` as `/-/p/{token}/__vite` (host-relative, so `localhost` and `127.0.0.1` stay same-origin). The proxy rewrites Vite's root imports (`/node_modules`, `/resources`) onto that prefix so the browser does not hit Nuxt. The Wayfinder plugin is not allowed to block Vite listen — `npm run wayfinder:generate` runs in the background. Health is `GET /up`. `APP_URL` is `{ATELIER_PUBLIC_URL}/-/p/{previewToken}` so CSRF, redirects, and Inertia stay on the studio origin.

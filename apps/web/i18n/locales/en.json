@@ -300,7 +300,10 @@
   "settings": {
     "title": "Workspace",
     "language": "Language",
-    "isolationHint": "QUEUE_NAME, CACHE_PREFIX, SESSION_COOKIE, and APP_URL are unique per workspace."
+    "isolationHint": "QUEUE_NAME, CACHE_PREFIX, SESSION_COOKIE, and APP_URL are unique per workspace.",
+    "envFileTitle": "Cloned repository .env",
+    "envFileHint": "Edit {path} on disk, then Resume preview. Atelier overwrites APP_URL, SESSION_COOKIE, QUEUE_NAME, and CACHE_PREFIX to isolate the workspace.",
+    "platformEnvHint": "Platform credentials (GitHub, Cursor, ATELIER_PUBLIC_URL) live in the Atelier root .env, not in this worktree."
   },
   "errors": {
     "generic": "Something went wrong.",

@@ -1,7 +1,7 @@
 import type { H3Event } from "h3";
 import { ensureViteHotFile, publicViteOrigin, viteDevAssetPath } from "@atelier/supervisor";
 import { platform } from "./platform";
-import { rewriteLocation, rewritePreviewDocument, rewriteSetCookie, rewriteViteBareImports } from "./preview-rewrite";
+import { rewritePreviewDocument, rewritePreviewLocation, rewriteSetCookie, rewriteViteBareImports } from "./preview-rewrite";
 
 const FORWARD_HEADERS = ["cookie", "content-type", "accept", "x-xsrf-token", "x-requested-with", "authorization", "origin"];
 
@@ -39,10 +39,9 @@ export async function proxyPreview(event: H3Event, token: string, rest = "") {
   const outgoing = new Headers(res.headers);
   outgoing.delete("x-frame-options");
   outgoing.set("content-security-policy", "frame-ancestors *");
-  const location = outgoing.get("location");
-  if (location) {
-    outgoing.set("location", rewriteLocation(location, ws.port, prefix));
-    if (ws.vitePort) outgoing.set("location", rewriteLocation(outgoing.get("location")!, ws.vitePort, `${prefix}/__vite`));
+  for (const name of ["location", "x-inertia-location"] as const) {
+    const location = outgoing.get(name);
+    if (location) outgoing.set(name, rewritePreviewLocation(location, ws.port, prefix, ws.vitePort));
   }
   const cookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
   if (cookies.length) {
