@@ -500,15 +500,26 @@ option {
   color: var(--color-ink-950);
 }
 
+/* The dot sits in the same 14px column the nav icons use, so every label in the
+   rail shares one text column. */
 .cx-session-dot {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.cx-session-dot::before {
+  content: "";
   width: 5px;
   height: 5px;
-  flex-shrink: 0;
   border-radius: 999px;
   background: rgb(255 255 255 / 0.16);
 }
 
-.cx-session-row[data-active="true"] .cx-session-dot {
+.cx-session-row[data-active="true"] .cx-session-dot::before {
   background: var(--color-ink-500);
 }
 
@@ -871,14 +882,15 @@ option {
   color: rgb(253 230 138 / 0.72);
 }
 
-/* Rail heading, indented to the label column of the list it heads. */
+/* Rail heading, indented to the shared label column (8px rail gutter + 8px row
+   padding + the 14px icon column + its 8px gap). */
 .cx-rail-group {
-  padding: 16px 8px 4px 29px;
+  padding: 16px 8px 4px 38px;
 }
 
 /* Rows that continue a list: aligned with the labels above them. */
 .cx-session-row-sub {
-  padding-left: 21px;
+  padding-left: 30px;
 }
 
 .cx-menu-row-sub {
