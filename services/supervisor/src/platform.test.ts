@@ -24,6 +24,33 @@ afterEach(() => {
 });
 
 describe("platform", () => {
+  it("lets local login succeed when GitHub App credentials are missing", async () => {
+    const previousVitest = process.env.VITEST;
+    const previousAppId = process.env.GITHUB_APP_ID;
+    const previousKey = process.env.GITHUB_APP_PRIVATE_KEY;
+    const previousInstallation = process.env.GITHUB_INSTALLATION_ID;
+    delete process.env.VITEST;
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    delete process.env.GITHUB_INSTALLATION_ID;
+    try {
+      const p = platform();
+      const user = await p.loginDev("local-only");
+      expect(user.login).toBe("local-only");
+      expect(p.store.read().workspaces.some((row) => row.userId === user.id)).toBe(false);
+      await expect(p.ensureWorkspace(user)).rejects.toThrow(/GitHub App credentials/);
+    } finally {
+      if (previousVitest === undefined) delete process.env.VITEST;
+      else process.env.VITEST = previousVitest;
+      if (previousAppId === undefined) delete process.env.GITHUB_APP_ID;
+      else process.env.GITHUB_APP_ID = previousAppId;
+      if (previousKey === undefined) delete process.env.GITHUB_APP_PRIVATE_KEY;
+      else process.env.GITHUB_APP_PRIVATE_KEY = previousKey;
+      if (previousInstallation === undefined) delete process.env.GITHUB_INSTALLATION_ID;
+      else process.env.GITHUB_INSTALLATION_ID = previousInstallation;
+    }
+  });
+
   it("maps github permissions and warms a workspace on login", async () => {
     const p = platform();
     expect(p.authorizeGitHub({ push: true })).toBe("editor");
