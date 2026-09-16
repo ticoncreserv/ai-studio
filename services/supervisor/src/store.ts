@@ -93,6 +93,14 @@ interface DbShape {
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;
 }
 
+function mergeById<T extends { id: string }>(current: T[] | undefined, defaults: T[]): T[] {
+  const map = new Map<string, T>();
+  for (const row of defaults) map.set(row.id, row);
+  for (const row of current ?? []) map.set(row.id, { ...map.get(row.id), ...row });
+  const order = [...defaults.map((row) => row.id), ...(current ?? []).map((row) => row.id).filter((id) => !defaults.some((row) => row.id === id))];
+  return order.map((id) => map.get(id)!);
+}
+
 const emptyDb = (): DbShape => ({
   users: [],
   workspaces: [],
@@ -165,9 +173,9 @@ export class JsonStore {
     return {
       ...base,
       ...raw,
-      connections: raw.connections?.length ? raw.connections : base.connections,
-      recipes: raw.recipes?.length ? raw.recipes : base.recipes,
-      rules: raw.rules?.length ? raw.rules : base.rules,
+      connections: mergeById(raw.connections, base.connections),
+      recipes: mergeById(raw.recipes, base.recipes),
+      rules: mergeById(raw.rules, base.rules),
       flags: { ...base.flags, ...raw.flags },
       users: raw.users ?? [],
       workspaces: raw.workspaces ?? [],
