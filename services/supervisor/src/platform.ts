@@ -215,7 +215,12 @@ export class Platform {
     }
     const stored = this.store.read().users.find((row) => row.id === user.id) ?? user;
     if (stored.disabled) return stored;
-    await this.warmForUser(stored);
+    try {
+      await this.warmForUser(stored);
+    } catch (error) {
+      // Local login is allowed without GitHub App credentials; opening a workspace still clones.
+      if (process.env.VITEST) throw error;
+    }
     return stored;
   }
 
