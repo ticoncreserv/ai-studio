@@ -4,13 +4,12 @@ defineProps<{ size?: number }>();
 
 <template>
   <span
-    class="inline-flex items-center justify-center rounded-[9px] bg-gradient-to-br from-coral-400 to-coral-600 text-[#061018] shadow-glow"
-    :style="{ width: `${size ?? 32}px`, height: `${size ?? 32}px` }"
+    class="inline-flex shrink-0 items-center justify-center rounded-[6px] border border-line bg-white/[0.05] text-coral-400"
+    :style="{ width: `${size ?? 28}px`, height: `${size ?? 28}px` }"
   >
-    <svg viewBox="0 0 24 24" class="h-[58%] w-[58%]" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="7.2" stroke="currentColor" stroke-width="1.8" />
-      <circle cx="12" cy="12" r="2.2" fill="currentColor" />
-      <path d="M12 4.8v2.4M12 16.8v2.4M4.8 12h2.4M16.8 12h2.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+    <svg viewBox="0 0 24 24" class="h-[56%] w-[56%]" fill="none" aria-hidden="true">
+      <path d="M12 3.2 20.2 7.8v8.4L12 20.8 3.8 16.2V7.8L12 3.2Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+      <path d="M12 12.1 20.2 7.8M12 12.1v8.7M12 12.1 3.8 7.8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity="0.65" />
     </svg>
   </span>
 </template>

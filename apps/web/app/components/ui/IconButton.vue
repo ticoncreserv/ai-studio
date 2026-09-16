@@ -20,10 +20,11 @@ const props = withDefaults(
     :disabled="disabled"
     :class="
       cn(
-        'inline-flex items-center justify-center rounded-[9px] text-ink-500 transition duration-150',
-        'hover:bg-white/10 hover:text-ink-950 disabled:pointer-events-none disabled:opacity-40',
-        props.size === 'sm' ? 'h-7 w-7' : 'h-8 w-8',
-        props.active && 'bg-white/15 text-ink-950 hover:bg-white/20 hover:text-ink-950',
+        'inline-flex shrink-0 items-center justify-center rounded-[6px] text-ink-500 transition-colors duration-120',
+        'hover:bg-white/[0.06] hover:text-ink-950 disabled:pointer-events-none disabled:opacity-40',
+        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-coral-500/60',
+        props.size === 'sm' ? 'h-6 w-6' : 'h-7 w-7',
+        props.active && 'bg-white/[0.1] text-ink-950',
       )
     "
   >

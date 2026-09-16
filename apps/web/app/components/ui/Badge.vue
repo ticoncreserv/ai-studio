@@ -4,12 +4,12 @@ defineProps<{ tone?: "neutral" | "live" | "warn" | "info" }>();
 
 <template>
   <span
-    class="inline-flex items-center gap-1.5 rounded-[8px] px-2 py-0.5 text-[10px] font-semibold tracking-[0.04em] uppercase"
+    class="inline-flex items-center gap-1.5 rounded-[4px] px-1.5 py-[2px] text-[10px] font-medium tracking-[0.03em] uppercase"
     :class="{
-      'bg-white/5 text-ink-600': (tone ?? 'neutral') === 'neutral',
-      'bg-emerald-400/10 text-emerald-300': tone === 'live',
-      'bg-amber-400/10 text-amber-200': tone === 'warn',
-      'bg-coral-50 text-coral-400': tone === 'info',
+      'bg-white/[0.06] text-ink-500': (tone ?? 'neutral') === 'neutral',
+      'bg-emerald-500/12 text-emerald-300/90': tone === 'live',
+      'bg-amber-400/12 text-amber-200/90': tone === 'warn',
+      'bg-coral-50 text-coral-300': tone === 'info',
     }"
   >
     <span v-if="tone === 'live'" class="pulse-dot h-1.5 w-1.5 rounded-full bg-emerald-400" />

@@ -72,7 +72,7 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-4 pt-[8vh] backdrop-blur-md sm:p-8 sm:pt-[12vh]"
+      class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh] sm:p-8 sm:pt-[14vh]"
       @click.self="$emit('close')"
     >
       <div
@@ -81,14 +81,21 @@ onBeforeUnmount(() => {
         aria-modal="true"
         :aria-label="title"
         tabindex="-1"
-        class="glass-window w-full max-h-[min(80vh,40rem)] overflow-hidden outline-none"
-        :class="wide ? 'max-w-2xl' : 'max-w-lg'"
+        class="glass-window w-full max-h-[min(80vh,40rem)] overflow-hidden shadow-float outline-none"
+        :class="wide ? 'max-w-2xl' : 'max-w-md'"
       >
-        <header class="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
-          <h2 class="min-w-0 text-[15px] font-semibold tracking-tight break-all">{{ title }}</h2>
-          <button type="button" class="shrink-0 text-ink-300 hover:text-ink-800" :aria-label="title" @click="$emit('close')">✕</button>
+        <header class="flex min-h-11 items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <h2 class="min-w-0 text-[13px] font-medium break-all">{{ title }}</h2>
+          <button
+            type="button"
+            class="shrink-0 rounded-[6px] px-1 text-ink-400 transition-colors hover:bg-white/[0.06] hover:text-ink-950"
+            :aria-label="title"
+            @click="$emit('close')"
+          >
+            ✕
+          </button>
         </header>
-        <div class="max-h-[min(60vh,28rem)] overflow-y-auto px-5 py-4">
+        <div class="thin-scroll max-h-[min(60vh,28rem)] overflow-y-auto px-4 py-3.5">
           <slot />
         </div>
       </div>
