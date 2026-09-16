@@ -95,6 +95,7 @@ describe("worktree file actions", () => {
     symlinkSync(outside, join(dir, "linked"), "dir");
 
     expect(() => applyHunkToWorktree(dir, "../outside.php", "bad")).toThrow(/escapes the worktree/);
+    expect(() => applyHunkToWorktree(dir, ".git", "bad")).toThrow(/protected Git metadata/);
     expect(() => applyHunkToWorktree(dir, "linked/outside.php", "bad")).toThrow(/symbolic link/);
     expect(existsSync(join(outside, "outside.php"))).toBe(false);
   });

@@ -14,6 +14,9 @@ describe("permission policy", () => {
     expect(evaluatePermission({ kind: "read", path: "/ws-other/file.php", worktree: "/ws" })).toBe(
       "auto-deny",
     );
+    expect(evaluatePermission({ kind: "write", path: "/ws/.git/config", worktree: "/ws" })).toBe(
+      "auto-deny",
+    );
   });
 
   it("blocks destructive database commands", () => {

@@ -43,7 +43,13 @@ export function evaluatePermission(req: PermissionRequest): PermissionDecision {
     if (!req.path) return "auto-deny";
     const target = canonicalPath(req.path);
     const worktree = canonicalPath(req.worktree).replace(/\/$/, "");
-    if (target.split("/").some((part) => part === ".env" || part.startsWith(".env."))) return "auto-deny";
+    if (
+      target
+        .split("/")
+        .some((part) => part === ".git" || part === ".env" || part.startsWith(".env."))
+    ) {
+      return "auto-deny";
+    }
     if (target === worktree || target.startsWith(`${worktree}/`)) return "auto-allow";
     return "auto-deny";
   }

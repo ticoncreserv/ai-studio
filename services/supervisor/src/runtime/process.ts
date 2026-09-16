@@ -400,6 +400,9 @@ export function resolveWorktreePath(worktree: string, filePath: string): string 
   const root = resolve(worktree);
   const target = resolve(root, filePath);
   if (target === root || !isWithin(root, target)) throw new Error("File path escapes the worktree");
+  if (relative(root, target).split(sep)[0] === ".git") {
+    throw new Error("File path targets protected Git metadata");
+  }
 
   const realRoot = realpathSync(root);
   let existingAncestor = target;
