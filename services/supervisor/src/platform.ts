@@ -9,12 +9,14 @@ import {
   canEdit,
   canInvite,
   canSpectate,
+  adminLoginsFromEnv,
   compileRules,
   defaultBudget,
   defaultDiskPolicy,
   defaultFlags,
   evaluatePermission,
   foldEvents,
+  isPlatformAdmin as matchPlatformAdmin,
   mapGitHubPermission,
   packPrompt,
   estimateTokens,
@@ -27,15 +29,32 @@ import {
 import { bus } from "./bus.js";
 import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
 import { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
-import { createProvider, listProviders } from "./providers/index.js";
+import { createProvider, listProviders as catalogProviders } from "./providers/index.js";
+import { PROVIDER_CATALOG } from "./providers/types.js";
 import { fixtureAppDir, repoRoot } from "./paths.js";
 import { applyHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
 import { worktreeDivergence } from "./migrations.js";
 import { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
-import { atelierPublicUrl, githubAppRepo, loadGitHubAppCredentials } from "./github-app.js";
+import { atelierPublicUrl, githubAppRepo, hasGitHubOAuth, loadGitHubAppCredentials } from "./github-app.js";
 import { resolveInstallationToken } from "./github.js";
 import { isForeignWorktree } from "./runtime/clone.js";
-import { connectionsFromWorktree, defaultConnectionPort, mergeWorktreeEnv, readEnvFile, redactEnv } from "./runtime/env-file.js";
+import {
+  connectionsFromWorktree,
+  defaultConnectionPort,
+  envKeyOrigin,
+  mergeWorktreeEnv,
+  parseEnvFile,
+  readEnvFile,
+  readGlobalEnv,
+  readProviderSecrets,
+  readUserEnv,
+  redactEnv,
+  restoreRedactedEnv,
+  serializeEnvFile,
+  writeGlobalEnv,
+  writeProviderSecrets,
+  writeUserEnv,
+} from "./runtime/env-file.js";
 import { probeConnections } from "./runtime/connection-probe.js";
 import { mentionIndexFromWorktree, worktreeBytes } from "./runtime/worktree-meta.js";
 import { commitWorktree, restoreCheckpoint, restoreFile, syncBaseBranch, worktreeDiffEvents } from "./runtime/worktree-diff.js";
@@ -59,8 +78,30 @@ export class Platform {
     return { ...defaultFlags, ...this.store.read().flags };
   }
 
+  envRoot(): string {
+    return join(dirname(this.store.path), "env");
+  }
+
+  hasExplicitAdmin(): boolean {
+    const db = this.store.read();
+    return db.users.some((user) => user.platformAdmin) || adminLoginsFromEnv().length > 0;
+  }
+
+  isPlatformAdmin(user: UserRecord): boolean {
+    const row = this.store.read().users.find((item) => item.id === user.id) ?? user;
+    return matchPlatformAdmin(row, {
+      hasExplicitAdmin: this.hasExplicitAdmin(),
+      envLogins: adminLoginsFromEnv(),
+    });
+  }
+
   listProviders() {
-    return listProviders().filter((p) => p.id === "cursor" || (p.id === "mock" && process.env.VITEST) || this.flags().multiProvider);
+    const enabled = this.providerConfig();
+    return catalogProviders().filter((provider) => {
+      if (provider.id === "mock") return Boolean(process.env.VITEST);
+      if (provider.id !== "cursor") return false;
+      return enabled.cursor?.enabled !== false;
+    });
   }
 
   roleFor(user: UserRecord, projectId = "concreserv"): Role {
@@ -148,6 +189,8 @@ export class Platform {
       token: process.env.VITEST ? undefined : token ?? undefined,
       sourceDir: process.env.VITEST ? fixtureAppDir() : undefined,
       user: { name: user.name, email: user.email },
+      userId: user.id,
+      envRoot: this.envRoot(),
     });
     this.hydrateProjectRules(worktree);
     this.materializeRules(worktree, user.locale, this.getRules());
@@ -165,11 +208,15 @@ export class Platform {
       bytes,
     };
     this.store.update((d) => d.workspaces.push(ws!));
-    mergeWorktreeEnv(worktree, {
-      ...PREVIEW_SIDE_EFFECTS,
-      ...isolationEnv(id, this.publicPreviewUrl(ws.previewToken)),
-      APP_URL: this.publicPreviewUrl(ws.previewToken),
-    });
+    mergeWorktreeEnv(
+      worktree,
+      {
+        ...PREVIEW_SIDE_EFFECTS,
+        ...isolationEnv(id, this.publicPreviewUrl(ws.previewToken)),
+        APP_URL: this.publicPreviewUrl(ws.previewToken),
+      },
+      { userId: user.id, envRoot: this.envRoot() },
+    );
     return ws;
   }
 
@@ -219,6 +266,8 @@ export class Platform {
         worktree: ws.worktree,
         publicUrl: this.publicPreviewUrl(ws.previewToken),
         hmr: true,
+        userId: ws.userId,
+        envRoot: this.envRoot(),
       });
       this.store.update((d) => {
         const row = d.workspaces.find((w) => w.id === workspaceId)!;
@@ -745,6 +794,196 @@ export class Platform {
     if (worktree) this.materializeRules(worktree, locale, layers);
   }
 
+  saveRulesFromActor(actor: UserRecord, layers: RuleRecord[], locale: "en" | "pt-BR", worktree?: string) {
+    const current = this.getRules();
+    const next = this.isPlatformAdmin(actor)
+      ? layers
+      : current.map((row) => (row.level === "user" ? (layers.find((layer) => layer.id === row.id) ?? row) : row));
+    this.saveRules(next, locale, worktree);
+    return this.getRules();
+  }
+
+  saveAdminRules(layers: RuleRecord[], locale: "en" | "pt-BR") {
+    const userLayers = this.getRules().filter((row) => row.level === "user");
+    const next = [...layers.filter((row) => row.level !== "user"), ...userLayers];
+    this.store.update((d) => {
+      d.rules = next;
+    });
+    this.materializeRulesEverywhere(locale, next);
+    return this.getRules();
+  }
+
+  adminOverview() {
+    const db = this.store.read();
+    const workspaces = db.workspaces.filter((row) => row.status !== "destroyed");
+    const lastError = [...workspaces].reverse().find((row) => row.lastError)?.lastError ?? null;
+    return {
+      githubConfigured: Boolean(loadGitHubAppCredentials() || hasGitHubOAuth()),
+      cursorKey: hasCursorApiKey(),
+      publicUrl: atelierPublicUrl(),
+      users: db.users.length,
+      running: workspaces.filter((row) => row.status === "running").length,
+      hibernated: workspaces.filter((row) => row.status === "hibernated").length,
+      error: workspaces.filter((row) => row.status === "error").length,
+      lastPreviewError: lastError,
+      flags: this.flags(),
+    };
+  }
+
+  listUsers() {
+    const db = this.store.read();
+    return db.users.map((user) => {
+      const workspace = db.workspaces.find((row) => row.userId === user.id && row.status !== "destroyed");
+      return {
+        id: user.id,
+        login: user.login,
+        name: user.name,
+        email: user.email,
+        role: this.roleFor(user),
+        accessPending: Boolean(user.accessPending),
+        platformAdmin: this.isPlatformAdmin(user),
+        envAdmin: adminLoginsFromEnv().includes(user.login),
+        workspaceId: workspace?.id ?? null,
+        workspaceStatus: workspace?.status ?? null,
+        lastActiveAt: workspace?.lastActiveAt ?? null,
+      };
+    });
+  }
+
+  setPlatformAdmin(actor: UserRecord, userId: string, value: boolean) {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const db = this.store.read();
+    const target = db.users.find((row) => row.id === userId);
+    if (!target) throw new Error("User not found");
+    if (adminLoginsFromEnv().includes(target.login) && !value) {
+      throw new Error("Cannot revoke an env-listed admin");
+    }
+    if (!value) {
+      const remaining = db.users.filter((row) => row.id !== userId && this.isPlatformAdmin(row)).length;
+      const envOthers = adminLoginsFromEnv().filter((login) => login !== target.login).length;
+      if (remaining + envOthers === 0 && (target.platformAdmin || this.isPlatformAdmin(target))) {
+        throw new Error("Cannot remove the last platform admin");
+      }
+    }
+    this.store.update((d) => {
+      const row = d.users.find((user) => user.id === userId);
+      if (row) row.platformAdmin = value;
+    });
+    return this.listUsers().find((row) => row.id === userId);
+  }
+
+  listAdminWorkspaces() {
+    const db = this.store.read();
+    return db.workspaces
+      .filter((row) => row.status !== "destroyed")
+      .map((row) => {
+        const user = db.users.find((item) => item.id === row.userId);
+        return {
+          id: row.id,
+          userId: row.userId,
+          login: user?.login ?? "",
+          branch: row.branch,
+          status: row.status,
+          lastError: row.lastError ?? null,
+          lastActiveAt: row.lastActiveAt,
+          port: row.port ?? null,
+        };
+      });
+  }
+
+  async adminHibernate(workspaceId: string) {
+    return this.hibernate(workspaceId);
+  }
+
+  getGlobalEnv() {
+    const env = readGlobalEnv(this.envRoot());
+    return { env: redactEnv(env), raw: serializeEnvFile(redactEnv(env)), secrets: Object.keys(env).filter((key) => /password|secret|token|key|private/i.test(key) && !key.endsWith("_NAME")) };
+  }
+
+  revealGlobalEnvKey(key: string): string {
+    return readGlobalEnv(this.envRoot())[key] ?? "";
+  }
+
+  saveGlobalEnv(input: { env?: Record<string, string>; raw?: string }) {
+    const current = readGlobalEnv(this.envRoot());
+    const env = restoreRedactedEnv(input.raw != null ? parseEnvFile(input.raw) : (input.env ?? {}), current);
+    writeGlobalEnv(env, this.envRoot());
+    return this.getGlobalEnv();
+  }
+
+  getUserEnv(userId: string) {
+    const env = readUserEnv(userId, this.envRoot());
+    return { env: redactEnv(env), raw: serializeEnvFile(redactEnv(env)) };
+  }
+
+  revealUserEnvKey(userId: string, key: string): string {
+    return readUserEnv(userId, this.envRoot())[key] ?? "";
+  }
+
+  saveUserEnv(userId: string, input: { env?: Record<string, string>; raw?: string }) {
+    const current = readUserEnv(userId, this.envRoot());
+    const env = restoreRedactedEnv(input.raw != null ? parseEnvFile(input.raw) : (input.env ?? {}), current);
+    writeUserEnv(userId, env, this.envRoot());
+    const ws = this.store.read().workspaces.find((row) => row.userId === userId && row.status !== "destroyed");
+    if (ws) this.applyEnvToWorktree(ws.id);
+    return this.getUserEnv(userId);
+  }
+
+  applyEnvToWorktree(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    const publicUrl = this.publicPreviewUrl(ws.previewToken);
+    return mergeWorktreeEnv(
+      ws.worktree,
+      { ...PREVIEW_SIDE_EFFECTS, ...isolationEnv(workspaceId, publicUrl), APP_URL: publicUrl },
+      { userId: ws.userId, envRoot: this.envRoot() },
+    );
+  }
+
+  applyEnvToWorktrees() {
+    const ids = this.store.read().workspaces.filter((row) => row.status !== "destroyed").map((row) => row.id);
+    return ids.map((id) => ({ id, env: redactEnv(this.applyEnvToWorktree(id)) }));
+  }
+
+  providerConfig(): Record<string, { enabled: boolean }> {
+    return this.store.read().providers;
+  }
+
+  getProviderSettings() {
+    const config = this.providerConfig();
+    const secrets = readProviderSecrets(this.envRoot());
+    const implemented = new Set(["cursor", ...(process.env.VITEST ? ["mock"] : [])]);
+    return PROVIDER_CATALOG.filter((row) => row.id !== "mock" || process.env.VITEST).map((row) => ({
+      id: row.id,
+      label: row.label,
+      enabled: row.id === "cursor" ? config.cursor?.enabled !== false : Boolean(config[row.id]?.enabled),
+      implemented: implemented.has(row.id),
+      hasKey: row.id === "cursor" ? hasCursorApiKey() : Boolean(secrets[`${row.id.toUpperCase()}_API_KEY`]?.trim()),
+    }));
+  }
+
+  saveProviderSettings(input: { id: string; enabled?: boolean; apiKey?: string }) {
+    if (input.enabled != null) {
+      this.store.update((d) => {
+        d.providers = { ...d.providers, [input.id]: { enabled: input.enabled! } };
+      });
+    }
+    if (input.apiKey != null) {
+      const secrets = readProviderSecrets(this.envRoot());
+      const keyName = input.id === "cursor" ? "CURSOR_API_KEY" : `${input.id.toUpperCase()}_API_KEY`;
+      if (input.apiKey.trim()) secrets[keyName] = input.apiKey.trim();
+      else delete secrets[keyName];
+      writeProviderSecrets(secrets, this.envRoot());
+    }
+    return this.getProviderSettings();
+  }
+
+  saveFlags(next: Record<string, boolean>) {
+    this.store.update((d) => {
+      d.flags = { ...d.flags, ...next };
+    });
+    return this.flags();
+  }
+
   async mentionIndex(workspaceId?: string) {
     if (!workspaceId) return { routes: [] as string[], models: [] as string[], pages: [] as string[] };
     return mentionIndexFromWorktree(this.requireWorkspace(workspaceId).worktree);
@@ -755,14 +994,20 @@ export class Platform {
     const ws = this.requireWorkspace(workspaceId);
     const publicUrl = this.publicPreviewUrl(ws.previewToken);
     const overlay = { ...PREVIEW_SIDE_EFFECTS, ...isolationEnv(workspaceId, publicUrl), APP_URL: publicUrl };
+    const example = readEnvFile(join(ws.worktree, ".env.example"));
+    const global = readGlobalEnv(this.envRoot());
+    const user = readUserEnv(ws.userId, this.envRoot());
     const current = readEnvFile(join(ws.worktree, ".env"));
-    const merged = { ...current, ...overlay };
-    const allowed = new Set([
-      ...spec.envContract.map((row) => row.key),
-      ...Object.keys(overlay),
-    ]);
-    const env = Object.fromEntries(Object.entries(merged).filter(([key]) => allowed.has(key)));
-    return { env: redactEnv(env), validation: validateEnvContract(spec, merged), spec };
+    const merged = { ...example, ...global, ...user, ...current, ...overlay };
+    const origins = Object.fromEntries(
+      Object.keys(merged).map((key) => [key, envKeyOrigin(key, { example, global, user, overlay })]),
+    );
+    return {
+      env: redactEnv(merged),
+      origins,
+      validation: validateEnvContract(spec, merged),
+      spec,
+    };
   }
 
   workspaceConnections(workspaceId: string) {
@@ -868,6 +1113,13 @@ export class Platform {
         project.body = body.slice(0, 8000);
       }
     });
+  }
+
+  private materializeRulesEverywhere(locale: "en" | "pt-BR", layers = this.getRules()) {
+    for (const ws of this.store.read().workspaces) {
+      if (ws.status === "destroyed" || !existsSync(ws.worktree)) continue;
+      this.materializeRules(ws.worktree, locale, layers);
+    }
   }
 
   private materializeRules(worktree: string, locale: "en" | "pt-BR", layers = this.getRules()) {
