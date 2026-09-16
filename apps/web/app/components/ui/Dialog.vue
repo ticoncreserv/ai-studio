@@ -7,11 +7,11 @@ defineEmits<{ close: [] }>();
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-start justify-center bg-ink-950/35 p-4 pt-[12vh] backdrop-blur-sm sm:p-8"
+      class="fixed inset-0 z-50 flex items-start justify-center bg-black/55 p-4 pt-[12vh] backdrop-blur-md sm:p-8"
       @click.self="$emit('close')"
     >
       <div
-        class="w-full overflow-hidden rounded-2xl border border-line bg-paper shadow-float"
+        class="glass-window w-full overflow-hidden"
         :class="wide ? 'max-w-2xl' : 'max-w-lg'"
       >
         <header class="flex items-center justify-between border-b border-line px-5 py-4">

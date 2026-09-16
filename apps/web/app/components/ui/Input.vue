@@ -16,8 +16,8 @@ defineEmits<{ "update:modelValue": [value: string] }>();
     :placeholder="placeholder"
     :class="
       cn(
-        'h-11 w-full rounded-2xl border border-line bg-white/80 px-3.5 text-sm text-ink-950 outline-none',
-        'shadow-inset placeholder:text-ink-300 focus:border-coral-400 focus:ring-4 focus:ring-coral-100',
+        'h-11 w-full rounded-[11px] border border-line bg-white/5 px-3.5 text-sm text-ink-950 outline-none',
+        'shadow-inset placeholder:text-ink-300 focus:border-coral-500/50 focus:ring-4 focus:ring-coral-500/15',
       )
     "
     @input="$emit('update:modelValue', ($event.target as HTMLInputElement).value)"

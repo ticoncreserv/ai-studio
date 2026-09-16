@@ -16,15 +16,15 @@ async function accept() {
 
 <template>
   <main class="mesh flex min-h-screen items-center justify-center px-6">
-    <div class="w-full max-w-md rounded-2xl border border-line bg-paper p-8 shadow-float">
+    <div class="glass-window w-full max-w-md p-8">
       <UiLogo />
-      <h1 class="mt-6 font-display text-4xl leading-tight">{{ t("invite.title") }}</h1>
+      <h1 class="font-display mt-6 text-4xl leading-tight">{{ t("invite.title") }}</h1>
       <p class="mt-3 text-sm leading-relaxed text-ink-500">{{ t("invite.created") }}</p>
       <p class="mt-2 text-[12px] text-ink-300">{{ t("invite.expires") }}</p>
       <UiButton class="mt-6" size="lg" @click="accept">{{ t("invite.accept") }}</UiButton>
-      <p v-if="result?.pending" class="mt-4 text-sm text-amber-800">{{ t("invite.pending") }}</p>
-      <p v-if="error" class="mt-4 text-sm text-red-500">{{ error }}</p>
-      <a class="mt-6 inline-block text-sm font-medium text-coral-600" href="https://github.com/ticoncreserv/app/settings/access" target="_blank">
+      <p v-if="result?.pending" class="mt-4 text-sm text-amber-200">{{ t("invite.pending") }}</p>
+      <p v-if="error" class="mt-4 text-sm text-red-400">{{ error }}</p>
+      <a class="mt-6 inline-block text-sm font-medium text-coral-400" href="https://github.com/ticoncreserv/app/settings/access" target="_blank">
         {{ t("invite.githubAccess") }}
       </a>
     </div>

@@ -63,9 +63,9 @@ function onOverlayClick(e: MouseEvent) {
 </script>
 
 <template>
-  <section class="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#e8dfd3]">
-    <div class="flex h-12 items-center gap-2 px-3">
-      <div class="flex rounded-full bg-white/80 p-1 shadow-inset">
+  <section class="relative flex min-h-0 min-w-0 flex-1 flex-col">
+    <div class="flex h-10 items-center gap-2 border-b border-line px-3">
+      <div class="flex rounded-[9px] bg-white/5 p-0.5">
         <UiIconButton :label="t('preview.mobile')" size="sm" :active="viewport === 'mobile'" @click="emit('update:viewport', 'mobile')">
           <Smartphone class="h-3.5 w-3.5" />
         </UiIconButton>
@@ -76,8 +76,8 @@ function onOverlayClick(e: MouseEvent) {
           <Monitor class="h-3.5 w-3.5" />
         </UiIconButton>
       </div>
-      <div class="hidden min-w-0 flex-1 items-center gap-2 rounded-full border border-white/70 bg-white/80 px-3 py-1.5 text-[12px] text-ink-500 sm:flex">
-        <span class="h-1.5 w-1.5 rounded-full" :class="status === 'running' ? 'bg-emerald-500' : 'bg-amber-400'" />
+      <div class="hidden min-w-0 flex-1 items-center gap-2 rounded-[9px] border border-line bg-black/30 px-3 py-1 text-[12px] text-ink-500 sm:flex">
+        <span class="h-1.5 w-1.5 rounded-full" :class="status === 'running' ? 'bg-emerald-400' : 'bg-amber-400'" />
         <span class="truncate font-mono text-[11px]" :title="t('preview.address')">{{ src || t("preview.home") }}</span>
       </div>
       <div class="ml-auto flex items-center gap-1">
@@ -95,19 +95,19 @@ function onOverlayClick(e: MouseEvent) {
       </div>
     </div>
 
-    <div class="preview-dots relative mx-3 mb-3 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-2xl border border-line/70">
+    <div class="preview-dots relative m-2 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[12px] border border-line">
       <div
         v-if="status === 'running'"
         class="relative overflow-hidden bg-white shadow-float"
-        :class="viewport === 'desktop' ? 'h-full w-full rounded-xl' : 'rounded-[28px] border-[10px] border-ink-950'"
+        :class="viewport === 'desktop' ? 'h-full w-full rounded-[10px]' : 'rounded-[28px] border-[8px] border-black'"
         :style="frame"
       >
-        <div v-if="viewport !== 'desktop'" class="absolute left-1/2 top-2 z-10 h-3 w-16 -translate-x-1/2 rounded-full bg-ink-800/80" />
+        <div v-if="viewport !== 'desktop'" class="absolute left-1/2 top-2 z-10 h-3 w-16 -translate-x-1/2 rounded-full bg-black/70" />
         <iframe :key="previewKey" :src="src" :title="t('preview.title')" class="h-full w-full bg-white" />
         <button
           v-if="toolMode !== 'select'"
           type="button"
-          class="absolute inset-0 z-10 cursor-crosshair bg-coral-500/5"
+          class="absolute inset-0 z-10 cursor-crosshair bg-coral-500/10"
           :aria-label="t('preview.inspectHint')"
           @click="onOverlayClick"
         />
@@ -120,7 +120,7 @@ function onOverlayClick(e: MouseEvent) {
         <UiButton class="mt-4" size="sm" @click="emit('resume')">{{ t("workspace.resume") }}</UiButton>
       </div>
 
-      <div class="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/70 bg-white/90 p-1 shadow-float backdrop-blur">
+      <div class="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[11px] border border-line bg-black/45 p-1 shadow-float backdrop-blur-xl">
         <UiIconButton :label="t('preview.select')" size="sm" :active="toolMode === 'select'" @click="emit('update:toolMode', 'select')">
           <MousePointer2 class="h-3.5 w-3.5" />
         </UiIconButton>
@@ -134,19 +134,19 @@ function onOverlayClick(e: MouseEvent) {
 
       <button
         type="button"
-        class="absolute right-4 top-4 z-20 rounded-full bg-white/90 px-3 py-1.5 text-[11px] font-medium text-ink-600 shadow-lift"
+        class="absolute right-4 top-4 z-20 rounded-[9px] border border-line bg-black/45 px-3 py-1.5 text-[11px] font-medium text-ink-800 backdrop-blur-xl"
         @click="emit('update:debugOpen', !debugOpen)"
       >
         {{ t("preview.debugTime", { ms: 42 }) }} · {{ t("preview.debugQueries", { count: 3 }) }}
       </button>
 
-      <div v-if="debugOpen" class="absolute right-4 top-14 z-20 w-64 rounded-2xl border border-line bg-paper p-3 shadow-float">
+      <div v-if="debugOpen" class="glass-window absolute right-4 top-14 z-20 w-64 p-3">
         <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("preview.debugTitle") }}</p>
         <ul class="mt-2 space-y-1 text-[12px] text-ink-600">
           <li>{{ t("preview.debugTime", { ms: 42 }) }}</li>
           <li>{{ t("preview.debugQueries", { count: 3 }) }}</li>
           <li>{{ t("preview.debugMemory", { mb: 28 }) }}</li>
-          <li class="text-amber-700">{{ t("preview.nPlusOne") }}</li>
+          <li class="text-amber-200">{{ t("preview.nPlusOne") }}</li>
         </ul>
         <UiButton class="mt-3 w-full" size="sm" @click="emit('fixDebug')">{{ t("preview.debugFix") }}</UiButton>
       </div>

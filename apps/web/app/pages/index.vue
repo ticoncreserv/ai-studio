@@ -54,17 +54,17 @@ const features = computed(() => [
 
 <template>
   <main class="mesh relative min-h-screen overflow-hidden">
-    <div class="grain pointer-events-none absolute inset-0 opacity-[0.06]" />
-    <header class="relative mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
+    <div class="grain pointer-events-none absolute inset-0 opacity-[0.09]" />
+    <header class="relative mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
       <div class="flex items-center gap-3">
-        <UiLogo :size="36" />
+        <UiLogo :size="30" />
         <div>
-          <p class="text-[15px] font-semibold tracking-tight">{{ t("app.name") }}</p>
-          <p class="hidden text-[11px] text-ink-400 sm:block">{{ t("app.product") }}</p>
+          <p class="text-[14px] font-semibold tracking-tight">{{ t("app.name") }}</p>
+          <p class="hidden text-[11px] text-ink-300 sm:block">{{ t("app.product") }}</p>
         </div>
       </div>
       <select
-        class="h-9 rounded-full border border-line bg-paper/80 px-3 text-xs font-medium text-ink-600 shadow-inset outline-none"
+        class="h-9 rounded-[9px] border border-line bg-white/5 px-3 text-xs font-medium text-ink-600 outline-none"
         :value="locale"
         @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
       >
@@ -73,10 +73,10 @@ const features = computed(() => [
       </select>
     </header>
 
-    <section class="relative mx-auto grid max-w-6xl items-start gap-10 px-6 pb-10 pt-4 lg:grid-cols-[1.15fr_0.85fr] lg:pt-10">
+    <section class="relative mx-auto grid max-w-6xl items-start gap-10 px-6 pb-10 pt-6 lg:grid-cols-[1.15fr_0.85fr] lg:pt-14">
       <div>
-        <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-coral-600">{{ t("app.product") }}</p>
-        <h1 class="font-display mt-4 max-w-xl text-5xl leading-[1.05] text-ink-950 sm:text-6xl">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-coral-400">{{ t("app.product") }}</p>
+        <h1 class="font-display mt-4 max-w-xl text-5xl leading-[1.02] text-ink-950 sm:text-6xl">
           {{ t("app.headline") }}
         </h1>
         <p class="mt-5 max-w-lg text-lg leading-relaxed text-ink-500">{{ t("app.lede") }}</p>
@@ -84,15 +84,15 @@ const features = computed(() => [
           <li
             v-for="feature in features"
             :key="feature.text"
-            class="flex items-center gap-2.5 rounded-2xl border border-line/80 bg-paper/60 px-3 py-2.5 text-[13px] text-ink-700"
+            class="flex items-center gap-2.5 rounded-[12px] border border-line bg-white/5 px-3 py-2.5 text-[13px] text-ink-800"
           >
-            <component :is="feature.icon" class="h-4 w-4 shrink-0 text-coral-500" />
+            <component :is="feature.icon" class="h-4 w-4 shrink-0 text-coral-400" />
             {{ feature.text }}
           </li>
         </ul>
       </div>
 
-      <div class="rounded-2xl border border-line bg-paper/90 p-7 shadow-float backdrop-blur">
+      <div class="glass-window p-7">
         <template v-if="!me">
           <h2 class="text-2xl font-semibold tracking-tight">{{ t("auth.title") }}</h2>
           <p class="mt-2 text-sm leading-relaxed text-ink-500">{{ t("auth.subtitle") }}</p>
@@ -101,15 +101,15 @@ const features = computed(() => [
               <span class="mb-1.5 block text-[13px] font-medium text-ink-600">{{ t("auth.loginLabel") }}</span>
               <UiInput v-model="login" :placeholder="t('auth.loginPlaceholder')" />
             </label>
-            <p v-if="error" class="text-sm text-red-500">{{ error }}</p>
+            <p v-if="error" class="text-sm text-red-400">{{ error }}</p>
             <UiButton class="w-full" size="lg" :disabled="loading" @click="signIn">
               {{ t("auth.dev") }}
               <ArrowRight class="h-4 w-4" />
             </UiButton>
             <div class="flex items-center gap-3 text-[11px] uppercase tracking-[0.16em] text-ink-300">
-              <span class="h-px flex-1 bg-line" />
+              <span class="h-px flex-1 bg-white/10" />
               {{ t("auth.or") }}
-              <span class="h-px flex-1 bg-line" />
+              <span class="h-px flex-1 bg-white/10" />
             </div>
             <a href="/api/auth/github" class="block">
               <UiButton class="w-full" variant="outline" size="lg" type="button">
@@ -129,7 +129,7 @@ const features = computed(() => [
             <ArrowRight class="h-4 w-4" />
           </UiButton>
           <ul v-if="me.sessions?.length" class="mt-5 space-y-1.5">
-            <li v-for="session in me.sessions" :key="session.id" class="rounded-xl bg-canvas/80 px-3 py-2 text-[13px] text-ink-600">
+            <li v-for="session in me.sessions" :key="session.id" class="rounded-[10px] bg-white/5 px-3 py-2 text-[13px] text-ink-600">
               {{ session.title || t("chat.untitled") }}
             </li>
           </ul>
@@ -138,29 +138,31 @@ const features = computed(() => [
     </section>
 
     <section class="relative mx-auto max-w-6xl px-6 pb-20">
-      <div class="overflow-hidden rounded-2xl border border-line bg-[#2a221c] p-3 shadow-float sm:p-4">
-        <div class="mb-3 flex items-center gap-2 px-2">
-          <span class="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-          <span class="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-          <span class="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-          <span class="ml-2 text-[11px] text-white/40">{{ t("workspace.project") }}</span>
+      <div class="glass-window overflow-hidden p-3 sm:p-4">
+        <div class="mb-3 flex items-center gap-2 px-1">
+          <span class="traffic" aria-hidden="true">
+            <span class="tl-close" />
+            <span class="tl-min" />
+            <span class="tl-max" />
+          </span>
+          <span class="text-[11px] text-ink-300">{{ t("workspace.project") }}</span>
         </div>
-        <div class="grid overflow-hidden rounded-xl bg-[#f6efe6] md:grid-cols-[0.9fr_1.2fr]">
+        <div class="grid overflow-hidden rounded-[12px] border border-line bg-black/30 md:grid-cols-[0.9fr_1.2fr]">
           <div class="border-b border-line p-4 md:border-b-0 md:border-r">
-            <div class="ml-8 rounded-2xl rounded-br-md bg-ink-950 px-3 py-2 text-[12px] text-white">
+            <div class="ml-8 rounded-[12px] bg-gradient-to-br from-coral-400 to-coral-600 px-3 py-2 text-[12px] text-[#061018]">
               {{ t("chat.suggestion1") }}
             </div>
-            <p class="mt-4 text-[12px] leading-relaxed text-ink-600">{{ t("app.tagline") }}</p>
-            <div class="mt-4 h-16 rounded-2xl border border-line bg-white" />
+            <p class="mt-4 text-[12px] leading-relaxed text-ink-500">{{ t("app.tagline") }}</p>
+            <div class="mt-4 h-14 rounded-[12px] border border-line bg-white/5" />
           </div>
           <div class="preview-dots flex min-h-[220px] items-center justify-center p-6">
-            <div class="w-full max-w-sm rounded-xl bg-white p-4 shadow-lift">
+            <div class="w-full max-w-sm rounded-[12px] border border-line bg-black/35 p-4">
               <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-300">{{ t("preview.home") }}</p>
               <p class="mt-2 text-lg font-semibold tracking-tight">Quotes</p>
               <div class="mt-3 space-y-2">
-                <div class="h-8 rounded-lg bg-ink-100" />
-                <div class="h-8 rounded-lg bg-ink-100" />
-                <div class="h-8 w-2/3 rounded-lg bg-ink-100" />
+                <div class="h-8 rounded-lg bg-white/5" />
+                <div class="h-8 rounded-lg bg-white/5" />
+                <div class="h-8 w-2/3 rounded-lg bg-white/5" />
               </div>
             </div>
           </div>

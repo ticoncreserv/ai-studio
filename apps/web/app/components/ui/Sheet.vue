@@ -5,10 +5,10 @@ defineEmits<{ close: [] }>();
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="fixed inset-0 z-40 bg-ink-950/25 backdrop-blur-[2px]" @click="$emit('close')" />
+    <div v-if="open" class="fixed inset-0 z-40 bg-black/55 backdrop-blur-md" @click="$emit('close')" />
     <aside
       v-if="open"
-      class="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-line bg-paper shadow-float"
+      class="glass-window fixed inset-y-3 right-3 z-50 flex w-full max-w-md flex-col overflow-hidden"
     >
       <header class="flex items-center justify-between border-b border-line px-5 py-4">
         <h2 class="text-[15px] font-semibold tracking-tight">{{ title }}</h2>

@@ -63,7 +63,7 @@ function submitQuestion() {
 
 <template>
   <div v-if="data.divergence.pendingInBranch.length || data.lock" class="pointer-events-none absolute inset-x-0 top-14 z-20 flex flex-col gap-2 px-4 pt-2">
-    <div v-if="data.divergence.pendingInBranch.length" class="pointer-events-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-950 shadow-lift">
+    <div v-if="data.divergence.pendingInBranch.length" class="pointer-events-auto rounded-[10px] border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-100 shadow-lift">
       <p class="font-semibold">{{ t("workspace.divergence") }}</p>
       <p>{{ t("workspace.pendingMigrations", { count: data.divergence.pendingInBranch.length }) }}</p>
     </div>
@@ -72,12 +72,12 @@ function submitQuestion() {
     </div>
   </div>
 
-  <div v-if="toast" class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink-950 px-4 py-2 text-[13px] font-medium text-white shadow-float">
+  <div v-if="toast" class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-[10px] border border-line bg-paper px-4 py-2 text-[13px] font-medium text-ink-950 shadow-float">
     {{ toast }}
   </div>
 
-  <div v-if="dialog === 'palette'" class="fixed inset-0 z-50 flex items-start justify-center bg-ink-950/30 p-8 backdrop-blur-sm" @click.self="emit('update:dialog', null)">
-    <div class="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-paper p-3 shadow-float">
+  <div v-if="dialog === 'palette'" class="fixed inset-0 z-50 flex items-start justify-center bg-black/45 p-8 backdrop-blur-md" @click.self="emit('update:dialog', null)">
+    <div class="glass-window w-full max-w-lg overflow-hidden p-3">
       <div class="flex items-center gap-2 px-2">
         <Command class="h-4 w-4 text-ink-300" />
         <input
@@ -111,7 +111,7 @@ function submitQuestion() {
       <p class="mb-1 text-[12px] text-ink-400">
         {{ layer.level === "platform" ? t("rules.platformHint") : layer.level === "project" ? t("rules.projectHint") : t("rules.userHint") }}
       </p>
-      <textarea v-model="layer.body" class="mt-1 h-28 w-full rounded-xl border border-line bg-white p-3 text-sm outline-none focus:border-coral-400" />
+      <textarea v-model="layer.body" class="mt-1 h-28 w-full rounded-[10px] border border-line bg-white/5 p-3 text-sm outline-none focus:border-coral-500/40" />
     </label>
     <template #footer>
       <UiButton class="w-full" @click="emit('saveRules')">{{ t("rules.save") }}</UiButton>
@@ -152,7 +152,7 @@ function submitQuestion() {
     <div class="flex items-center justify-between">
       <p class="text-sm font-medium">{{ t("settings.language") }}</p>
       <select
-        class="rounded-lg border border-line bg-white px-2 py-1 text-xs"
+        class="rounded-md border border-line bg-paper px-2 py-1 text-xs"
         :value="locale"
         @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
       >
@@ -230,7 +230,7 @@ function submitQuestion() {
           :key="option.id"
           type="button"
           class="rounded-full border px-3 py-1.5 text-[13px]"
-          :class="(questionAnswers[question.id] ?? []).includes(option.id) ? 'border-ink-950 bg-ink-950 text-white' : 'border-line bg-white'"
+          :class="(questionAnswers[question.id] ?? []).includes(option.id) ? 'border-coral-500 bg-coral-500 text-[#061018]' : 'border-line bg-white/5'"
           @click="toggleAnswer(question.id, option.id, question.allowMultiple)"
         >
           {{ option.label }}

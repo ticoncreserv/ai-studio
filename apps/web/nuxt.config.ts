@@ -50,7 +50,11 @@ export default defineNuxtConfig({
   app: {
     head: {
       title: "Atelier",
-      meta: [{ name: "viewport", content: "width=device-width, initial-scale=1" }],
+      meta: [
+        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { name: "theme-color", content: "#07080C" },
+        { name: "color-scheme", content: "dark" },
+      ],
     },
   },
 });

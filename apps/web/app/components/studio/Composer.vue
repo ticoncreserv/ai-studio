@@ -47,7 +47,7 @@ const modeHint = computed(() => {
 </script>
 
 <template>
-  <form class="relative border-t border-line/70 bg-paper p-3" @submit.prevent="emit('submit')">
+  <form class="relative border-t border-line p-3" @submit.prevent="emit('submit')">
     <div v-if="mentionsOpen" class="absolute inset-x-3 bottom-full z-10 mb-1 overflow-hidden rounded-xl border border-line bg-paper shadow-float">
       <p v-if="!mentionHits.length" class="px-3 py-2 text-[12px] text-ink-300">{{ t("chat.noMentions") }}</p>
       <button
@@ -62,7 +62,7 @@ const modeHint = computed(() => {
       </button>
     </div>
 
-    <div class="rounded-2xl border border-line bg-white p-2 shadow-lift">
+    <div class="rounded-[12px] border border-line bg-white/5 p-2 shadow-inset">
       <div v-if="attachments.length" class="mb-1 flex flex-wrap gap-1 px-2 pt-1">
         <span
           v-for="file in attachments"
@@ -93,7 +93,7 @@ const modeHint = computed(() => {
             <Paperclip class="h-4 w-4" />
           </UiIconButton>
           <select
-            class="h-8 max-w-[110px] rounded-full bg-ink-100 px-2 text-[11px] font-semibold text-ink-700 outline-none"
+            class="h-8 max-w-[110px] rounded-[8px] bg-white/5 px-2 text-[11px] font-semibold text-ink-800 outline-none"
             :value="mode"
             @change="emit('update:mode', ($event.target as HTMLSelectElement).value as AgentMode)"
           >
@@ -103,7 +103,7 @@ const modeHint = computed(() => {
           </select>
           <select
             v-if="recipesEnabled"
-            class="h-8 max-w-[140px] truncate rounded-full bg-ink-100 px-2 text-[11px] font-semibold text-ink-700 outline-none"
+            class="h-8 max-w-[140px] truncate rounded-[8px] bg-white/5 px-2 text-[11px] font-semibold text-ink-800 outline-none"
             :value="recipeId"
             @change="emit('update:recipeId', ($event.target as HTMLSelectElement).value)"
           >
@@ -118,7 +118,7 @@ const modeHint = computed(() => {
           <button
             type="submit"
             :disabled="spectator || sending"
-            class="flex h-9 w-9 items-center justify-center rounded-full bg-coral-500 text-white shadow-glow transition hover:bg-coral-400 disabled:opacity-40"
+            class="flex h-8 w-8 items-center justify-center rounded-[9px] bg-coral-500 text-[#061018] shadow-glow transition hover:bg-coral-400 disabled:opacity-40"
             :aria-label="t('chat.send')"
           >
             <ArrowUp class="h-4 w-4" />

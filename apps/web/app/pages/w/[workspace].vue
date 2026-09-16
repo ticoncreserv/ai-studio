@@ -65,7 +65,7 @@ function onFixDebug() {
 
 <template>
   <div v-if="loadError" class="mesh flex min-h-screen items-center justify-center px-6">
-    <div class="w-full max-w-md rounded-2xl border border-line bg-paper p-8 shadow-float">
+    <div class="glass-window w-full max-w-md p-8">
       <UiLogo />
       <h1 class="mt-6 font-display text-4xl">{{ t("workspace.loadError") }}</h1>
       <UiButton class="mt-6" @click="refresh">{{ t("workspace.retry") }}</UiButton>
@@ -79,7 +79,7 @@ function onFixDebug() {
     </div>
   </div>
 
-  <div v-else class="flex h-screen flex-col overflow-hidden bg-canvas">
+  <div v-else class="os-desktop flex h-screen flex-col overflow-hidden">
     <StudioHeader
       :project="t('workspace.project')"
       :branch="data.workspace.branch"
@@ -98,24 +98,26 @@ function onFixDebug() {
       @sign-out="signOut"
     />
 
-    <div class="flex min-h-0 flex-1">
-      <StudioSessionRail
-        :sessions="data.sessions"
-        :active-id="data.session?.id"
-        :query="query"
-        @update:query="query = $event"
-        @search="refresh"
-        @select="selectSession"
-        @create="newSession"
-      />
+    <div class="flex min-h-0 flex-1 gap-3 p-3">
+      <UiWindow :title="t('workspace.sessionsTitle')" class="hidden w-[228px] shrink-0 lg:flex">
+        <StudioSessionRail
+          :sessions="data.sessions"
+          :active-id="data.session?.id"
+          :query="query"
+          @update:query="query = $event"
+          @search="refresh"
+          @select="selectSession"
+          @create="newSession"
+        />
+      </UiWindow>
 
-      <div class="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-row">
-        <div
-          class="flex min-h-0 w-full flex-col lg:w-[420px] lg:shrink-0"
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3 lg:flex-row">
+        <UiWindow
+          :title="t('workspace.openChat')"
+          class="min-h-0 w-full lg:w-[440px] lg:shrink-0"
           :class="mobileTab === 'preview' ? 'hidden lg:flex' : 'flex'"
         >
           <StudioChatPane
-            class="lg:border-r lg:border-line/80"
             :events="events"
             :sending="sending"
             :spectator="spectator"
@@ -148,11 +150,14 @@ function onFixDebug() {
               @remove-attachment="attachments = attachments.filter((a) => a.path !== $event)"
             />
           </StudioChatPane>
-        </div>
+        </UiWindow>
 
-        <StudioPreviewPane
-          class="min-w-0"
+        <UiWindow
+          :title="t('preview.title')"
+          class="min-h-0 min-w-0 flex-1"
           :class="mobileTab === 'chat' ? 'hidden lg:flex' : 'flex'"
+        >
+        <StudioPreviewPane
           :src="previewSrc"
           :status="data.workspace.status"
           :viewport="viewport"
@@ -169,10 +174,11 @@ function onFixDebug() {
           @resume="resume"
           @fix-debug="onFixDebug"
         />
+        </UiWindow>
       </div>
     </div>
 
-    <nav class="grid grid-cols-2 border-t border-line bg-paper lg:hidden">
+    <nav class="grid grid-cols-2 border-t border-line bg-black/40 lg:hidden">
       <button type="button" class="py-3 text-[13px] font-semibold" :class="mobileTab === 'chat' ? 'text-ink-950' : 'text-ink-300'" @click="mobileTab = 'chat'">
         {{ t("workspace.openChat") }}
       </button>

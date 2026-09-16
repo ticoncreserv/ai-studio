@@ -4,12 +4,12 @@ const { t } = useI18n();
 
 <template>
   <main class="mesh flex min-h-screen items-center justify-center px-6">
-    <div class="w-full max-w-md rounded-2xl border border-line bg-paper p-8 shadow-float">
+    <div class="glass-window w-full max-w-md p-8">
       <UiLogo />
-      <h1 class="mt-6 font-display text-4xl leading-tight">{{ t("workspace.pendingAccess") }}</h1>
+      <h1 class="font-display mt-6 text-4xl leading-tight">{{ t("workspace.pendingAccess") }}</h1>
       <p class="mt-3 text-sm leading-relaxed text-ink-500">{{ t("invite.pending") }}</p>
       <a
-        class="mt-6 inline-flex h-11 items-center justify-center rounded-full bg-coral-500 px-5 text-sm font-medium text-white shadow-glow"
+        class="mt-6 inline-flex h-11 items-center justify-center rounded-[11px] bg-coral-500 px-5 text-sm font-medium text-[#061018] shadow-glow"
         href="https://github.com/ticoncreserv/app/settings/access"
         target="_blank"
       >

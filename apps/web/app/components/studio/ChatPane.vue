@@ -34,7 +34,7 @@ const suggestions = computed(() => [t("chat.suggestion1"), t("chat.suggestion2")
 </script>
 
 <template>
-  <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-paper">
+  <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-transparent">
     <div class="flex items-center gap-2 border-b border-line/70 px-3 py-2 lg:hidden">
       <div class="relative flex-1">
         <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-300" />
@@ -57,7 +57,7 @@ const suggestions = computed(() => [t("chat.suggestion1"), t("chat.suggestion2")
         v-if="spectatorEnabled"
         type="button"
         class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
-        :class="spectator ? 'bg-amber-50 text-amber-800' : 'bg-ink-100 text-ink-600'"
+        :class="spectator ? 'bg-amber-400/10 text-amber-200' : 'bg-white/5 text-ink-600'"
         @click="emit('toggle-spectator')"
       >
         <Eye class="h-3 w-3" />

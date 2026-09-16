@@ -18,10 +18,10 @@ const props = withDefaults(
     :title="label"
     :class="
       cn(
-        'inline-flex items-center justify-center rounded-full text-ink-600 transition duration-150',
-        'hover:bg-ink-100 hover:text-ink-950',
-        props.size === 'sm' ? 'h-8 w-8' : 'h-9 w-9',
-        props.active && 'bg-ink-950 text-white hover:bg-ink-800 hover:text-white',
+        'inline-flex items-center justify-center rounded-[9px] text-ink-500 transition duration-150',
+        'hover:bg-white/10 hover:text-ink-950',
+        props.size === 'sm' ? 'h-7 w-7' : 'h-8 w-8',
+        props.active && 'bg-white/15 text-ink-950 hover:bg-white/20 hover:text-ink-950',
       )
     "
   >

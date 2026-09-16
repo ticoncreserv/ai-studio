@@ -16,9 +16,14 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="flex h-screen flex-col bg-canvas">
-    <header class="flex h-14 items-center gap-3 border-b border-line bg-paper/80 px-5 backdrop-blur-xl">
-      <UiLogo :size="28" />
+  <main class="os-desktop flex h-screen flex-col">
+    <header class="menubar flex h-11 items-center gap-3 px-5">
+      <span class="traffic" aria-hidden="true">
+        <span class="tl-close" />
+        <span class="tl-min" />
+        <span class="tl-max" />
+      </span>
+      <UiLogo :size="22" />
       <div class="min-w-0 flex-1">
         <h1 class="text-sm font-semibold tracking-tight">{{ t("share.title") }}</h1>
         <p class="truncate text-[12px] text-ink-500">{{ t("share.hint") }}</p>
@@ -31,8 +36,10 @@ onMounted(async () => {
       </a>
     </header>
     <p v-if="expired" class="p-8 text-ink-500">{{ t("share.expired") }}</p>
-    <div v-else-if="data" class="preview-dots m-4 min-h-0 flex-1 overflow-hidden rounded-2xl border border-line p-2">
-      <iframe :src="data.previewPath" class="h-full w-full rounded-xl bg-white shadow-float" :title="t('preview.title')" />
+    <div v-else-if="data" class="m-3 min-h-0 flex-1">
+      <UiWindow :title="t('preview.title')" class="h-full">
+        <iframe :src="data.previewPath" class="h-full w-full bg-white" :title="t('preview.title')" />
+      </UiWindow>
     </div>
   </main>
 </template>
