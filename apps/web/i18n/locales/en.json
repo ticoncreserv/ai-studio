@@ -14,13 +14,14 @@
   },
   "auth": {
     "title": "Sign in to the studio",
-    "subtitle": "Sign in with GitHub. Access follows your permission on ticoncreserv/app.",
+    "subtitle": "Access follows your permission on ticoncreserv/app.",
     "github": "Continue with GitHub",
     "localeLabel": "Interface language",
     "english": "English",
     "portuguese": "Português (Brasil)",
-    "error": "Sign-in failed. Try again.",
-    "welcomeBack": "Welcome back"
+    "error": "GitHub sign-in failed. Try again.",
+    "welcomeBack": "Welcome back",
+    "sessionReady": "Your workspace is ready."
   },
   "setup": {
     "github": {
