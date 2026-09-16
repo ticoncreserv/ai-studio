@@ -266,6 +266,14 @@ const showIdlePanel = computed(() => !showIframe.value && !waiting.value);
           <Plus class="h-3.5 w-3.5" />
         </UiIconButton>
       </a>
+      <div class="ml-2 hidden min-w-0 items-center gap-1.5 md:flex">
+        <span v-if="viewport !== 'desktop'" class="cx-pill font-mono">
+          {{ rotated ? sizes[viewport].h : sizes[viewport].w }}×{{ rotated ? sizes[viewport].w : sizes[viewport].h }}
+        </span>
+        <span v-if="debugSummary" class="cx-pill min-w-0" :title="t('preview.debugTitle')">
+          <span class="truncate">{{ debugSummary }}</span>
+        </span>
+      </div>
       <div class="ml-auto flex shrink-0 items-center gap-0.5">
         <a :href="src" target="_blank" rel="noreferrer" class="inline-flex">
           <UiIconButton :label="t('preview.openWindow')" size="sm">
@@ -289,39 +297,46 @@ const showIdlePanel = computed(() => !showIframe.value && !waiting.value);
         <RefreshCw class="h-3.5 w-3.5" :class="waiting ? 'atelier-spin-icon' : undefined" />
       </UiIconButton>
       <span class="mx-1 h-1.5 w-1.5 shrink-0 rounded-full" :class="liveDot" :title="waiting ? waitTitle : status" />
-      <input
-        v-model="address"
-        class="cx-address font-mono"
-        spellcheck="false"
-        :placeholder="t('preview.address')"
-        :aria-label="t('preview.address')"
-        @focus="addressFocused = true"
-        @blur="addressFocused = false; syncAddress()"
-        @keydown.enter.prevent="navigate"
-      />
+      <div class="hidden min-w-0 flex-1 sm:flex">
+        <input
+          v-model="address"
+          class="cx-address w-full font-mono"
+          spellcheck="false"
+          :placeholder="t('preview.address')"
+          :aria-label="t('preview.address')"
+          @focus="addressFocused = true"
+          @blur="addressFocused = false; syncAddress()"
+          @keydown.enter.prevent="navigate"
+        />
+      </div>
+      <span class="flex-1 sm:hidden" />
       <div class="ml-1 flex shrink-0 items-center gap-0.5">
-        <UiIconButton :label="t('preview.select')" size="sm" :active="toolMode === 'select'" @click="emit('update:toolMode', 'select')">
-          <MousePointer2 class="h-3.5 w-3.5" />
-        </UiIconButton>
-        <UiIconButton :label="t('preview.annotate')" size="sm" :active="toolMode === 'annotate'" @click="emit('update:toolMode', 'annotate')">
-          <Pencil class="h-3.5 w-3.5" />
-        </UiIconButton>
-        <UiIconButton :label="t('preview.comment')" size="sm" :active="toolMode === 'comment'" @click="emit('update:toolMode', 'comment')">
-          <MessageCircle class="h-3.5 w-3.5" />
-        </UiIconButton>
-        <span class="mx-0.5 hidden h-3.5 w-px bg-white/10 sm:block" />
-        <UiIconButton :label="t('preview.mobile')" size="sm" :active="viewport === 'mobile'" @click="emit('update:viewport', 'mobile')">
-          <Smartphone class="h-3.5 w-3.5" />
-        </UiIconButton>
-        <UiIconButton :label="t('preview.tablet')" size="sm" :active="viewport === 'tablet'" @click="emit('update:viewport', 'tablet')">
-          <Tablet class="h-3.5 w-3.5" />
-        </UiIconButton>
-        <UiIconButton :label="t('preview.desktop')" size="sm" :active="viewport === 'desktop'" @click="emit('update:viewport', 'desktop')">
-          <Monitor class="h-3.5 w-3.5" />
-        </UiIconButton>
-        <UiIconButton v-if="viewport !== 'desktop'" :label="t('preview.rotate')" size="sm" :active="rotated" @click="emit('update:rotated', !rotated)">
-          <RotateCw class="h-3.5 w-3.5" />
-        </UiIconButton>
+        <div class="flex items-center gap-0.5">
+          <UiIconButton :label="t('preview.select')" size="sm" :active="toolMode === 'select'" @click="emit('update:toolMode', 'select')">
+            <MousePointer2 class="h-3.5 w-3.5" />
+          </UiIconButton>
+          <UiIconButton :label="t('preview.annotate')" size="sm" :active="toolMode === 'annotate'" @click="emit('update:toolMode', 'annotate')">
+            <Pencil class="h-3.5 w-3.5" />
+          </UiIconButton>
+          <UiIconButton :label="t('preview.comment')" size="sm" :active="toolMode === 'comment'" @click="emit('update:toolMode', 'comment')">
+            <MessageCircle class="h-3.5 w-3.5" />
+          </UiIconButton>
+          <span class="mx-0.5 h-3.5 w-px bg-white/10" />
+        </div>
+        <div class="flex items-center gap-0.5">
+          <UiIconButton :label="t('preview.mobile')" size="sm" :active="viewport === 'mobile'" @click="emit('update:viewport', 'mobile')">
+            <Smartphone class="h-3.5 w-3.5" />
+          </UiIconButton>
+          <UiIconButton :label="t('preview.tablet')" size="sm" :active="viewport === 'tablet'" @click="emit('update:viewport', 'tablet')">
+            <Tablet class="h-3.5 w-3.5" />
+          </UiIconButton>
+          <UiIconButton :label="t('preview.desktop')" size="sm" :active="viewport === 'desktop'" @click="emit('update:viewport', 'desktop')">
+            <Monitor class="h-3.5 w-3.5" />
+          </UiIconButton>
+          <UiIconButton v-if="viewport !== 'desktop'" :label="t('preview.rotate')" size="sm" :active="rotated" @click="emit('update:rotated', !rotated)">
+            <RotateCw class="h-3.5 w-3.5" />
+          </UiIconButton>
+        </div>
         <UiIconButton :label="t('preview.debugTitle')" size="sm" :active="debugOpen" @click="emit('update:debugOpen', !debugOpen)">
           <Terminal class="h-3.5 w-3.5" />
         </UiIconButton>
@@ -393,9 +408,5 @@ const showIdlePanel = computed(() => !showIframe.value && !waiting.value);
       </div>
     </div>
 
-    <div class="cx-footer shrink-0 border-t border-line">
-      <span class="truncate">{{ waiting ? waitTitle : debugSummary || t("preview.title") }}</span>
-      <span class="ml-auto shrink-0 font-mono">{{ viewport === "desktop" ? t("preview.desktop") : `${rotated ? sizes[viewport].h : sizes[viewport].w}×${rotated ? sizes[viewport].w : sizes[viewport].h}` }}</span>
-    </div>
   </section>
 </template>
