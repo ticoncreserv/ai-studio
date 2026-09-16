@@ -22,7 +22,7 @@ pnpm install
 pnpm dev
 ```
 
-The web app listens on [http://127.0.0.1:43123](http://127.0.0.1:43123). Sign in with a local GitHub handle, open a workspace, and send a prompt. The mock agent proposes an Inertia quotes page; accept a hunk to write it into the worktree.
+The web app listens on [http://127.0.0.1:43123](http://127.0.0.1:43123). `pnpm dev` also answers on `http://localhost` (port 80) and `http://localhost:8080` and forwards those requests to the studio, so GitHub callbacks that omit the port do not 404. Sign in with a local GitHub handle, open a workspace, and send a prompt. The mock agent proposes an Inertia quotes page; accept a hunk to write it into the worktree.
 
 The studio exposes the product surfaces from the plan: session rail and search, agent/plan/ask modes, recipes, attachments, @-mentions, hunk/file review, plan/question/permission cards, rules editor, homologation connection catalog, schema-divergence banner, spectator mode, share/invite dialogs, feature flags, disk quota, and a three-viewport preview with inspect notes and a diagnostics overlay.
 
@@ -42,8 +42,8 @@ You need to be an owner of the `ticoncreserv` organization. The studio can creat
 
 1. Open [http://127.0.0.1:43123/setup/github](http://127.0.0.1:43123/setup/github) while the studio is running.
 2. Click **Create GitHub App on ticoncreserv**. GitHub shows the pre-filled manifest (homepage, callback, permissions).
-3. Confirm the app. GitHub redirects the **browser** to `{origin}/api/setup/github/callback`. If that URL is `http://localhost` without a port, it is your machine, not the studio (the studio listens on `127.0.0.1:43123`). Paste the `code` query from that address into `/setup/github`. Atelier stores `client_id`, `client_secret`, App ID, private key, and webhook secret in `var/github-app.json` (gitignored) and loads them into the current process.
-4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`. After install GitHub redirects to the **Callback URL**. If that URL is `http://localhost:` without `43123`, add the port or paste the `code` on `/setup/github`. In the GitHub App settings, set both `http://127.0.0.1:43123/api/auth/github/callback` and `http://localhost:43123/api/auth/github/callback`.
+3. Confirm the app. GitHub redirects the **browser** to `{origin}/api/setup/github/callback`. The studio answers that path on `127.0.0.1:43123`, `localhost:43123`, `localhost:8080`, and `http://localhost` (port 80). If a leftover GitHub URL still 404s, paste the `code` query into `/setup/github`. Atelier stores `client_id`, `client_secret`, App ID, private key, and webhook secret in `var/github-app.json` (gitignored) and loads them into the current process.
+4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`. After install or sign-in GitHub redirects to the **Callback URL**. The authorize flow uses `http://localhost/api/auth/github/callback` (the URL already stored on the existing app) and the loopback proxy forwards it to `:43123`. Also register these Callback URLs on the GitHub App: `http://127.0.0.1:43123/api/auth/github/callback`, `http://localhost:43123/api/auth/github/callback`, and `http://localhost/api/auth/github/callback`. Alias paths `/auth/github/callback` and `/github/callback` work on the same origins.
 5. Copy the values into `.env` if you want them to survive a restart or another host (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`).
 
 Manual path: GitHub → Organization settings → Developer settings → GitHub Apps → New GitHub App.
@@ -51,7 +51,7 @@ Manual path: GitHub → Organization settings → Developer settings → GitHub 
 | Field | Value |
 | --- | --- |
 | Homepage URL | `http://127.0.0.1:43123` (or `ATELIER_PUBLIC_URL`) |
-| Callback URL | `{origin}/api/auth/github/callback` |
+| Callback URL | `http://localhost/api/auth/github/callback`, `http://127.0.0.1:43123/api/auth/github/callback`, `http://localhost:43123/api/auth/github/callback` |
 | Setup URL | `{origin}/setup/github` |
 | Permissions | `contents` read/write, `metadata` read, `pull requests` read/write, `email addresses` read |
 | Webhook URL | `{origin}/api/webhooks/github` (inactive until the URL is public) |

@@ -12,6 +12,8 @@ const { data: setup, error: loadError } = await useAsyncData("github-setup", () 
     manifest: Record<string, unknown> | null;
     installUrl: string;
     storePath: string;
+    listenOrigins?: string[];
+    accessedPaths?: string[];
     callbackUrls?: string[];
     webhook?: { url: string; settingsUrl: string; hasSecret: boolean; secret: string | null };
   }>("/api/setup/github"),
@@ -121,7 +123,17 @@ onMounted(async () => {
             </a>
             <p class="text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.installHint") }}</p>
             <div class="rounded-[10px] border border-line bg-white/5 p-3">
-              <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("setup.github.callbackUrlsTitle") }}</p>
+              <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("setup.github.accessedUrlsTitle") }}</p>
+              <p class="mt-2 text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.accessedUrlsHint") }}</p>
+              <p class="mt-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("setup.github.listenOriginsTitle") }}</p>
+              <ul class="mt-2 space-y-1 font-mono text-[11px] text-ink-800">
+                <li v-for="url in setup.listenOrigins" :key="url">{{ url }}</li>
+              </ul>
+              <p class="mt-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("setup.github.accessedPathsTitle") }}</p>
+              <ul class="mt-2 space-y-1 font-mono text-[11px] text-ink-800">
+                <li v-for="path in setup.accessedPaths" :key="path">{{ path }}</li>
+              </ul>
+              <p class="mt-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("setup.github.callbackUrlsTitle") }}</p>
               <p class="mt-2 text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.callbackUrlsHint") }}</p>
               <ul class="mt-2 space-y-1 font-mono text-[11px] text-ink-800">
                 <li v-for="url in setup.callbackUrls" :key="url">{{ url }}</li>

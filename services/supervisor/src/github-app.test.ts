@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,11 +7,16 @@ import {
   applyGitHubAppCredentials,
   atelierPublicUrl,
   credentialsFromManifestResponse,
+  githubAppAuthorizeRedirectUri,
   githubAppCreateAction,
   githubAppInstallUrl,
+  githubAppRegisteredCallbackUrls,
+  githubOAuthRedirectCandidates,
+  oauthRedirectUriForIncomingHost,
   ensureGitHubWebhookSecret,
   githubAppManifest,
   redeemGitHubAppCode,
+  syncGitHubAppPublicUrls,
   verifyGitHubWebhookSignature,
   saveGitHubAppCredentials,
   loadGitHubAppCredentials,
@@ -36,8 +41,11 @@ describe("github app manifest", () => {
       expect.arrayContaining([
         "http://127.0.0.1:43123/api/auth/github/callback",
         "http://localhost:43123/api/auth/github/callback",
+        "http://localhost/api/auth/github/callback",
+        "http://127.0.0.1/api/auth/github/callback",
       ]),
     );
+    expect(manifest.callback_urls.length).toBeLessThanOrEqual(10);
     expect(manifest.redirect_url).toBe("http://127.0.0.1:43123/api/setup/github/callback");
     expect(manifest.public).toBe(false);
     expect(manifest.request_oauth_on_install).toBe(true);
@@ -88,6 +96,32 @@ describe("github app manifest", () => {
     expect(atelierPublicUrl("preview.example", "https")).toBe("https://preview.example");
   });
 
+  it("keeps the portless localhost callback GitHub already stored", () => {
+    expect(githubAppAuthorizeRedirectUri("http://127.0.0.1:43123")).toBe(
+      "http://localhost/api/auth/github/callback",
+    );
+    expect(githubAppAuthorizeRedirectUri("https://atelier.example")).toBe(
+      "https://atelier.example/api/auth/github/callback",
+    );
+    expect(oauthRedirectUriForIncomingHost("localhost")).toBe("http://localhost/api/auth/github/callback");
+    expect(oauthRedirectUriForIncomingHost("localhost:")).toBe("http://localhost/api/auth/github/callback");
+    expect(oauthRedirectUriForIncomingHost("localhost:80")).toBe("http://localhost/api/auth/github/callback");
+    expect(oauthRedirectUriForIncomingHost("127.0.0.1:43123")).toBe(
+      "http://127.0.0.1:43123/api/auth/github/callback",
+    );
+    expect(githubAppRegisteredCallbackUrls()).toEqual(
+      expect.arrayContaining([
+        "http://localhost/api/auth/github/callback",
+        "http://127.0.0.1:43123/api/auth/github/callback",
+      ]),
+    );
+    expect(githubOAuthRedirectCandidates("http://127.0.0.1:43123/api/auth/github/callback")[0]).toBe(
+      "http://127.0.0.1:43123/api/auth/github/callback",
+    );
+    expect(githubOAuthRedirectCandidates()).toContain("http://localhost/api/auth/github/callback");
+    expect(githubOAuthRedirectCandidates()).toContain("http://localhost:/api/auth/github/callback");
+  });
+
   it("maps the manifest conversion payload and persists it", () => {
     const creds = credentialsFromManifestResponse({
       id: 99,
@@ -135,5 +169,39 @@ describe("github app manifest", () => {
     );
     expect(result.reused).toBe(true);
     expect(result.creds.clientId).toBe("Iv1.keep");
+  });
+
+  it("PATCHes the GitHub App with every loopback callback", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-gh-"));
+    const path = join(dir, "github-app.json");
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    saveGitHubAppCredentials(
+      {
+        appId: "4965566",
+        clientId: "Iv1.keep",
+        clientSecret: "keep",
+        privateKey,
+        webhookSecret: "hook",
+        slug: "atelier-keep",
+      },
+      path,
+    );
+    const seen: { url: string; body: Record<string, unknown> }[] = [];
+    const ok = await syncGitHubAppPublicUrls(loadGitHubAppCredentials(path), async (url, init) => {
+      seen.push({ url: String(url), body: JSON.parse(String(init?.body ?? "{}")) });
+      return new Response("{}", { status: 200 });
+    });
+    expect(ok).toBe(true);
+    expect(seen[0]?.url).toBe("https://api.github.com/app");
+    expect(seen[0]?.body.callback_urls).toEqual(
+      expect.arrayContaining([
+        "http://localhost/api/auth/github/callback",
+        "http://127.0.0.1:43123/api/auth/github/callback",
+      ]),
+    );
   });
 });

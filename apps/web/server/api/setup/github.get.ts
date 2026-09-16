@@ -1,21 +1,24 @@
 import {
+  GITHUB_ACCESSED_PATHS,
   canSetupGitHubApp,
   githubAppCreateAction,
   ensureGitHubWebhookSecret,
   githubAppInstallUrl,
   githubAppManifest,
-  githubAppOAuthCallbackUrls,
+  githubAppRegisteredCallbackUrls,
   githubAppOrg,
   githubAppRepo,
   githubAppWebhookSettingsUrl,
+  githubLoopbackOrigins,
   hasGitHubOAuth,
   loadGitHubAppCredentials,
   saveGitHubAppSetupState,
+  syncGitHubAppPublicUrls,
 } from "@atelier/supervisor";
 import { randomBytes } from "node:crypto";
 import { requestPublicUrl } from "../../utils/public-url";
 
-export default defineEventHandler((event) => {
+export default defineEventHandler(async (event) => {
   const configured = hasGitHubOAuth();
   const canCreate = canSetupGitHubApp() && !configured;
   const creds = loadGitHubAppCredentials();
@@ -30,6 +33,8 @@ export default defineEventHandler((event) => {
       path: "/",
     });
   }
+  if (configured) await syncGitHubAppPublicUrls().catch(() => false);
+  const listenOrigins = [...new Set([publicUrl, ...githubLoopbackOrigins()])];
   return {
     configured,
     canCreate,
@@ -40,7 +45,9 @@ export default defineEventHandler((event) => {
     manifest: canCreate ? githubAppManifest(publicUrl) : null,
     installUrl: creds ? githubAppInstallUrl(creds) : `https://github.com/${githubAppRepo()}/settings/installations`,
     storePath: "var/github-app.json",
-    callbackUrls: githubAppOAuthCallbackUrls(publicUrl),
+    listenOrigins,
+    accessedPaths: [...GITHUB_ACCESSED_PATHS],
+    callbackUrls: githubAppRegisteredCallbackUrls(publicUrl),
     webhook: {
       url: `${publicUrl}/api/webhooks/github`,
       settingsUrl: githubAppWebhookSettingsUrl(creds),

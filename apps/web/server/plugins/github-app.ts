@@ -1,5 +1,6 @@
-import { applyStoredGitHubAppCredentials } from "@atelier/supervisor";
+import { applyStoredGitHubAppCredentials, syncGitHubAppPublicUrls } from "@atelier/supervisor";
 
 export default defineNitroPlugin(() => {
   applyStoredGitHubAppCredentials();
+  void syncGitHubAppPublicUrls();
 });

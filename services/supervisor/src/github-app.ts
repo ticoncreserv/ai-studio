@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { appJwt } from "./github.js";
 import { repoRoot } from "./paths.js";
 
 export interface GitHubAppCredentials {
@@ -54,9 +55,45 @@ export function githubAppRepo(): string {
   return process.env.ATELIER_REPO ?? "ticoncreserv/app";
 }
 
+export const GITHUB_OAUTH_CALLBACK_PATH = "/api/auth/github/callback";
+export const GITHUB_SETUP_CALLBACK_PATH = "/api/setup/github/callback";
+export const GITHUB_WEBHOOK_PATH = "/api/webhooks/github";
+export const GITHUB_SETUP_PATH = "/setup/github";
+export const GITHUB_OAUTH_START_PATH = "/api/auth/github";
+
+export const GITHUB_OAUTH_CALLBACK_ALIASES = [
+  GITHUB_OAUTH_CALLBACK_PATH,
+  "/auth/github/callback",
+  "/api/github/callback",
+  "/github/callback",
+] as const;
+
+export const GITHUB_SETUP_CALLBACK_ALIASES = [
+  GITHUB_SETUP_CALLBACK_PATH,
+  "/setup/github/callback",
+] as const;
+
+export const GITHUB_ACCESSED_PATHS = [
+  ...GITHUB_OAUTH_CALLBACK_ALIASES,
+  ...GITHUB_SETUP_CALLBACK_ALIASES,
+  GITHUB_SETUP_PATH,
+  GITHUB_OAUTH_START_PATH,
+  "/auth/github",
+  GITHUB_WEBHOOK_PATH,
+  "/webhooks/github",
+] as const;
+
 export function atelierListenPort(): number {
   const n = Number(process.env.NUXT_PORT || process.env.PORT || "43123");
   return Number.isFinite(n) && n > 0 ? n : 43123;
+}
+
+export function githubLoopbackListenPorts(): number[] {
+  const extra = (process.env.ATELIER_LOOPBACK_PORTS || "80,8080")
+    .split(",")
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return [...new Set([atelierListenPort(), ...extra])];
 }
 
 function splitHost(host: string): { name: string; port: string } {
@@ -143,18 +180,144 @@ export function hasGitHubOAuth(): boolean {
   return Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 }
 
-export function githubAppOAuthCallbackUrls(origin: string): string[] {
-  const port = String(atelierListenPort());
-  const path = "/api/auth/github/callback";
-  const urls = new Set<string>([`${origin.replace(/\/$/, "")}${path}`]);
-  urls.add(`http://127.0.0.1:${port}${path}`);
-  urls.add(`http://localhost:${port}${path}`);
+export function githubLoopbackHosts(): string[] {
+  return ["127.0.0.1", "localhost", "[::1]"];
+}
+
+export function originWithPort(host: string, port: number): string {
+  if (port === 80) return `http://${host}`;
+  if (port === 443) return `https://${host}`;
+  return `http://${host}:${port}`;
+}
+
+export function githubLoopbackOrigins(ports = githubLoopbackListenPorts()): string[] {
+  const origins = new Set<string>();
+  for (const host of githubLoopbackHosts()) {
+    for (const port of ports) origins.add(originWithPort(host, port));
+  }
+  return [...origins];
+}
+
+export function githubAppRegisteredCallbackUrls(origin?: string): string[] {
+  const path = GITHUB_OAUTH_CALLBACK_PATH;
+  const port = atelierListenPort();
+  const ordered = [
+    `http://127.0.0.1:${port}${path}`,
+    `http://localhost:${port}${path}`,
+    `http://localhost${path}`,
+    `http://127.0.0.1${path}`,
+    `http://[::1]:${port}${path}`,
+    origin ? `${origin.replace(/\/$/, "")}${path}` : "",
+    `http://localhost:8080${path}`,
+    `http://127.0.0.1:8080${path}`,
+  ].filter(Boolean);
+  return [...new Set(ordered)].slice(0, 10);
+}
+
+export function githubAppOAuthCallbackUrls(origin?: string): string[] {
+  const urls = new Set<string>(githubAppRegisteredCallbackUrls(origin));
+  const origins = new Set<string>(githubLoopbackOrigins());
+  if (origin) origins.add(origin.replace(/\/$/, ""));
+  for (const next of origins) {
+    for (const path of GITHUB_OAUTH_CALLBACK_ALIASES) urls.add(`${next}${path}`);
+  }
+  urls.add(`http://localhost:${GITHUB_OAUTH_CALLBACK_PATH}`);
+  urls.add(`http://127.0.0.1:${GITHUB_OAUTH_CALLBACK_PATH}`);
+  return [...urls];
+}
+
+export function githubAppAccessedUrls(origin?: string): string[] {
+  const origins = new Set<string>(githubLoopbackOrigins());
+  if (origin) origins.add(origin.replace(/\/$/, ""));
+  const urls = new Set<string>();
+  for (const next of origins) {
+    for (const path of GITHUB_ACCESSED_PATHS) urls.add(`${next}${path}`);
+  }
   return [...urls];
 }
 
 export function preferredOAuthRedirectUri(origin?: string): string {
-  const urls = githubAppOAuthCallbackUrls(origin || `http://127.0.0.1:${atelierListenPort()}`);
-  return urls.find((url) => url.includes("127.0.0.1")) ?? urls[0];
+  const urls = githubAppRegisteredCallbackUrls(origin || `http://127.0.0.1:${atelierListenPort()}`);
+  return urls.find((url) => url.includes("127.0.0.1:") && !url.includes("127.0.0.1:/")) ?? urls[0];
+}
+
+export function githubAppAuthorizeRedirectUri(origin?: string): string {
+  if (origin) {
+    try {
+      const url = new URL(origin);
+      if (!isLoopback(url.hostname.replace(/^\[|\]$/g, ""))) {
+        return `${origin.replace(/\/$/, "")}${GITHUB_OAUTH_CALLBACK_PATH}`;
+      }
+    } catch {
+      // Use the loopback callback GitHub already stored.
+    }
+  }
+  return `http://localhost${GITHUB_OAUTH_CALLBACK_PATH}`;
+}
+
+export function oauthRedirectUriForIncomingHost(host?: string, proto?: string, forwardedPort?: string): string {
+  if (host) {
+    const { name, port } = splitHost(host);
+    if (isLoopback(name) && isBrowserDefaultPort(port) && isBrowserDefaultPort(forwardedPort)) {
+      const hostname = name === "::1" ? "[::1]" : name;
+      return `http://${hostname}${GITHUB_OAUTH_CALLBACK_PATH}`;
+    }
+  }
+  return `${atelierPublicUrl(host, proto, forwardedPort)}${GITHUB_OAUTH_CALLBACK_PATH}`;
+}
+
+export function githubOAuthRedirectCandidates(preferred?: string): string[] {
+  const port = String(atelierListenPort());
+  const extras = [
+    preferred,
+    `http://localhost${GITHUB_OAUTH_CALLBACK_PATH}`,
+    `http://localhost:${GITHUB_OAUTH_CALLBACK_PATH}`,
+    `http://127.0.0.1:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
+    `http://localhost:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
+    `http://127.0.0.1${GITHUB_OAUTH_CALLBACK_PATH}`,
+    `http://127.0.0.1:${GITHUB_OAUTH_CALLBACK_PATH}`,
+    `http://[::1]:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
+    ...githubAppOAuthCallbackUrls(),
+  ];
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const url of extras) {
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    urls.push(url);
+  }
+  return urls;
+}
+
+export async function syncGitHubAppPublicUrls(
+  creds = loadGitHubAppCredentials(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  if (!creds?.appId || !creds.privateKey) return false;
+  const origin = `http://127.0.0.1:${atelierListenPort()}`;
+  const body = {
+    url: origin,
+    setup_url: `${origin}${GITHUB_SETUP_PATH}`,
+    callback_urls: githubAppRegisteredCallbackUrls(origin),
+    hook_attributes: { url: `${origin}${GITHUB_WEBHOOK_PATH}` },
+  };
+  try {
+    const jwt = appJwt(creds.appId, creds.privateKey);
+    const res = await fetchImpl("https://api.github.com/app", {
+      method: "PATCH",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${jwt}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "atelier",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function saveGitHubInstallationId(installationId: string, path = githubAppStorePath()): void {
@@ -170,10 +333,10 @@ export function githubAppManifest(publicUrl: string): GitHubAppManifest {
     name: "Atelier",
     url: origin,
     description: "Self-hosted studio for assisted creation on ticoncreserv/app.",
-    redirect_url: `${origin}/api/setup/github/callback`,
-    callback_urls: githubAppOAuthCallbackUrls(origin),
-    setup_url: `${origin}/setup/github`,
-    hook_attributes: { url: `${origin}/api/webhooks/github`, active: false },
+    redirect_url: `${origin}${GITHUB_SETUP_CALLBACK_PATH}`,
+    callback_urls: githubAppRegisteredCallbackUrls(origin),
+    setup_url: `${origin}${GITHUB_SETUP_PATH}`,
+    hook_attributes: { url: `${origin}${GITHUB_WEBHOOK_PATH}`, active: false },
     public: false,
     request_oauth_on_install: true,
     default_permissions: {

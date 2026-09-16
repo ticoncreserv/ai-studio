@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { mapGitHubPermission } from "@atelier/domain";
 import type { Role } from "@atelier/contracts";
-import { hasGitHubOAuth } from "./github-app.js";
+import { githubOAuthRedirectCandidates, hasGitHubOAuth } from "./github-app.js";
 
 export interface AuthIdentity {
   login: string;
@@ -110,15 +110,7 @@ export class GitHubAuthProvider implements AuthProvider {
   }
 
   private async exchangeCode(code: string, redirectUri?: string): Promise<string> {
-    const port = process.env.NUXT_PORT || process.env.PORT || "43123";
-    const attempts = [
-      redirectUri,
-      `http://127.0.0.1:${port}/api/auth/github/callback`,
-      `http://localhost:${port}/api/auth/github/callback`,
-      "http://localhost/api/auth/github/callback",
-      "http://localhost:/api/auth/github/callback",
-      undefined,
-    ];
+    const attempts = [...githubOAuthRedirectCandidates(redirectUri), undefined];
     const seen = new Set<string>();
     let lastError = "GitHub token exchange failed";
     for (const uri of attempts) {

@@ -1,5 +1,12 @@
-import { createAuthProvider, preferredOAuthRedirectUri, saveGitHubInstallationId, signSession } from "@atelier/supervisor";
-import { requestPublicUrl } from "./public-url";
+import {
+  createAuthProvider,
+  githubAppAuthorizeRedirectUri,
+  oauthRedirectUriForIncomingHost,
+  saveGitHubInstallationId,
+  signSession,
+  syncGitHubAppPublicUrls,
+} from "@atelier/supervisor";
+import { requestCallbackHost, requestPublicUrl } from "./public-url";
 import { platform } from "./platform";
 import type { H3Event } from "h3";
 
@@ -12,7 +19,7 @@ export async function finishGitHubLogin(
   const identity = await provider.completeLogin({
     code: input.code,
     locale: input.locale || String(getCookie(event, "atelier-locale") ?? "en"),
-    redirectUri: `${requestPublicUrl(event)}/api/auth/github/callback`,
+    redirectUri: incomingOAuthRedirectUri(event),
   });
   const user = await platform().loginDev(identity.login, identity.locale);
   platform().store.update((db) => {
@@ -29,6 +36,47 @@ export async function finishGitHubLogin(
   return { user, identity, next: identity.accessPending ? "/pending" : "/" };
 }
 
+export function incomingOAuthRedirectUri(event: H3Event): string {
+  const forwardedHost = getHeader(event, "x-forwarded-host");
+  return oauthRedirectUriForIncomingHost(
+    forwardedHost || getHeader(event, "host") || requestCallbackHost(event),
+    getHeader(event, "x-forwarded-proto") || undefined,
+    getHeader(event, "x-forwarded-port") || undefined,
+  );
+}
+
 export function oauthRedirectUri(event: H3Event): string {
-  return preferredOAuthRedirectUri(requestPublicUrl(event));
+  return githubAppAuthorizeRedirectUri(requestPublicUrl(event));
+}
+
+export async function handleGitHubOAuthStart(event: H3Event) {
+  await syncGitHubAppPublicUrls().catch(() => false);
+  const provider = createAuthProvider();
+  const { url } = await provider.beginLogin(getQuery(event).redirect?.toString() || "/", oauthRedirectUri(event));
+  return sendRedirect(event, url);
+}
+
+export async function handleGitHubOAuthCallback(event: H3Event) {
+  const query = getQuery(event);
+  const installationId = String(query.installation_id ?? "").trim();
+  if (installationId) saveGitHubInstallationId(installationId);
+
+  const code = String(query.code ?? "").trim();
+  if (!code) {
+    if (query.setup_action === "install") return sendRedirect(event, "/setup/github?installed=1");
+    return sendRedirect(event, "/setup/github?error=oauth");
+  }
+
+  try {
+    const { next } = await finishGitHubLogin(event, {
+      code,
+      installationId,
+      locale: String(getCookie(event, "atelier-locale") ?? "en"),
+    });
+    return sendRedirect(event, next);
+  } catch {
+    const params = new URLSearchParams({ error: "oauth" });
+    if (installationId) params.set("installation_id", installationId);
+    return sendRedirect(event, `/setup/github?${params.toString()}`);
+  }
 }

@@ -23,6 +23,10 @@ export default defineNuxtConfig({
   css: ["~/assets/css/main.css"],
   vite: {
     plugins: [tailwindcss()],
+    server: {
+      host: "0.0.0.0",
+      allowedHosts: true,
+    },
   },
   alias: {
     "@atelier/supervisor": fileURLToPath(new URL("../../services/supervisor/src/index.ts", import.meta.url)),

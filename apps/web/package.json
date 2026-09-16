@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nuxt build",
-    "dev": "NUXT_TELEMETRY_DISABLED=1 nuxt dev --host 127.0.0.1 --port 43123",
+    "dev": "node ../../scripts/dev-web.mjs",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
