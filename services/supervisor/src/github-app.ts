@@ -11,6 +11,7 @@ export interface GitHubAppCredentials {
   webhookSecret: string;
   slug?: string;
   htmlUrl?: string;
+  installationId?: string;
 }
 
 export interface GitHubAppManifest {
@@ -59,7 +60,7 @@ export function atelierListenPort(): number {
 }
 
 function splitHost(host: string): { name: string; port: string } {
-  const trimmed = host.trim();
+  const trimmed = host.trim().replace(/:$/, "");
   if (trimmed.startsWith("[")) {
     const end = trimmed.indexOf("]");
     return { name: trimmed.slice(1, end), port: trimmed.slice(end + 1).replace(/^:/, "") };
@@ -85,7 +86,7 @@ export function atelierPublicUrl(host?: string, proto?: string, forwardedPort?: 
     const { name, port } = splitHost(host);
     if (isLoopback(name)) {
       const next = !isBrowserDefaultPort(port) ? port : !isBrowserDefaultPort(forwardedPort) ? forwardedPort! : listen;
-      return `${protocol}://${name}:${next}`;
+      return `${protocol}://${name}:${next || listen}`;
     }
     if (port) return `${protocol}://${name}:${port}`;
     if (forwardedPort && !isBrowserDefaultPort(forwardedPort)) return `${protocol}://${name}:${forwardedPort}`;
@@ -142,6 +143,27 @@ export function hasGitHubOAuth(): boolean {
   return Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 }
 
+export function githubAppOAuthCallbackUrls(origin: string): string[] {
+  const port = String(atelierListenPort());
+  const path = "/api/auth/github/callback";
+  const urls = new Set<string>([`${origin.replace(/\/$/, "")}${path}`]);
+  urls.add(`http://127.0.0.1:${port}${path}`);
+  urls.add(`http://localhost:${port}${path}`);
+  return [...urls];
+}
+
+export function preferredOAuthRedirectUri(origin?: string): string {
+  const urls = githubAppOAuthCallbackUrls(origin || `http://127.0.0.1:${atelierListenPort()}`);
+  return urls.find((url) => url.includes("127.0.0.1")) ?? urls[0];
+}
+
+export function saveGitHubInstallationId(installationId: string, path = githubAppStorePath()): void {
+  const creds = loadGitHubAppCredentials(path);
+  if (!creds || !installationId) return;
+  if (creds.installationId === installationId) return;
+  saveGitHubAppCredentials({ ...creds, installationId }, path);
+}
+
 export function githubAppManifest(publicUrl: string): GitHubAppManifest {
   const origin = publicUrl.replace(/\/$/, "");
   return {
@@ -149,7 +171,7 @@ export function githubAppManifest(publicUrl: string): GitHubAppManifest {
     url: origin,
     description: "Self-hosted studio for assisted creation on ticoncreserv/app.",
     redirect_url: `${origin}/api/setup/github/callback`,
-    callback_urls: [`${origin}/api/auth/github/callback`],
+    callback_urls: githubAppOAuthCallbackUrls(origin),
     setup_url: `${origin}/setup/github`,
     hook_attributes: { url: `${origin}/api/webhooks/github`, active: false },
     public: false,
@@ -224,6 +246,7 @@ export function loadGitHubAppCredentials(path = githubAppStorePath()): GitHubApp
       webhookSecret: raw.webhookSecret ?? "",
       slug: raw.slug,
       htmlUrl: raw.htmlUrl,
+      installationId: raw.installationId,
     };
   } catch {
     return null;

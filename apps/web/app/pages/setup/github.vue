@@ -12,15 +12,20 @@ const { data: setup, error: loadError } = await useAsyncData("github-setup", () 
     manifest: Record<string, unknown> | null;
     installUrl: string;
     storePath: string;
+    callbackUrls?: string[];
     webhook?: { url: string; settingsUrl: string; hasSecret: boolean; secret: string | null };
   }>("/api/setup/github"),
 );
 
 const created = computed(() => route.query.created === "1");
 const reused = computed(() => route.query.reused === "1");
-const redeemCode = ref(String(route.query.code ?? ""));
+const redeemCode = ref(route.query.error ? "" : String(route.query.code ?? ""));
+const oauthCode = ref(String(route.query.error === "oauth" ? route.query.code ?? "" : ""));
+const oauthInstallation = ref(String(route.query.installation_id ?? ""));
 const redeeming = ref(false);
 const redeemError = ref("");
+const oauthError = ref("");
+const oauthing = ref(false);
 const errorKey = computed(() => {
   if (setup.value?.configured) return "";
   const code = String(route.query.error ?? "");
@@ -44,8 +49,29 @@ async function redeem() {
   }
 }
 
+async function completeOAuth() {
+  oauthing.value = true;
+  oauthError.value = "";
+  try {
+    const res = await $fetch<{ next: string }>("/api/auth/github/complete", {
+      method: "POST",
+      body: { code: oauthCode.value.trim(), installationId: oauthInstallation.value.trim() || undefined },
+    });
+    await navigateTo(res.next);
+  } catch {
+    oauthError.value = t("setup.github.oauthError");
+  } finally {
+    oauthing.value = false;
+  }
+}
+
 onMounted(async () => {
   if (setup.value?.canCreate && redeemCode.value) await redeem();
+  if (route.query.setup_action === "install" && String(route.query.code ?? "") && !route.query.error) {
+    oauthCode.value = String(route.query.code);
+    oauthInstallation.value = String(route.query.installation_id ?? "");
+    await completeOAuth();
+  }
 });
 </script>
 
@@ -94,6 +120,30 @@ onMounted(async () => {
               <UiButton variant="outline" size="lg" class="w-full" type="button">{{ t("setup.github.install") }}</UiButton>
             </a>
             <p class="text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.installHint") }}</p>
+            <div class="rounded-[10px] border border-line bg-white/5 p-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("setup.github.callbackUrlsTitle") }}</p>
+              <p class="mt-2 text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.callbackUrlsHint") }}</p>
+              <ul class="mt-2 space-y-1 font-mono text-[11px] text-ink-800">
+                <li v-for="url in setup.callbackUrls" :key="url">{{ url }}</li>
+              </ul>
+              <a
+                v-if="setup.webhook"
+                :href="setup.webhook.settingsUrl"
+                target="_blank"
+                rel="noreferrer"
+                class="mt-3 inline-block text-[13px] font-medium text-coral-400"
+              >
+                {{ t("setup.github.callbackUrlsSettings") }}
+              </a>
+            </div>
+            <form class="space-y-3" @submit.prevent="completeOAuth">
+              <p class="text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.oauthPasteHint") }}</p>
+              <UiInput v-model="oauthCode" :placeholder="t('setup.github.oauthPlaceholder')" />
+              <p v-if="oauthError" class="text-sm text-red-400">{{ oauthError }}</p>
+              <UiButton type="submit" variant="outline" size="lg" class="w-full" :disabled="oauthing || !oauthCode.trim()">
+                {{ t("setup.github.oauthSubmit") }}
+              </UiButton>
+            </form>
             <p class="text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.envHint", { path: setup.storePath }) }}</p>
             <div v-if="setup.webhook" class="rounded-[10px] border border-line bg-white/5 p-3">
               <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("setup.github.webhookTitle") }}</p>

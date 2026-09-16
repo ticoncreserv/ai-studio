@@ -32,7 +32,12 @@ afterEach(() => {
 describe("github app manifest", () => {
   it("pre-fills Atelier URLs and never asks for Administration", () => {
     const manifest = githubAppManifest("http://127.0.0.1:43123");
-    expect(manifest.callback_urls).toEqual(["http://127.0.0.1:43123/api/auth/github/callback"]);
+    expect(manifest.callback_urls).toEqual(
+      expect.arrayContaining([
+        "http://127.0.0.1:43123/api/auth/github/callback",
+        "http://localhost:43123/api/auth/github/callback",
+      ]),
+    );
     expect(manifest.redirect_url).toBe("http://127.0.0.1:43123/api/setup/github/callback");
     expect(manifest.public).toBe(false);
     expect(manifest.request_oauth_on_install).toBe(true);
@@ -77,6 +82,7 @@ describe("github app manifest", () => {
 
   it("keeps the studio port on loopback hosts", () => {
     expect(atelierPublicUrl("localhost")).toBe("http://localhost:43123");
+    expect(atelierPublicUrl("localhost:")).toBe("http://localhost:43123");
     expect(atelierPublicUrl("localhost:80")).toBe("http://localhost:43123");
     expect(atelierPublicUrl("127.0.0.1:43123")).toBe("http://127.0.0.1:43123");
     expect(atelierPublicUrl("preview.example", "https")).toBe("https://preview.example");

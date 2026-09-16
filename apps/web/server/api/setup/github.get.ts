@@ -4,6 +4,7 @@ import {
   ensureGitHubWebhookSecret,
   githubAppInstallUrl,
   githubAppManifest,
+  githubAppOAuthCallbackUrls,
   githubAppOrg,
   githubAppRepo,
   githubAppWebhookSettingsUrl,
@@ -39,6 +40,7 @@ export default defineEventHandler((event) => {
     manifest: canCreate ? githubAppManifest(publicUrl) : null,
     installUrl: creds ? githubAppInstallUrl(creds) : `https://github.com/${githubAppRepo()}/settings/installations`,
     storePath: "var/github-app.json",
+    callbackUrls: githubAppOAuthCallbackUrls(publicUrl),
     webhook: {
       url: `${publicUrl}/api/webhooks/github`,
       settingsUrl: githubAppWebhookSettingsUrl(creds),

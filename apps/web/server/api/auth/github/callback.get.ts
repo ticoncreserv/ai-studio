@@ -1,25 +1,27 @@
-import { createAuthProvider, signSession } from "@atelier/supervisor";
-import { platform } from "../../../utils/platform";
+import { saveGitHubInstallationId } from "@atelier/supervisor";
+import { finishGitHubLogin } from "../../../utils/github-login";
 
 export default defineEventHandler(async (event) => {
-  const provider = createAuthProvider();
   const query = getQuery(event);
-  const identity = await provider.completeLogin({
-    code: String(query.code ?? ""),
-    locale: String(getCookie(event, "atelier-locale") ?? "en"),
-  });
-  const user = await platform().loginDev(identity.login, identity.locale);
-  platform().store.update((db) => {
-    const row = db.users.find((u) => u.id === user.id);
-    if (row) {
-      row.name = identity.name;
-      row.email = identity.email;
-      row.githubId = identity.githubId;
-      row.role = identity.role;
-      row.accessPending = identity.accessPending;
-    }
-  });
-  setCookie(event, "atelier_session", signSession(user.id), { httpOnly: true, sameSite: "lax", path: "/" });
-  if (identity.accessPending) return sendRedirect(event, "/pending");
-  return sendRedirect(event, "/");
+  const installationId = String(query.installation_id ?? "").trim();
+  if (installationId) saveGitHubInstallationId(installationId);
+
+  const code = String(query.code ?? "").trim();
+  if (!code) {
+    if (query.setup_action === "install") return sendRedirect(event, "/setup/github?installed=1");
+    return sendRedirect(event, "/setup/github?error=oauth");
+  }
+
+  try {
+    const { next } = await finishGitHubLogin(event, {
+      code,
+      installationId,
+      locale: String(getCookie(event, "atelier-locale") ?? "en"),
+    });
+    return sendRedirect(event, next);
+  } catch {
+    const params = new URLSearchParams({ error: "oauth" });
+    if (installationId) params.set("installation_id", installationId);
+    return sendRedirect(event, `/setup/github?${params.toString()}`);
+  }
 });

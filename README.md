@@ -43,7 +43,7 @@ You need to be an owner of the `ticoncreserv` organization. The studio can creat
 1. Open [http://127.0.0.1:43123/setup/github](http://127.0.0.1:43123/setup/github) while the studio is running.
 2. Click **Create GitHub App on ticoncreserv**. GitHub shows the pre-filled manifest (homepage, callback, permissions).
 3. Confirm the app. GitHub redirects the **browser** to `{origin}/api/setup/github/callback`. If that URL is `http://localhost` without a port, it is your machine, not the studio (the studio listens on `127.0.0.1:43123`). Paste the `code` query from that address into `/setup/github`. Atelier stores `client_id`, `client_secret`, App ID, private key, and webhook secret in `var/github-app.json` (gitignored) and loads them into the current process.
-4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`.
+4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`. After install GitHub redirects to the **Callback URL**. If that URL is `http://localhost:` without `43123`, add the port or paste the `code` on `/setup/github`. In the GitHub App settings, set both `http://127.0.0.1:43123/api/auth/github/callback` and `http://localhost:43123/api/auth/github/callback`.
 5. Copy the values into `.env` if you want them to survive a restart or another host (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`).
 
 Manual path: GitHub → Organization settings → Developer settings → GitHub Apps → New GitHub App.
