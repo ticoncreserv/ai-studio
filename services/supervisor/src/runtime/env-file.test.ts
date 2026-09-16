@@ -22,6 +22,35 @@ describe("env-file", () => {
     expect(merged.APP_URL).toBe("http://studio/-/p/abc");
     expect(merged.APP_KEY?.startsWith("base64:")).toBe(true);
     expect(connectionsFromEnv(merged)[0]?.database).toBe("portal");
+    expect(connectionsFromEnv(merged)[0]?.port).toBe(3306);
+  });
+
+  it("reads prefix and DB_HOST_* connections with ports", () => {
+    const rows = connectionsFromEnv({
+      DB_CONNECTION: "mysql",
+      DB_HOST: "10.0.128.112",
+      DB_PORT: "3306",
+      DB_DATABASE: "portal",
+      TOPCON_DB_HOST: "10.0.128.12",
+      TOPCON_DB_PORT: "3306",
+      TOPCON_DB_DATABASE: "topcon",
+      DB_HOST_BETON: "10.10.0.211",
+      DB_PORT_BETON: "1433",
+      DB_DATABASE_BETON: "beton",
+    });
+    expect(rows.find((row) => row.id === "app")?.port).toBe(3306);
+    expect(rows.find((row) => row.id === "topcon")).toMatchObject({
+      host: "10.0.128.12",
+      port: 3306,
+      kind: "erp",
+      driver: "mariadb",
+    });
+    expect(rows.find((row) => row.id === "beton")).toMatchObject({
+      host: "10.10.0.211",
+      port: 1433,
+      driver: "sqlsrv",
+      kind: "erp",
+    });
   });
 
   it("points artisan CLI at sqlite so 10.x hosts cannot block Wayfinder", () => {

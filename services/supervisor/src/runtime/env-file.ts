@@ -63,15 +63,35 @@ export function mergeWorktreeEnv(worktree: string, overlay: Record<string, strin
   return merged;
 }
 
-export function connectionsFromWorktree(worktree: string): Array<{
+export type WorktreeConnection = {
   id: string;
   name: string;
   kind: "app" | "erp";
   env: "homologation" | "production";
   driver: "mariadb" | "sqlsrv";
   host: string;
+  port: number;
   database: string;
-}> {
+};
+
+export function defaultConnectionPort(driver: "mariadb" | "sqlsrv"): number {
+  return driver === "sqlsrv" ? 1433 : 3306;
+}
+
+export function parseConnectionPort(raw: string | undefined, driver: "mariadb" | "sqlsrv"): number {
+  const n = Number(raw);
+  if (Number.isInteger(n) && n > 0 && n < 65536) return n;
+  return defaultConnectionPort(driver);
+}
+
+function connectionDriver(raw: string | undefined, port?: number): "mariadb" | "sqlsrv" {
+  if (raw === "sqlsrv" || raw === "sqlserver") return "sqlsrv";
+  if (raw === "mysql" || raw === "mariadb") return "mariadb";
+  if (port === 1433) return "sqlsrv";
+  return "mariadb";
+}
+
+export function connectionsFromWorktree(worktree: string): WorktreeConnection[] {
   const env = { ...readEnvFile(join(worktree, ".env.example")), ...readEnvFile(join(worktree, ".env")) };
   const fromEnv = connectionsFromEnv(env);
   if (fromEnv.length) return fromEnv;
@@ -82,29 +102,14 @@ export function connectionsFromWorktree(worktree: string): Array<{
   return connectionsFromEnv({
     DB_CONNECTION: env.DB_CONNECTION || "mysql",
     DB_HOST: env.DB_HOST || "127.0.0.1",
+    DB_PORT: env.DB_PORT || "",
     DB_DATABASE: env.DB_DATABASE || "",
   });
 }
 
-export function connectionsFromEnv(env: Record<string, string>): Array<{
-  id: string;
-  name: string;
-  kind: "app" | "erp";
-  env: "homologation" | "production";
-  driver: "mariadb" | "sqlsrv";
-  host: string;
-  database: string;
-}> {
-  const driver = env.DB_CONNECTION === "sqlsrv" ? "sqlsrv" as const : "mariadb" as const;
-  const rows: Array<{
-    id: string;
-    name: string;
-    kind: "app" | "erp";
-    env: "homologation" | "production";
-    driver: "mariadb" | "sqlsrv";
-    host: string;
-    database: string;
-  }> = [
+export function connectionsFromEnv(env: Record<string, string>): WorktreeConnection[] {
+  const driver = connectionDriver(env.DB_CONNECTION, Number(env.DB_PORT));
+  const rows: WorktreeConnection[] = [
     {
       id: "app",
       name: env.DB_CONNECTION || "app",
@@ -112,23 +117,48 @@ export function connectionsFromEnv(env: Record<string, string>): Array<{
       env: "homologation",
       driver,
       host: env.DB_HOST || "127.0.0.1",
+      port: parseConnectionPort(env.DB_PORT, driver),
       database: env.DB_DATABASE || "",
     },
   ];
+  const push = (row: WorktreeConnection) => {
+    if (rows.some((existing) => existing.id === row.id || (existing.host === row.host && existing.port === row.port && existing.database === row.database))) {
+      return;
+    }
+    rows.push(row);
+  };
   for (const [key, value] of Object.entries(env)) {
-    if (!key.endsWith("_DB_CONNECTION") && !key.endsWith("_DB_HOST")) continue;
-    const prefix = key.replace(/_DB_(CONNECTION|HOST)$/, "");
-    const id = prefix.toLowerCase();
-    if (rows.some((row) => row.id === id)) continue;
-    rows.push({
-      id,
-      name: prefix,
-      kind: "erp",
-      env: "homologation",
-      driver: (env[`${prefix}_DB_CONNECTION`] ?? value) === "sqlsrv" ? "sqlsrv" : "mariadb",
-      host: env[`${prefix}_DB_HOST`] ?? env.DB_HOST ?? "",
-      database: env[`${prefix}_DB_DATABASE`] ?? "",
-    });
+    if (key.endsWith("_DB_CONNECTION") || key.endsWith("_DB_HOST")) {
+      const prefix = key.replace(/_DB_(CONNECTION|HOST)$/, "");
+      if (prefix === "DB" || !prefix) continue;
+      const nextDriver = connectionDriver(env[`${prefix}_DB_CONNECTION`] ?? (key.endsWith("_CONNECTION") ? value : undefined), Number(env[`${prefix}_DB_PORT`]));
+      push({
+        id: prefix.toLowerCase(),
+        name: prefix,
+        kind: "erp",
+        env: "homologation",
+        driver: nextDriver,
+        host: env[`${prefix}_DB_HOST`] ?? "",
+        port: parseConnectionPort(env[`${prefix}_DB_PORT`], nextDriver),
+        database: env[`${prefix}_DB_DATABASE`] ?? "",
+      });
+      continue;
+    }
+    if (key.startsWith("DB_HOST_") && key !== "DB_HOST") {
+      const suffix = key.slice("DB_HOST_".length);
+      if (!suffix) continue;
+      const nextDriver = connectionDriver(env[`DB_CONNECTION_${suffix}`], Number(env[`DB_PORT_${suffix}`]));
+      push({
+        id: suffix.toLowerCase(),
+        name: suffix,
+        kind: "erp",
+        env: "homologation",
+        driver: nextDriver,
+        host: value,
+        port: parseConnectionPort(env[`DB_PORT_${suffix}`], nextDriver),
+        database: env[`DB_DATABASE_${suffix}`] ?? "",
+      });
+    }
   }
   return rows.filter((row) => row.host || row.database);
 }

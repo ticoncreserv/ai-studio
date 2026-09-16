@@ -35,7 +35,8 @@ import { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvCo
 import { atelierPublicUrl, githubAppRepo, loadGitHubAppCredentials } from "./github-app.js";
 import { resolveInstallationToken } from "./github.js";
 import { isForeignWorktree } from "./runtime/clone.js";
-import { connectionsFromWorktree, mergeWorktreeEnv, readEnvFile, redactEnv } from "./runtime/env-file.js";
+import { connectionsFromWorktree, defaultConnectionPort, mergeWorktreeEnv, readEnvFile, redactEnv } from "./runtime/env-file.js";
+import { probeConnections } from "./runtime/connection-probe.js";
 import { mentionIndexFromWorktree, worktreeBytes } from "./runtime/worktree-meta.js";
 import { commitWorktree, restoreCheckpoint, restoreFile, syncBaseBranch, worktreeDiffEvents } from "./runtime/worktree-diff.js";
 import type { AcpPromptBlock } from "./acp/session.js";
@@ -762,7 +763,15 @@ export class Platform {
   workspaceConnections(workspaceId: string) {
     const stored = this.store.read().connections;
     const fromWorktree = connectionsFromWorktree(this.requireWorkspace(workspaceId).worktree);
-    return fromWorktree.length ? fromWorktree : stored;
+    const rows = fromWorktree.length ? fromWorktree : stored;
+    return rows.map((row) => ({
+      ...row,
+      port: row.port || defaultConnectionPort(row.driver),
+    }));
+  }
+
+  async probeWorkspaceConnections(workspaceId: string) {
+    return probeConnections(this.workspaceConnections(workspaceId));
   }
 
   async workspaceQuota(workspaceId: string) {

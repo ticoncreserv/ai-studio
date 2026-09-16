@@ -62,6 +62,7 @@ export interface ConnectionRecord {
   env: "homologation" | "production";
   driver: "mariadb" | "sqlsrv";
   host: string;
+  port?: number;
   database: string;
 }
 

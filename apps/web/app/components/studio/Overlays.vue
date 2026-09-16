@@ -33,6 +33,53 @@ const emit = defineEmits<{
 
 const { t, locale, setLocale } = useI18n();
 
+type ProbeState = {
+  state: "checking" | "up" | "down";
+  ms?: number;
+  error?: string;
+};
+
+const probes = ref<Record<string, ProbeState>>({});
+const probing = ref(false);
+
+async function probeConnections() {
+  if (!props.data.workspace?.id || !props.data.connections.length) return;
+  probing.value = true;
+  probes.value = Object.fromEntries(props.data.connections.map((conn) => [conn.id, { state: "checking" as const }]));
+  try {
+    const res = await $fetch<{ probes: Array<{ id: string; ok: boolean; ms: number; error?: string }> }>(
+      `/api/workspace/${props.data.workspace.id}/connections/probe`,
+      { method: "POST" },
+    );
+    const next: Record<string, ProbeState> = {};
+    for (const row of res.probes) {
+      next[row.id] = { state: row.ok ? "up" : "down", ms: row.ms, error: row.error };
+    }
+    probes.value = next;
+  } catch {
+    probes.value = Object.fromEntries(
+      props.data.connections.map((conn) => [conn.id, { state: "down" as const, error: "error" }]),
+    );
+  } finally {
+    probing.value = false;
+  }
+}
+
+function probeError(code?: string) {
+  if (code === "timeout") return t("connections.errorTimeout");
+  if (code === "refused") return t("connections.errorRefused");
+  if (code === "dns") return t("connections.errorDns");
+  if (code === "missing-host") return t("connections.errorMissing");
+  return t("connections.errorGeneric");
+}
+
+watch(
+  () => props.sheet,
+  (sheet) => {
+    if (sheet === "connections") void probeConnections();
+  },
+);
+
 function toggleAnswer(questionId: string, optionId: string, multiple?: boolean) {
   const current = { ...props.questionAnswers };
   const selected = current[questionId] ?? [];
@@ -126,9 +173,17 @@ function submitQuestion() {
     <article v-for="conn in data.connections" :key="conn.id" class="mt-3 rounded-2xl border border-line bg-canvas/60 p-3">
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-sm font-semibold">{{ conn.name }}</h3>
-        <UiBadge :tone="conn.kind === 'app' ? 'info' : 'neutral'">
-          {{ conn.kind === "app" ? t("connections.kindApp") : t("connections.kindErp") }}
-        </UiBadge>
+        <div class="flex items-center gap-1.5">
+          <UiBadge v-if="probes[conn.id]?.state === 'checking'" tone="info">
+            <UiSpinner size="sm" :label="t('connections.checking')" />
+            {{ t("connections.checking") }}
+          </UiBadge>
+          <UiBadge v-else-if="probes[conn.id]?.state === 'up'" tone="live">{{ t("connections.up") }}</UiBadge>
+          <UiBadge v-else-if="probes[conn.id]?.state === 'down'" tone="warn">{{ t("connections.down") }}</UiBadge>
+          <UiBadge :tone="conn.kind === 'app' ? 'info' : 'neutral'">
+            {{ conn.kind === "app" ? t("connections.kindApp") : t("connections.kindErp") }}
+          </UiBadge>
+        </div>
       </div>
       <dl class="mt-2 grid grid-cols-2 gap-2 text-[12px] text-ink-500">
         <div>
@@ -137,17 +192,30 @@ function submitQuestion() {
         </div>
         <div>
           <dt>{{ t("connections.host") }}</dt>
-          <dd class="font-mono text-ink-800">{{ conn.host }}</dd>
+          <dd class="font-mono text-ink-800">{{ conn.host }}{{ conn.port ? `:${conn.port}` : "" }}</dd>
         </div>
         <div class="col-span-2">
           <dt>{{ t("connections.database") }}</dt>
-          <dd class="font-mono text-ink-800">{{ conn.database }}</dd>
+          <dd class="font-mono text-ink-800">{{ conn.database || "—" }}</dd>
         </div>
       </dl>
+      <p v-if="probes[conn.id]?.state === 'up'" class="mt-2 text-[11px] font-medium text-emerald-300">
+        {{ t("connections.latency", { ms: probes[conn.id].ms ?? 0 }) }}
+      </p>
+      <p v-else-if="probes[conn.id]?.state === 'down'" class="mt-2 text-[11px] leading-relaxed text-amber-200">
+        {{ probeError(probes[conn.id].error) }}
+        <template v-if="probes[conn.id].ms"> · {{ t("connections.latency", { ms: probes[conn.id].ms }) }}</template>
+      </p>
       <p class="mt-2 text-[11px] font-medium text-ink-400">
         {{ conn.kind === "app" ? t("connections.migrateForward") : t("connections.readOnly") }} · {{ t("connections.homologation") }}
       </p>
     </article>
+    <template #footer>
+      <UiButton class="w-full" variant="outline" :disabled="probing || !data.connections.length" @click="probeConnections">
+        <UiSpinner v-if="probing" size="sm" :label="t('connections.checking')" />
+        {{ probing ? t("connections.checking") : t("connections.check") }}
+      </UiButton>
+    </template>
   </UiSheet>
 
   <UiSheet :open="sheet === 'settings'" :title="t('settings.title')" @close="emit('update:sheet', null)">

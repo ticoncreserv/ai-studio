@@ -11,6 +11,9 @@ export { ProcessRuntime, DockerRuntime, applyHunkToWorktree } from "./runtime/pr
 export type { WorkspaceRuntime, RuntimeHandle } from "./runtime/process.js";
 export { publicViteOrigin, viteDevAssetPath, ensureViteHotFile, VITE_PREVIEW_SEGMENT } from "./runtime/vite-preview.js";
 export { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
+export { probeConnections, probeTcp } from "./runtime/connection-probe.js";
+export type { ConnectionProbeResult } from "./runtime/connection-probe.js";
+export { connectionsFromEnv, defaultConnectionPort } from "./runtime/env-file.js";
 export { LocalAuthProvider, GitHubAuthProvider, createAuthProvider, signState, verifyState } from "./auth.js";
 export type { AuthProvider, AuthIdentity } from "./auth.js";
 export {

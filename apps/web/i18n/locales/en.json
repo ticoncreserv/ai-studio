@@ -303,7 +303,19 @@
     "kindErp": "ERP",
     "readOnly": "Read-only",
     "migrateForward": "Forward migrate",
-    "empty": "No database connections in this worktree .env yet."
+    "empty": "No database connections in this worktree .env yet.",
+    "port": "Port",
+    "status": "Status",
+    "check": "Check again",
+    "checking": "Checking…",
+    "up": "Responding",
+    "down": "No response",
+    "latency": "{ms} ms",
+    "errorTimeout": "Timed out waiting for the host.",
+    "errorRefused": "The host refused the connection.",
+    "errorDns": "The host name could not be resolved.",
+    "errorMissing": "This connection has no host.",
+    "errorGeneric": "The host did not accept a TCP connection."
   },
   "flags": {
     "publish": "Publish",

@@ -303,7 +303,19 @@
     "kindErp": "ERP",
     "readOnly": "Somente leitura",
     "migrateForward": "Migrate para frente",
-    "empty": "Ainda não há conexões de banco no .env deste worktree."
+    "empty": "Ainda não há conexões de banco no .env deste worktree.",
+    "port": "Porta",
+    "status": "Status",
+    "check": "Verificar de novo",
+    "checking": "Verificando…",
+    "up": "Respondendo",
+    "down": "Sem resposta",
+    "latency": "{ms} ms",
+    "errorTimeout": "Tempo esgotado esperando o host.",
+    "errorRefused": "O host recusou a conexão.",
+    "errorDns": "O nome do host não pôde ser resolvido.",
+    "errorMissing": "Esta conexão não tem host.",
+    "errorGeneric": "O host não aceitou uma conexão TCP."
   },
   "flags": {
     "publish": "Publicar",

@@ -39,6 +39,7 @@ export interface StudioPayload {
     env: string;
     driver: string;
     host: string;
+    port?: number;
     database: string;
   }>;
   rules: Array<{ id: string; level: "platform" | "project" | "user"; title: string; body: string }>;
