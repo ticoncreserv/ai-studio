@@ -156,8 +156,8 @@ function submitQuestion() {
         :value="locale"
         @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
       >
-        <option value="en">{{ t("auth.english") }}</option>
         <option value="pt-BR">{{ t("auth.portuguese") }}</option>
+        <option value="en">{{ t("auth.english") }}</option>
       </select>
     </div>
     <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("flags.title") }}</p>

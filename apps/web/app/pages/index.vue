@@ -75,8 +75,8 @@ const features = computed(() => [
         :value="locale"
         @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
       >
-        <option value="en">{{ t("auth.english") }}</option>
         <option value="pt-BR">{{ t("auth.portuguese") }}</option>
+        <option value="en">{{ t("auth.english") }}</option>
       </select>
     </header>
 

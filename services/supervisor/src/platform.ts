@@ -46,7 +46,7 @@ export class Platform {
     return listProviders().filter((p) => p.id === "mock" || p.id === "cursor" || this.flags().multiProvider);
   }
 
-  async loginDev(login: string, locale: "en" | "pt-BR" = "en"): Promise<UserRecord> {
+  async loginDev(login: string, locale: "en" | "pt-BR" = "pt-BR"): Promise<UserRecord> {
     const db = this.store.read();
     let user = db.users.find((u) => u.login === login);
     if (!user) {

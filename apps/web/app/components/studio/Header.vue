@@ -85,8 +85,8 @@ const menu = ref(false);
               :value="locale"
               @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
             >
-              <option value="en">{{ t("auth.english") }}</option>
               <option value="pt-BR">{{ t("auth.portuguese") }}</option>
+              <option value="en">{{ t("auth.english") }}</option>
             </select>
           </label>
           <button class="flex w-full px-3 py-2 text-left text-[13px] text-ink-600 hover:bg-white/5" @click="emit('signOut'); menu = false">

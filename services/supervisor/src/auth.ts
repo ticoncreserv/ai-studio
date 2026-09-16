@@ -31,7 +31,7 @@ export class LocalAuthProvider implements AuthProvider {
 
   async completeLogin(input: Record<string, string>): Promise<AuthIdentity> {
     const login = (input.login || "studio").replace(/[^a-zA-Z0-9-]/g, "") || "studio";
-    const locale = input.locale === "pt-BR" ? "pt-BR" : "en";
+    const locale = input.locale === "en" ? "en" : "pt-BR";
     return {
       login,
       name: input.name || login,
@@ -90,7 +90,7 @@ export class GitHubAuthProvider implements AuthProvider {
       name: user.name || user.login,
       email,
       githubId: String(user.id),
-      locale: input.locale === "pt-BR" ? "pt-BR" : "en",
+      locale: input.locale === "en" ? "en" : "pt-BR",
       role: access.role ?? "viewer",
       accessPending: access.pending,
       commitName: user.name || user.login,

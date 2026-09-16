@@ -35,17 +35,17 @@ export default defineNuxtConfig({
   },
   i18n: {
     locales: [
-      { code: "en", language: "en-US", name: "English", file: "en.json" },
       { code: "pt-BR", language: "pt-BR", name: "Português", file: "pt-BR.json" },
+      { code: "en", language: "en-US", name: "English", file: "en.json" },
     ],
-    defaultLocale: "en",
+    defaultLocale: "pt-BR",
     strategy: "no_prefix",
     lazy: true,
     langDir: "locales",
     detectBrowserLanguage: {
       useCookie: true,
       cookieKey: "atelier-locale",
-      fallbackLocale: "en",
+      fallbackLocale: "pt-BR",
       redirectOn: "root",
     },
     experimental: {

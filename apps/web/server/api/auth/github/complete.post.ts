@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
     const result = await finishGitHubLogin(event, {
       code,
       installationId: body.installationId?.trim(),
-      locale: String(getCookie(event, "atelier-locale") ?? "en"),
+      locale: String(getCookie(event, "atelier-locale") ?? "pt-BR"),
     });
     return { ok: true, next: result.next, login: result.user.login };
   } catch (error) {

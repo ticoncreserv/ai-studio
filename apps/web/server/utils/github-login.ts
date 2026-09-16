@@ -18,7 +18,7 @@ export async function finishGitHubLogin(
   const provider = createAuthProvider();
   const identity = await provider.completeLogin({
     code: input.code,
-    locale: input.locale || String(getCookie(event, "atelier-locale") ?? "en"),
+    locale: input.locale || String(getCookie(event, "atelier-locale") ?? "pt-BR"),
     redirectUri: incomingOAuthRedirectUri(event),
   });
   const user = await platform().loginDev(identity.login, identity.locale);
@@ -71,7 +71,7 @@ export async function handleGitHubOAuthCallback(event: H3Event) {
     const { next } = await finishGitHubLogin(event, {
       code,
       installationId,
-      locale: String(getCookie(event, "atelier-locale") ?? "en"),
+      locale: String(getCookie(event, "atelier-locale") ?? "pt-BR"),
     });
     return sendRedirect(event, next);
   } catch {

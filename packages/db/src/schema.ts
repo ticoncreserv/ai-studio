@@ -5,7 +5,7 @@ export const users = pgTable("users", {
   login: text("login").notNull(),
   name: text("name").notNull(),
   email: text("email").notNull(),
-  locale: text("locale").notNull().default("en"),
+  locale: text("locale").notNull().default("pt-BR"),
   githubId: text("github_id"),
   accessPending: boolean("access_pending").default(false),
   createdAt: timestamp("created_at").defaultNow(),
