@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SessionEvent } from "@atelier/contracts";
-import { Check, ChevronDown, Database, GitCommit, Shield, TriangleAlert, X } from "lucide-vue-next";
+import { Check, ChevronDown, Database, GitCommit, Shield, TriangleAlert, X } from "@lucide/vue";
 import { renderMarkdown, splitDiffLines } from "~/utils/markdown";
 
 const props = defineProps<{ event: SessionEvent }>();

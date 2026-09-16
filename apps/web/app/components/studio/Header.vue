@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Database, GitBranch, MoreHorizontal, Share2, SlidersHorizontal, UserPlus } from "lucide-vue-next";
+import { BookOpen, Database, GitBranch, MoreHorizontal, Share2, SlidersHorizontal, UserPlus } from "@lucide/vue";
 
 defineProps<{
   project: string;

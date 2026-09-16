@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Command } from "lucide-vue-next";
+import { Command } from "@lucide/vue";
 import type { StudioDialog, StudioPayload, StudioSheet } from "~/types/studio";
 import type { SessionEvent } from "@atelier/contracts";
 

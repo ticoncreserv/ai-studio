@@ -11,7 +11,7 @@ import {
   RotateCw,
   Smartphone,
   Tablet,
-} from "lucide-vue-next";
+} from "@lucide/vue";
 
 const props = defineProps<{
   src: string;

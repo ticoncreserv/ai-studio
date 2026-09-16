@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SessionEvent } from "@atelier/contracts";
-import { Eye, Plus, Search } from "lucide-vue-next";
+import { Eye, Plus, Search } from "@lucide/vue";
 
 const props = defineProps<{
   events: SessionEvent[];

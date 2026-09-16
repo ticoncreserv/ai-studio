@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AgentMode } from "@atelier/contracts";
-import { ArrowUp, Paperclip, X } from "lucide-vue-next";
+import { ArrowUp, Paperclip, X } from "@lucide/vue";
 import type { StudioAttachment } from "~/types/studio";
 
 const props = defineProps<{

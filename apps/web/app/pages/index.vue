@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Eye, GitBranch, Github, MonitorSmartphone, Share2, Sparkles, Workflow } from "lucide-vue-next";
+import { ArrowRight, Eye, GitBranch, MonitorSmartphone, Share2, Sparkles, Workflow } from "@lucide/vue";
 
 const { t, locale, setLocale } = useI18n();
 const login = ref("studio");
@@ -120,7 +120,7 @@ const features = computed(() => [
             </div>
             <a href="/api/auth/github" class="block">
               <UiButton class="w-full" variant="outline" size="lg" type="button">
-                <Github class="h-4 w-4" />
+                <UiGithub class="h-4 w-4" />
                 {{ t("auth.github") }}
               </UiButton>
             </a>
