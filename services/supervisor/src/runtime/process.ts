@@ -10,6 +10,7 @@ import { artisanOfflineEnv, mergeWorktreeEnv } from "./env-file.js";
 import { provisionWorktree, type CloneInput } from "./clone.js";
 import { waitForHealth } from "./health.js";
 import { publicViteOrigin, writeViteAtelierConfig, writeViteHotFile } from "./vite-preview.js";
+import { ensureWayfinderFormMethods } from "./wayfinder-forms.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -220,12 +221,13 @@ export class ProcessRuntime implements WorkspaceRuntime {
       children.push(vite);
       if (existsSync(join(input.worktree, "package.json"))) {
         children.push(
-          spawn("php", ["artisan", "wayfinder:generate", "--no-interaction"], {
+          spawn("php", ["artisan", "wayfinder:generate", "--with-form", "--no-interaction"], {
             cwd: input.worktree,
             env: artisanOfflineEnv(childEnv, input.worktree),
             stdio: "ignore",
           }),
         );
+        ensureWayfinderFormMethods(input.worktree);
       }
     }
     if (process.env.ATELIER_PREVIEW_QUEUE === "1") {
