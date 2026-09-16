@@ -1,51 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionEvent } from "@atelier/contracts";
+import { parseMcpConfig, toAcpMcpServers as entriesToAcp, type AcpMcpServer } from "@atelier/domain";
 import { AcpSession } from "../acp/session.js";
 import { eventsFromAcpUpdate, permissionFromAcp } from "../acp/events.js";
 import { cursorAgentEnv, hasCursorApiKey, resolveCursorAgentCommand } from "./env.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
 import { PROVIDER_CATALOG } from "./types.js";
 
-export interface AcpMcpServer {
-  name: string;
-  command: string;
-  args: string[];
-  env: Array<{ name: string; value: string }>;
-}
+export type { AcpMcpServer };
 
-function envToAcpList(env: unknown): Array<{ name: string; value: string }> {
-  if (Array.isArray(env)) {
-    return env
-      .map((row) => {
-        if (!row || typeof row !== "object") return null;
-        const item = row as { name?: unknown; value?: unknown };
-        if (typeof item.name !== "string" || !item.name) return null;
-        return { name: item.name, value: typeof item.value === "string" ? item.value : String(item.value ?? "") };
-      })
-      .filter((row): row is { name: string; value: string } => Boolean(row));
-  }
-  if (env && typeof env === "object") {
-    return Object.entries(env as Record<string, unknown>).map(([name, value]) => ({
-      name,
-      value: typeof value === "string" ? value : String(value ?? ""),
-    }));
-  }
-  return [];
-}
-
-export function toAcpMcpServers(raw: unknown): AcpMcpServer[] {
-  const servers = (raw as { mcpServers?: Record<string, { command?: string; args?: string[]; env?: unknown }> } | undefined)
-    ?.mcpServers;
-  if (!servers) return [];
-  return Object.entries(servers)
-    .filter(([, value]) => value.command)
-    .map(([name, value]) => ({
-      name,
-      command: value.command!,
-      args: value.args ?? [],
-      env: envToAcpList(value.env),
-    }));
+export function toAcpMcpServers(raw: unknown, caps?: { http?: boolean; sse?: boolean }): AcpMcpServer[] {
+  return entriesToAcp(parseMcpConfig(raw, "repo"), caps);
 }
 
 export function mcpServersFromWorktree(cwd: string): AcpMcpServer[] {
@@ -92,10 +58,15 @@ export class CursorProvider implements AgentProvider {
     );
     acp.start(env, input.cwd);
     await acp.initialize();
-    const servers = input.mcpServers ?? mcpServersFromWorktree(input.cwd);
+    const caps = acp.capabilities?.mcpCapabilities ?? {};
+    const servers = (input.mcpServers ?? mcpServersFromWorktree(input.cwd)).filter((server) => {
+      if (server.type === "http") return Boolean(caps.http);
+      if (server.type === "sse") return Boolean(caps.sse);
+      return Boolean(server.command);
+    });
     if (input.resumeSessionId) {
       try {
-        await acp.loadSession(input.resumeSessionId, input.cwd);
+        await acp.loadSession(input.resumeSessionId, input.cwd, servers);
       } catch {
         await acp.newSession(input.cwd, servers);
       }

@@ -6,6 +6,7 @@ export type PendingUserTurn = {
   at: string;
   attachments: string[];
   mentions: string[];
+  skill?: string;
   waitUntilCount: number;
   status: "sending" | "failed";
 };
@@ -16,6 +17,7 @@ export type QueuedPrompt = {
   attachments: string[];
   mentions: string[];
   recipeId?: string;
+  skill?: string;
   mode: AgentMode;
 };
 
@@ -48,6 +50,7 @@ export function mergePendingTurn(events: SessionEvent[], pending: PendingUserTur
       text: pending.text,
       attachments: pending.attachments,
       mentions: pending.mentions,
+      skill: pending.skill,
     },
   ];
 }
@@ -62,7 +65,7 @@ export function hasProgressAfterLastUser(events: SessionEvent[]): boolean {
 }
 
 export function upsertSessionEvent(events: SessionEvent[], event: SessionEvent): SessionEvent[] {
-  if (event.type === "assistant_delta") return events;
+  if (event.type === "assistant_delta" || event.type === "available_skills") return events;
   if (event.type === "tool_call") {
     const index = events.findIndex((row) => row.type === "tool_call" && row.toolCallId === event.toolCallId);
     if (index >= 0) {

@@ -7,6 +7,7 @@ import { repoRoot } from "../paths.js";
 import { isolationEnv, PREVIEW_SIDE_EFFECTS, defaultWorkspaceSpec } from "./spec.js";
 import { allocatePort } from "./ports.js";
 import { artisanOfflineEnv, mergeWorktreeEnv } from "./env-file.js";
+import { mergeWorktreeMcp } from "../mcp/layers.js";
 import { provisionWorktree, type CloneInput } from "./clone.js";
 import { waitForHealth } from "./health.js";
 import { publicViteOrigin, writeViteAtelierConfig, writeViteHotFile } from "./vite-preview.js";
@@ -122,22 +123,6 @@ function writeGitignore(worktree: string): void {
   if (missing.length) writeFileSync(file, `${current.trimEnd()}\n${missing.join("\n")}\n`);
 }
 
-function writeMcpConfig(worktree: string): void {
-  mkdirSync(join(worktree, ".cursor"), { recursive: true });
-  writeFileSync(
-    join(worktree, ".cursor/mcp.json"),
-    JSON.stringify(
-      {
-        mcpServers: {
-          "laravel-boost": { command: "php", args: ["artisan", "boost:mcp"] },
-        },
-      },
-      null,
-      2,
-    ),
-  );
-}
-
 function commandExists(command: string): boolean {
   const path = process.env.PATH ?? "";
   return path.split(":").some((dir) => existsSync(join(dir, command)));
@@ -160,12 +145,16 @@ function assertPreviewToolchain(worktree: string): void {
 async function installDependencies(worktree: string): Promise<void> {
   if (existsSync(join(worktree, "composer.json")) && !existsSync(join(worktree, "vendor"))) {
     if (!commandExists("php") || !commandExists("composer")) {
-      throw new Error("PHP 8.5 and Composer are required to install Laravel vendor/ for preview.");
+      // Fixture worktrees ship composer.json without vendor/. Skip the install in tests when PHP is absent.
+      if (!process.env.VITEST) {
+        throw new Error("PHP 8.5 and Composer are required to install Laravel vendor/ for preview.");
+      }
+    } else {
+      await execFileAsync("composer", ["install", "--no-interaction", "--prefer-dist"], {
+        cwd: worktree,
+        timeout: 300_000,
+      });
     }
-    await execFileAsync("composer", ["install", "--no-interaction", "--prefer-dist"], {
-      cwd: worktree,
-      timeout: 300_000,
-    });
   }
   if (existsSync(join(worktree, "package.json")) && !existsSync(join(worktree, "node_modules"))) {
     await execFileAsync("npm", ["install"], { cwd: worktree, timeout: 180_000 });
@@ -190,7 +179,11 @@ export class ProcessRuntime implements WorkspaceRuntime {
     };
     await provisionWorktree(clone);
     writeGitignore(worktree);
-    writeMcpConfig(worktree);
+    mergeWorktreeMcp({
+      worktree,
+      storeDir: input.envRoot ? dirname(input.envRoot) : join(repoRoot(), "var"),
+      userId: input.userId,
+    });
     mergeWorktreeEnv(
       worktree,
       {

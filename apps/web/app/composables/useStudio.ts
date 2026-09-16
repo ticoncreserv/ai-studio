@@ -1,6 +1,16 @@
 import { foldEvents } from "@atelier/domain";
 import type { AgentMode, ClientCommand, SessionEvent, Viewport } from "@atelier/contracts";
-import type { PreviewDebug, PreviewTool, StudioAttachment, StudioDialog, StudioPayload, StudioSheet } from "~/types/studio";
+import type {
+  PreviewDebug,
+  PreviewTool,
+  StudioAttachment,
+  StudioAvailableCommand,
+  StudioDialog,
+  StudioMcp,
+  StudioPayload,
+  StudioSheet,
+  StudioSkill,
+} from "~/types/studio";
 import {
   hasProgressAfterLastUser,
   mergePendingTurn,
@@ -10,6 +20,7 @@ import {
   type QueuedPrompt,
 } from "~/utils/chat-events";
 import { nextPreviewEventId, shouldReloadPreviewOnCommand, shouldReloadPreviewOnEvent } from "~/utils/preview-reload";
+import { insertSlashCommand, mergeSlashCatalog, removeSlashCommand, slashInvocation, slashMatches, slashQuery } from "~/utils/slash";
 
 export function useStudio() {
   const { t, locale, setLocale } = useI18n();
@@ -28,6 +39,8 @@ export function useStudio() {
   const paletteQuery = ref("");
   const mentionsOpen = ref(false);
   const mentionFilter = ref("");
+  const slashOpen = ref(false);
+  const availableCommands = ref<StudioAvailableCommand[]>([]);
   const spectator = ref(false);
   const toast = ref("");
   const streamingText = ref("");
@@ -121,6 +134,7 @@ export function useStudio() {
       dialog.value = "shortcuts";
     }
     if (e.key === "Escape") {
+      slashOpen.value = false;
       dialog.value = null;
       sheet.value = null;
     }
@@ -191,6 +205,10 @@ export function useStudio() {
   );
 
   function ingestSessionEvent(event: SessionEvent) {
+    if (event.type === "available_skills") {
+      availableCommands.value = event.commands;
+      return;
+    }
     if (event.type === "assistant_delta") {
       streamingText.value += event.text;
       return;
@@ -251,6 +269,7 @@ export function useStudio() {
     attachments: string[];
     mentions: string[];
     recipeId?: string;
+    skill?: string;
     mode: AgentMode;
   };
 
@@ -264,6 +283,7 @@ export function useStudio() {
       attachments: attachments.value.map((file) => file.path),
       mentions,
       recipeId: recipeId.value || undefined,
+      skill: slashInvocation(text) ?? undefined,
       mode: mode.value,
     };
     prompt.value = "";
@@ -285,6 +305,7 @@ export function useStudio() {
       at: new Date().toISOString(),
       attachments: draft.attachments,
       mentions: draft.mentions,
+      skill: draft.skill,
       waitUntilCount: persistedUserCount() + 1,
       status: "sending",
     };
@@ -297,6 +318,7 @@ export function useStudio() {
         attachments: draft.attachments,
         mentions: draft.mentions,
         recipeId: draft.recipeId,
+        skill: draft.skill,
         mode: draft.mode,
       });
       if (generation !== runGeneration) return;
@@ -338,6 +360,7 @@ export function useStudio() {
       text: pending.text,
       attachments: pending.attachments,
       mentions: pending.mentions,
+      skill: pending.skill,
       mode: mode.value,
     });
   }
@@ -368,6 +391,8 @@ export function useStudio() {
     { id: "new", label: t("command.newSession"), run: newSession },
     { id: "sync", label: t("command.sync"), run: () => sendCommand({ type: "sync_base" }) },
     { id: "rules", label: t("command.rules"), run: () => (sheet.value = "rules") },
+    { id: "skills", label: t("command.skills"), run: () => (sheet.value = "skills") },
+    { id: "mcp", label: t("command.mcp"), run: () => (sheet.value = "mcp") },
     { id: "connections", label: t("command.connections"), run: () => (sheet.value = "connections") },
     { id: "settings", label: t("command.settings"), run: () => (sheet.value = "settings") },
     { id: "invite", label: t("command.invite"), run: () => (dialog.value = "invite") },
@@ -383,6 +408,7 @@ export function useStudio() {
     runGeneration += 1;
     pendingTurn.value = null;
     queue.value = [];
+    availableCommands.value = [];
     clearRunState();
   }
 
@@ -429,7 +455,87 @@ export function useStudio() {
     const at = value.lastIndexOf("@");
     mentionsOpen.value = at >= 0 && !value.slice(at).includes(" ");
     mentionFilter.value = at >= 0 ? value.slice(at + 1) : "";
+    slashOpen.value = slashQuery(value) !== null;
   });
+
+  const slashQueryText = computed(() => slashQuery(prompt.value));
+  const slashHits = computed(() => {
+    const queryText = slashQueryText.value;
+    if (queryText === null) return [];
+    const catalog = data.value?.flags?.skills !== false ? (data.value?.skills ?? []) : [];
+    return slashMatches(mergeSlashCatalog(catalog, availableCommands.value), queryText);
+  });
+  const skillChip = computed(() => slashInvocation(prompt.value));
+
+  function insertSkill(name: string) {
+    prompt.value = insertSlashCommand(prompt.value, name);
+    slashOpen.value = false;
+  }
+
+  function clearSkill() {
+    prompt.value = removeSlashCommand(prompt.value, skillChip.value);
+  }
+
+  function closeSlash() {
+    slashOpen.value = false;
+  }
+
+  async function toggleSkill(name: string, enabled: boolean) {
+    if (!data.value) return;
+    const res = await $fetch<{ skills: StudioSkill[] }>(`/api/workspace/${workspaceId.value}/skills/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      body: { enabled },
+    });
+    data.value.skills = res.skills;
+  }
+
+  async function toggleMcp(name: string, enabled: boolean) {
+    if (!data.value) return;
+    data.value.mcp = await $fetch<StudioMcp>(`/api/workspace/${workspaceId.value}/mcp/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      body: { enabled },
+    });
+  }
+
+  async function saveUserSkill(payload: { name: string; description: string; body: string; paths?: string[]; manualOnly?: boolean }) {
+    try {
+      await $fetch(`/api/me/skills/${encodeURIComponent(payload.name)}`, { method: "PUT", body: payload });
+      await refresh();
+      flash(t("skills.saved"));
+    } catch (error) {
+      flash((error as { statusMessage?: string }).statusMessage || t("admin.error"));
+    }
+  }
+
+  async function deleteUserSkill(name: string) {
+    try {
+      await $fetch(`/api/me/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
+      await refresh();
+      flash(t("skills.deleted"));
+    } catch (error) {
+      flash((error as { statusMessage?: string }).statusMessage || t("admin.error"));
+    }
+  }
+
+  async function saveUserMcp(name: string, config: Record<string, unknown>) {
+    try {
+      await $fetch(`/api/me/mcp/${encodeURIComponent(name)}`, { method: "PUT", body: config });
+      await refresh();
+      flash(t("mcp.saved"));
+    } catch (error) {
+      flash((error as { statusMessage?: string }).statusMessage || t("admin.error"));
+    }
+  }
+
+  async function deleteUserMcp(name: string) {
+    try {
+      await $fetch(`/api/me/mcp/${encodeURIComponent(name)}`, { method: "DELETE" });
+      await refresh();
+      flash(t("mcp.deleted"));
+    } catch (error) {
+      flash((error as { statusMessage?: string }).statusMessage || t("admin.error"));
+    }
+  }
 
   const mentionHits = computed(() => {
     const groups = data.value?.mentions;
@@ -550,6 +656,9 @@ export function useStudio() {
     paletteQuery,
     mentionsOpen,
     mentionFilter,
+    slashOpen,
+    slashHits,
+    skillChip,
     spectator,
     toast,
     streamingText,
@@ -579,6 +688,15 @@ export function useStudio() {
     commands,
     filteredCommands,
     mentionHits,
+    insertSkill,
+    clearSkill,
+    closeSlash,
+    toggleSkill,
+    toggleMcp,
+    saveUserSkill,
+    deleteUserSkill,
+    saveUserMcp,
+    deleteUserMcp,
     refresh,
     sendCommand,
     submit,

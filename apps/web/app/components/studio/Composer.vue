@@ -8,12 +8,16 @@ import {
   MessageCircle,
   Mic,
   Paperclip,
+  Plug,
   Plus,
+  Sparkles,
   Wrench,
   X,
 } from "@lucide/vue";
-import type { StudioAttachment } from "~/types/studio";
+import type { StudioAttachment, StudioMcpServer, StudioSkill } from "~/types/studio";
 import type { QueuedPrompt } from "~/utils/chat-events";
+import { MCP_SERVER_WARN_THRESHOLD } from "~/utils/slash";
+import type { SlashRow } from "~/utils/slash";
 
 const props = defineProps<{
   modelValue: string;
@@ -29,6 +33,14 @@ const props = defineProps<{
   attachments: StudioAttachment[];
   mentionsOpen: boolean;
   mentionHits: Array<{ item: string; kind: string }>;
+  slashOpen?: boolean;
+  slashHits?: SlashRow[];
+  skillChip?: string | null;
+  skills?: StudioSkill[];
+  mcpServers?: StudioMcpServer[];
+  skillsEnabled?: boolean;
+  mcpEnabled?: boolean;
+  canEdit?: boolean;
   queue?: QueuedPrompt[];
 }>();
 
@@ -39,6 +51,13 @@ const emit = defineEmits<{
   submit: [];
   cancel: [];
   mention: [name: string];
+  skill: [name: string];
+  "clear-skill": [];
+  "close-slash": [];
+  "toggle-skill": [payload: { name: string; enabled: boolean }];
+  "toggle-mcp": [payload: { name: string; enabled: boolean }];
+  "manage-skills": [];
+  "manage-mcp": [];
   attach: [files: FileList];
   "remove-attachment": [path: string];
   "toggle-spectator": [];
@@ -52,10 +71,17 @@ const paletteOpen = ref(false);
 const paletteQuery = ref("");
 const paletteFilter = ref<HTMLInputElement | null>(null);
 const recipesOpen = ref(false);
+const skillsOpen = ref(false);
+const toolsOpen = ref(false);
+const slashCursor = ref(0);
 const cursor = ref(0);
 const listening = ref(false);
 const dictationSupported = ref(false);
 const queued = computed(() => props.queue ?? []);
+const slashHits = computed(() => props.slashHits ?? []);
+const skills = computed(() => props.skills ?? []);
+const mcpServers = computed(() => props.mcpServers ?? []);
+const enabledMcpCount = computed(() => mcpServers.value.filter((server) => server.enabled && !server.shadowed).length);
 const canSend = computed(() => Boolean(props.modelValue.trim() || props.recipeId || props.attachments.length));
 const showStop = computed(() => props.sending && !canSend.value);
 
@@ -104,11 +130,15 @@ onMounted(() => {
   dictationSupported.value = Boolean(ctor.SpeechRecognition || ctor.webkitSpeechRecognition);
 });
 
+watch(() => slashHits.value.length, () => (slashCursor.value = 0));
+
 async function togglePalette() {
   paletteOpen.value = !paletteOpen.value;
   if (!paletteOpen.value) return;
   paletteQuery.value = "";
   recipesOpen.value = false;
+  skillsOpen.value = false;
+  toolsOpen.value = false;
   cursor.value = 0;
   await nextTick();
   paletteFilter.value?.focus();
@@ -127,6 +157,58 @@ function pickMode(value: AgentMode) {
 function pickRecipe(id: string) {
   emit("update:recipeId", id);
   closePalette();
+}
+
+function pickSkill(name: string) {
+  emit("skill", name);
+  closePalette();
+}
+
+function sourceLabel(source: string) {
+  if (source === "repo") return t("skills.source.repo");
+  if (source === "platform") return t("skills.source.platform");
+  if (source === "user") return t("skills.source.user");
+  return t("skills.source.agent");
+}
+
+function moveSlash(delta: number) {
+  const total = slashHits.value.length;
+  if (!total) return;
+  slashCursor.value = (slashCursor.value + delta + total) % total;
+}
+
+function pickHighlightedSlash() {
+  const target = slashHits.value[slashCursor.value];
+  if (target) emit("skill", target.name);
+}
+
+function onComposerKey(event: KeyboardEvent) {
+  if (props.slashOpen) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveSlash(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveSlash(-1);
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (slashHits.value.length) pickHighlightedSlash();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      emit("close-slash");
+      return;
+    }
+  }
+  if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+    event.preventDefault();
+    emit("submit");
+  }
 }
 
 function movePalette(delta: number) {
@@ -175,7 +257,7 @@ onBeforeUnmount(() => recognition?.stop());
 
 <template>
   <form class="relative shrink-0 px-2.5 pb-1.5" @submit.prevent="emit('submit')">
-    <div v-if="mentionsOpen" class="cx-menu absolute inset-x-2.5 bottom-full z-20 mb-1 p-1 shadow-float">
+    <div v-if="mentionsOpen && !slashOpen" class="cx-menu absolute inset-x-2.5 bottom-full z-20 mb-1 p-1 shadow-float">
       <p v-if="!mentionHits.length" class="cx-menu-row cx-muted">{{ t("chat.noMentions") }}</p>
       <button
         v-for="hit in mentionHits"
@@ -186,6 +268,24 @@ onBeforeUnmount(() => recognition?.stop());
       >
         <span class="min-w-0 flex-1 truncate font-mono text-ink-800">{{ hit.item }}</span>
         <span class="cx-menu-desc shrink-0">{{ hit.kind }}</span>
+      </button>
+    </div>
+
+    <div v-if="slashOpen" class="cx-menu absolute inset-x-2.5 bottom-full z-20 mb-1 p-1 shadow-float">
+      <p class="px-2 py-1 text-[11px] text-ink-400">{{ t("chat.slashHint") }}</p>
+      <p v-if="!slashHits.length" class="cx-menu-row cx-muted">{{ t("chat.slashEmpty") }}</p>
+      <button
+        v-for="(hit, index) in slashHits"
+        :key="hit.source + hit.name"
+        type="button"
+        class="cx-menu-row"
+        :data-active="index === slashCursor || undefined"
+        @mouseenter="slashCursor = index"
+        @click="emit('skill', hit.name)"
+      >
+        <span class="min-w-0 flex-1 truncate font-mono text-ink-800">/{{ hit.name }}</span>
+        <span class="cx-menu-desc min-w-0 truncate">{{ hit.description }}</span>
+        <span class="cx-menu-desc shrink-0">{{ sourceLabel(hit.source) }}</span>
       </button>
     </div>
 
@@ -248,6 +348,71 @@ onBeforeUnmount(() => recognition?.stop());
           </button>
         </template>
       </template>
+      <template v-if="skillsEnabled">
+        <button type="button" class="cx-menu-row" :data-active="skillsOpen || undefined" @click="skillsOpen = !skillsOpen">
+          <Sparkles class="h-3.5 w-3.5 shrink-0" />
+          <span class="cx-menu-name shrink-0">{{ t("chat.skills") }}</span>
+          <span class="cx-menu-desc">{{ skillChip || "" }}</span>
+          <ChevronRight class="ml-auto h-3 w-3 shrink-0 text-ink-400 transition-transform" :class="skillsOpen && 'rotate-90'" />
+        </button>
+        <template v-if="skillsOpen">
+          <div
+            v-for="skill in skills.filter((row) => !row.shadowed)"
+            :key="skill.source + skill.name"
+            class="cx-menu-row cx-menu-row-sub"
+          >
+            <button type="button" class="min-w-0 flex-1 truncate text-left" @click="pickSkill(skill.name)">
+              /{{ skill.name }}
+            </button>
+            <span class="cx-menu-desc shrink-0">{{ sourceLabel(skill.source) }}</span>
+            <UiSwitch
+              v-if="canEdit"
+              class="ml-1"
+              :model-value="skill.enabled"
+              :label="skill.name"
+              @update:model-value="emit('toggle-skill', { name: skill.name, enabled: $event })"
+            />
+          </div>
+          <button type="button" class="cx-menu-row cx-menu-row-sub" @click="emit('manage-skills'); closePalette()">
+            <span class="min-w-0 flex-1 truncate">{{ t("chat.manageSkills") }}</span>
+          </button>
+        </template>
+      </template>
+      <template v-if="mcpEnabled">
+        <button type="button" class="cx-menu-row" :data-active="toolsOpen || undefined" @click="toolsOpen = !toolsOpen">
+          <Plug class="h-3.5 w-3.5 shrink-0" />
+          <span class="cx-menu-name shrink-0">{{ t("chat.tools") }}</span>
+          <span class="cx-menu-desc">{{ t("mcp.enabledCount", { count: enabledMcpCount }) }}</span>
+          <ChevronRight class="ml-auto h-3 w-3 shrink-0 text-ink-400 transition-transform" :class="toolsOpen && 'rotate-90'" />
+        </button>
+        <template v-if="toolsOpen">
+          <p v-if="enabledMcpCount >= MCP_SERVER_WARN_THRESHOLD" class="px-3 py-1 text-[11px] text-amber-200/80">
+            {{ t("mcp.tooMany") }}
+          </p>
+          <div
+            v-for="server in mcpServers.filter((row) => !row.shadowed)"
+            :key="server.source + server.name"
+            class="cx-menu-row cx-menu-row-sub"
+          >
+            <span
+              class="h-1.5 w-1.5 shrink-0 rounded-full"
+              :class="server.enabled ? 'bg-emerald-400' : 'bg-ink-300'"
+            />
+            <span class="min-w-0 flex-1 truncate">{{ server.name }}</span>
+            <span class="cx-menu-desc shrink-0">{{ server.transport }}</span>
+            <UiSwitch
+              v-if="canEdit"
+              class="ml-1"
+              :model-value="server.enabled"
+              :label="server.name"
+              @update:model-value="emit('toggle-mcp', { name: server.name, enabled: $event })"
+            />
+          </div>
+          <button type="button" class="cx-menu-row cx-menu-row-sub" @click="emit('manage-mcp'); closePalette()">
+            <span class="min-w-0 flex-1 truncate">{{ t("chat.manageMcp") }}</span>
+          </button>
+        </template>
+      </template>
       <div v-if="spectatorEnabled" class="cx-menu-row">
         <span class="cx-menu-name">{{ spectator ? t("workspace.watching") : t("workspace.editor") }}</span>
         <UiSwitch
@@ -299,7 +464,7 @@ onBeforeUnmount(() => recognition?.stop());
           :disabled="spectator"
           :placeholder="placeholder"
           @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value); resize()"
-          @keydown.enter.exact.prevent="emit('submit')"
+          @keydown="onComposerKey"
           @keydown.meta.enter.prevent="emit('submit')"
           @keydown.ctrl.enter.prevent="emit('submit')"
           @paste="onPaste"
@@ -358,6 +523,13 @@ onBeforeUnmount(() => recognition?.stop());
         <span class="cx-pill min-w-0" :title="t('chat.model')">
           <Cpu class="h-3 w-3 shrink-0" />
           <span class="truncate">{{ providerLabel }}</span>
+        </span>
+        <span v-if="skillChip" class="cx-pill min-w-0" :title="t('chat.skillChip')">
+          <Sparkles class="h-3 w-3 shrink-0" />
+          <span class="truncate">/{{ skillChip }}</span>
+          <button type="button" :aria-label="t('chat.skillChipClear')" class="text-ink-400 hover:text-ink-950" @click="emit('clear-skill')">
+            <X class="h-3 w-3" />
+          </button>
         </span>
         <span v-if="activeRecipe" class="cx-pill min-w-0" :title="t('chat.recipe')">
           <span class="truncate">{{ activeRecipe.title }}</span>

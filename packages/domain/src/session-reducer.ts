@@ -137,5 +137,5 @@ export function applyFileDecision(state: SessionState, filePath: string, status:
 }
 
 export function foldEvents(events: SessionEvent[]): SessionState {
-  return events.filter((e) => e.type !== "assistant_delta").reduce(reduceSession, emptySession());
+  return events.filter((e) => e.type !== "assistant_delta" && e.type !== "available_skills").reduce(reduceSession, emptySession());
 }

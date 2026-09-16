@@ -5,6 +5,8 @@ export const defaultFlags: Record<FeatureFlag, boolean> = {
   multiProvider: false,
   spectator: true,
   recipes: true,
+  skills: true,
+  mcp: true,
 };
 
 export function isFlagOn(flags: Record<string, boolean>, flag: FeatureFlag): boolean {

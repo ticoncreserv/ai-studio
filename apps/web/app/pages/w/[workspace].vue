@@ -14,6 +14,9 @@ const {
   sheet,
   paletteQuery,
   mentionsOpen,
+  slashOpen,
+  slashHits,
+  skillChip,
   spectator,
   toast,
   sending,
@@ -41,6 +44,15 @@ const {
   commands,
   filteredCommands,
   mentionHits,
+  insertSkill,
+  clearSkill,
+  closeSlash,
+  toggleSkill,
+  toggleMcp,
+  saveUserSkill,
+  deleteUserSkill,
+  saveUserMcp,
+  deleteUserMcp,
   refresh,
   sendCommand,
   submit,
@@ -153,6 +165,8 @@ function onFixDebug() {
           @select="selectSession"
           @create="newSession"
           @rules="sheet = 'rules'"
+          @skills="sheet = 'skills'"
+          @mcp="sheet = 'mcp'"
           @settings="sheet = 'settings'"
         />
 
@@ -192,12 +206,27 @@ function onFixDebug() {
             :placeholder="sending || events.length ? t('chat.followUp') : t('chat.placeholder')"
             :mentions-open="mentionsOpen"
             :mention-hits="mentionHits"
+            :slash-open="slashOpen"
+            :slash-hits="slashHits"
+            :skill-chip="skillChip"
+            :skills="data.skills ?? []"
+            :mcp-servers="data.mcp?.servers ?? []"
+            :skills-enabled="!!data?.flags?.skills"
+            :mcp-enabled="!!data?.flags?.mcp"
+            :can-edit="data.canEdit && !spectator"
             :queue="queue"
             @update:mode="mode = $event"
             @update:recipe-id="recipeId = $event"
             @submit="submit"
             @cancel="cancelRun"
             @mention="insertMention"
+            @skill="insertSkill"
+            @clear-skill="clearSkill"
+            @close-slash="closeSlash"
+            @toggle-skill="toggleSkill($event.name, $event.enabled)"
+            @toggle-mcp="toggleMcp($event.name, $event.enabled)"
+            @manage-skills="sheet = 'skills'"
+            @manage-mcp="sheet = 'mcp'"
             @attach="attachFiles"
             @remove-attachment="attachments = attachments.filter((a) => a.path !== $event)"
             @toggle-spectator="toggleSpectator"
@@ -269,6 +298,12 @@ function onFixDebug() {
       @command="onCommand"
       @save-rules="saveRules"
       @save-user-env="saveUserEnv"
+      @save-user-skill="saveUserSkill"
+      @delete-user-skill="deleteUserSkill"
+      @save-user-mcp="saveUserMcp($event.name, $event.config)"
+      @delete-user-mcp="deleteUserMcp"
+      @toggle-skill="toggleSkill($event.name, $event.enabled)"
+      @toggle-mcp="toggleMcp($event.name, $event.enabled)"
       @copy-invite="copyLink('invite')"
       @copy-share="copyLink('share')"
       @hibernate="hibernate"

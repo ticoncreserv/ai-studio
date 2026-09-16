@@ -8,3 +8,5 @@ export * from "./budget.js";
 export * from "./flags.js";
 export * from "./schema-guard.js";
 export * from "./quota.js";
+export * from "./skills.js";
+export * from "./mcp.js";

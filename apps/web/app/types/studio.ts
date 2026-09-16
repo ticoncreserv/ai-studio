@@ -32,6 +32,8 @@ export interface StudioPayload {
   flags: Record<string, boolean>;
   mentions: { routes: string[]; models: string[]; pages: string[] };
   recipes: Array<{ id: string; title: string; template: string; variables: string[] }>;
+  skills: StudioSkill[];
+  mcp: StudioMcp;
   connections: Array<{
     id: string;
     name: string;
@@ -63,7 +65,54 @@ export interface StudioAttachment {
   path: string;
 }
 
-export type StudioSheet = "rules" | "connections" | "settings" | null;
+export interface StudioSkill {
+  name: string;
+  description: string;
+  source: "repo" | "platform" | "user";
+  dir: string;
+  paths: string[];
+  manualOnly: boolean;
+  icon?: string;
+  color?: string;
+  scope?: string;
+  enabled: boolean;
+  shadowed: boolean;
+  issues: string[];
+  editable: boolean;
+  body?: string;
+}
+
+export interface StudioMcpServer {
+  name: string;
+  transport: "stdio" | "http" | "sse";
+  source: "repo" | "platform" | "user";
+  enabled: boolean;
+  target: string;
+  secrets: boolean;
+  editable: boolean;
+  shadowed: boolean;
+  issues: string[];
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+export interface StudioMcpPolicy {
+  allowUserServers: boolean;
+  allowedCommands: string[];
+  allowedUrlPatterns: string[];
+}
+
+export interface StudioMcp {
+  servers: StudioMcpServer[];
+  policy: StudioMcpPolicy;
+}
+
+export type StudioAvailableCommand = { name: string; description: string; hint?: string };
+
+export type StudioSheet = "rules" | "connections" | "settings" | "skills" | "mcp" | null;
 export type StudioDialog = "share" | "invite" | "shortcuts" | "palette" | null;
 export type PreviewTool = "select" | "annotate" | "comment";
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Command } from "@lucide/vue";
-import type { StudioDialog, StudioPayload, StudioSheet } from "~/types/studio";
+import type { StudioDialog, StudioMcpServer, StudioPayload, StudioSheet, StudioSkill } from "~/types/studio";
 import type { SessionEvent } from "@atelier/contracts";
 
 const props = defineProps<{
@@ -24,6 +24,12 @@ const emit = defineEmits<{
   command: [payload: { type: string; [key: string]: unknown }];
   saveRules: [];
   saveUserEnv: [payload: { env?: Record<string, string>; raw?: string }];
+  saveUserSkill: [payload: { name: string; description: string; body: string; paths?: string[]; manualOnly?: boolean }];
+  deleteUserSkill: [name: string];
+  saveUserMcp: [payload: { name: string; config: Record<string, unknown> }];
+  deleteUserMcp: [name: string];
+  toggleSkill: [payload: { name: string; enabled: boolean }];
+  toggleMcp: [payload: { name: string; enabled: boolean }];
   copyInvite: [];
   copyShare: [];
   hibernate: [];
@@ -88,6 +94,77 @@ function probeError(code?: string) {
   if (code === "dns") return t("connections.errorDns");
   if (code === "missing-host") return t("connections.errorMissing");
   return t("connections.errorGeneric");
+}
+
+const skills = computed(() => props.data.skills ?? []);
+const mcpServers = computed(() => props.data.mcp?.servers ?? []);
+const mcpPolicy = computed(() => props.data.mcp?.policy);
+const canEditTools = computed(() => props.data.canEdit);
+
+function sourceLabel(source: string) {
+  if (source === "repo") return t("skills.source.repo");
+  if (source === "platform") return t("skills.source.platform");
+  if (source === "user") return t("skills.source.user");
+  return t("skills.source.agent");
+}
+
+const skillDraft = ref({ name: "", description: "", paths: "", manualOnly: true, body: "" });
+const editingSkill = ref<string | null>(null);
+const pendingSkillDelete = ref<string | null>(null);
+
+function startSkillEdit(skill: StudioSkill) {
+  editingSkill.value = skill.name;
+  skillDraft.value = {
+    name: skill.name,
+    description: skill.description,
+    paths: skill.paths.join(", "),
+    manualOnly: skill.manualOnly,
+    body: skill.body ?? "",
+  };
+}
+
+function startNewSkill() {
+  editingSkill.value = "";
+  skillDraft.value = { name: "", description: "", paths: "", manualOnly: true, body: "" };
+}
+
+function submitSkill() {
+  const name = skillDraft.value.name.trim();
+  if (!name) return;
+  emit("saveUserSkill", {
+    name,
+    description: skillDraft.value.description,
+    body: skillDraft.value.body,
+    paths: skillDraft.value.paths.split(",").map((item) => item.trim()).filter(Boolean),
+    manualOnly: skillDraft.value.manualOnly,
+  });
+  editingSkill.value = null;
+}
+
+const mcpDraft = ref({ name: "", url: "" });
+const pendingMcpDelete = ref<string | null>(null);
+const mcpProbes = ref<Record<string, { state: "checking" | "up" | "down"; error?: string }>>({});
+
+async function probeMcp(server: StudioMcpServer) {
+  if (!props.data.workspace?.id) return;
+  mcpProbes.value = { ...mcpProbes.value, [server.name]: { state: "checking" } };
+  try {
+    const res = await $fetch<{ ok: boolean; error?: string }>(
+      `/api/workspace/${props.data.workspace.id}/mcp/${encodeURIComponent(server.name)}/probe`,
+      { method: "POST" },
+    );
+    mcpProbes.value = { ...mcpProbes.value, [server.name]: { state: res.ok ? "up" : "down", error: res.error } };
+  } catch {
+    mcpProbes.value = { ...mcpProbes.value, [server.name]: { state: "down", error: "error" } };
+  }
+}
+
+function submitMcp() {
+  const name = mcpDraft.value.name.trim();
+  const url = mcpDraft.value.url.trim();
+  if (!name || !url) return;
+  emit("saveUserMcp", { name, config: { type: "http", url } });
+  mcpDraft.value = { name: "", url: "" };
 }
 
 watch(
@@ -292,6 +369,138 @@ function submitQuestion() {
       <UiButton size="sm" variant="outline" @click="emit('hibernate')">{{ t("workspace.hibernate") }}</UiButton>
     </div>
   </UiSheet>
+
+  <UiSheet :open="sheet === 'skills'" :title="t('skills.title')" @close="emit('update:sheet', null)">
+    <p class="text-sm leading-relaxed text-ink-500">{{ t("skills.hint") }}</p>
+    <p v-if="!skills.length" class="mt-3 text-sm text-ink-400">{{ t("skills.empty") }}</p>
+    <article v-for="skill in skills" :key="skill.source + skill.name" class="cx-panel mt-2 p-3">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="font-mono text-sm text-ink-950">/{{ skill.name }}</p>
+          <p class="mt-1 text-[12px] leading-relaxed text-ink-500">{{ skill.description }}</p>
+        </div>
+        <div class="flex shrink-0 items-center gap-1.5">
+          <UiBadge :tone="skill.shadowed ? 'warn' : skill.source === 'repo' ? 'info' : 'neutral'">
+            {{ skill.shadowed ? t("skills.shadowed") : sourceLabel(skill.source) }}
+          </UiBadge>
+          <UiSwitch
+            v-if="canEditTools && !skill.shadowed"
+            :model-value="skill.enabled"
+            :label="skill.name"
+            @update:model-value="emit('toggleSkill', { name: skill.name, enabled: $event })"
+          />
+        </div>
+      </div>
+      <p v-if="skill.manualOnly" class="mt-2 text-[11px] text-ink-400">{{ t("skills.manualOnly") }}</p>
+      <p v-if="skill.paths.length" class="mt-1 font-mono text-[11px] text-ink-400">{{ skill.paths.join(", ") }}</p>
+      <p v-for="issue in skill.issues" :key="issue" class="mt-1 text-[11px] text-amber-200/80">{{ issue }}</p>
+      <pre v-if="skill.source === 'repo' && skill.body" class="thin-scroll mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-ink-600">{{ skill.body }}</pre>
+      <div v-if="skill.editable && canEditTools" class="mt-2 flex gap-1.5">
+        <UiButton size="sm" variant="outline" @click="startSkillEdit(skill)">{{ t("skills.edit") }}</UiButton>
+        <UiButton size="sm" variant="ghost" @click="pendingSkillDelete = skill.name">{{ t("skills.delete") }}</UiButton>
+      </div>
+    </article>
+    <div v-if="canEditTools" class="mt-4">
+      <UiButton v-if="editingSkill === null" size="sm" variant="outline" @click="startNewSkill">{{ t("skills.add") }}</UiButton>
+      <form v-else class="space-y-2" @submit.prevent="submitSkill">
+        <label class="block text-[12px] text-ink-400">
+          {{ t("skills.name") }}
+          <input v-model="skillDraft.name" class="mt-1 h-8 w-full rounded-[6px] border border-line bg-white/[0.03] px-2 text-[12.5px] outline-none" :readonly="Boolean(editingSkill)" />
+        </label>
+        <label class="block text-[12px] text-ink-400">
+          {{ t("skills.description") }}
+          <input v-model="skillDraft.description" class="mt-1 h-8 w-full rounded-[6px] border border-line bg-white/[0.03] px-2 text-[12.5px] outline-none" />
+        </label>
+        <label class="block text-[12px] text-ink-400">
+          {{ t("skills.paths") }}
+          <input v-model="skillDraft.paths" class="mt-1 h-8 w-full rounded-[6px] border border-line bg-white/[0.03] px-2 text-[12.5px] outline-none" />
+        </label>
+        <label class="flex items-center justify-between text-[12px] text-ink-400">
+          {{ t("skills.manualOnly") }}
+          <UiSwitch :model-value="skillDraft.manualOnly" :label="t('skills.manualOnly')" @update:model-value="skillDraft.manualOnly = $event" />
+        </label>
+        <label class="block text-[12px] text-ink-400">
+          {{ t("skills.body") }}
+          <textarea v-model="skillDraft.body" class="mt-1 h-28 w-full rounded-[6px] border border-line bg-white/[0.03] p-2.5 text-[12.5px] outline-none" />
+        </label>
+        <div class="flex gap-1.5">
+          <UiButton size="sm" type="submit">{{ t("skills.save") }}</UiButton>
+          <UiButton size="sm" variant="outline" @click="editingSkill = null">{{ t("admin.removeKeyCancel") }}</UiButton>
+        </div>
+      </form>
+    </div>
+  </UiSheet>
+
+  <UiSheet :open="sheet === 'mcp'" :title="t('mcp.title')" @close="emit('update:sheet', null)">
+    <p class="text-sm leading-relaxed text-ink-500">{{ t("mcp.hint") }}</p>
+    <p v-if="!mcpServers.length" class="mt-3 text-sm text-ink-400">{{ t("mcp.empty") }}</p>
+    <article v-for="server in mcpServers" :key="server.source + server.name" class="cx-panel mt-2 p-3">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-ink-950">{{ server.name }}</p>
+          <p class="mt-1 truncate font-mono text-[11px] text-ink-500">{{ server.target }}</p>
+        </div>
+        <div class="flex shrink-0 items-center gap-1.5">
+          <UiBadge :tone="server.shadowed ? 'warn' : server.enabled ? 'live' : 'neutral'">
+            {{ server.shadowed ? t("skills.shadowed") : sourceLabel(server.source) }}
+          </UiBadge>
+          <UiSwitch
+            v-if="canEditTools && !server.shadowed"
+            :model-value="server.enabled"
+            :label="server.name"
+            @update:model-value="emit('toggleMcp', { name: server.name, enabled: $event })"
+          />
+        </div>
+      </div>
+      <p class="mt-2 text-[11px] uppercase tracking-wide text-ink-400">{{ server.transport }}</p>
+      <p v-if="server.secrets" class="mt-1 text-[11px] text-ink-400">{{ t("mcp.secrets") }}</p>
+      <p v-for="issue in server.issues" :key="issue" class="mt-1 text-[11px] text-amber-200/80">{{ issue }}</p>
+      <p v-if="mcpProbes[server.name]?.state === 'up'" class="mt-2 text-[11px] text-emerald-300">{{ t("mcp.probeOk") }}</p>
+      <p v-else-if="mcpProbes[server.name]?.state === 'down'" class="mt-2 text-[11px] text-amber-200">{{ t("mcp.probeFail") }}</p>
+      <div class="mt-2 flex gap-1.5">
+        <UiButton size="sm" variant="outline" :disabled="mcpProbes[server.name]?.state === 'checking'" @click="probeMcp(server)">
+          {{ mcpProbes[server.name]?.state === "checking" ? t("mcp.probing") : t("mcp.probe") }}
+        </UiButton>
+        <UiButton v-if="server.editable && canEditTools" size="sm" variant="ghost" @click="pendingMcpDelete = server.name">
+          {{ t("mcp.delete") }}
+        </UiButton>
+      </div>
+    </article>
+    <form v-if="canEditTools && mcpPolicy?.allowUserServers" class="mt-4 space-y-2" @submit.prevent="submitMcp">
+      <p class="text-[12px] text-ink-400">{{ t("mcp.add") }}</p>
+      <input v-model="mcpDraft.name" class="h-8 w-full rounded-[6px] border border-line bg-white/[0.03] px-2 text-[12.5px] outline-none" :placeholder="t('mcp.name')" />
+      <input v-model="mcpDraft.url" class="h-8 w-full rounded-[6px] border border-line bg-white/[0.03] px-2 text-[12.5px] outline-none" :placeholder="t('mcp.url')" />
+      <UiButton size="sm" type="submit">{{ t("mcp.save") }}</UiButton>
+    </form>
+  </UiSheet>
+
+  <UiDialog :open="pendingSkillDelete != null" :title="t('skills.deleteTitle', { name: pendingSkillDelete ?? '' })" @close="pendingSkillDelete = null">
+    <p class="text-sm leading-relaxed text-ink-500">{{ t("skills.deleteBody") }}</p>
+    <div class="mt-4 flex justify-end gap-2">
+      <UiButton size="sm" variant="outline" @click="pendingSkillDelete = null">{{ t("admin.removeKeyCancel") }}</UiButton>
+      <UiButton
+        size="sm"
+        variant="danger"
+        @click="pendingSkillDelete && emit('deleteUserSkill', pendingSkillDelete); pendingSkillDelete = null"
+      >
+        {{ t("skills.delete") }}
+      </UiButton>
+    </div>
+  </UiDialog>
+
+  <UiDialog :open="pendingMcpDelete != null" :title="t('mcp.deleteTitle', { name: pendingMcpDelete ?? '' })" @close="pendingMcpDelete = null">
+    <p class="text-sm leading-relaxed text-ink-500">{{ t("mcp.deleteBody") }}</p>
+    <div class="mt-4 flex justify-end gap-2">
+      <UiButton size="sm" variant="outline" @click="pendingMcpDelete = null">{{ t("admin.removeKeyCancel") }}</UiButton>
+      <UiButton
+        size="sm"
+        variant="danger"
+        @click="pendingMcpDelete && emit('deleteUserMcp', pendingMcpDelete); pendingMcpDelete = null"
+      >
+        {{ t("mcp.delete") }}
+      </UiButton>
+    </div>
+  </UiDialog>
 
   <UiDialog :open="dialog === 'invite'" :title="t('invite.title')" @close="emit('update:dialog', null)">
     <p class="text-sm leading-relaxed text-ink-500">{{ t("invite.hint") }}</p>

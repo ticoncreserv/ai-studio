@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "fixture-docs": {
+      "url": "https://mcp.example.test/docs"
+    }
+  }
+}
