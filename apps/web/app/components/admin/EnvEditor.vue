@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Eye, EyeOff } from "@lucide/vue";
 import { mergeRawEnvInput, visibleRawEnv } from "~/utils/env-mask";
 
 type EnvRow = { id: number; key: string; value: string };
@@ -107,7 +108,7 @@ defineExpose({ submit });
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="mb-3 flex shrink-0 items-center gap-2">
+    <div class="mb-3 flex shrink-0 items-center justify-between gap-2">
       <div class="inline-flex self-start rounded-[9px] border border-line bg-black/20 p-0.5">
         <button
           type="button"
@@ -126,9 +127,17 @@ defineExpose({ submit });
           {{ t("admin.raw") }}
         </button>
       </div>
-      <UiButton v-if="mode === 'raw'" size="sm" variant="ghost" type="button" @click="toggleRawSecrets">
-        {{ rawSecretsRevealed ? t("admin.hideSecrets") : t("admin.revealSecrets") }}
-      </UiButton>
+      <button
+        v-if="mode === 'raw'"
+        type="button"
+        class="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-ink-500 transition hover:bg-white/5 hover:text-ink-950"
+        :title="rawSecretsRevealed ? t('admin.hideSecrets') : t('admin.revealSecrets')"
+        :aria-label="rawSecretsRevealed ? t('admin.hideSecrets') : t('admin.revealSecrets')"
+        @click="toggleRawSecrets"
+      >
+        <EyeOff v-if="rawSecretsRevealed" class="h-4 w-4" />
+        <Eye v-else class="h-4 w-4" />
+      </button>
     </div>
     <div v-if="mode === 'form'" class="thin-scroll min-h-0 flex-1 space-y-2 overflow-y-auto">
       <div v-if="!rows.length" class="flex flex-col items-start gap-3 py-6">

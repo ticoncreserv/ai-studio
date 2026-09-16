@@ -6,7 +6,7 @@ const login = ref("studio");
 const error = ref("");
 const loading = ref(false);
 const me = ref<null | {
-  user: { login: string; platformAdmin?: boolean };
+  user: { login: string; platformAdmin?: boolean; disabled?: boolean };
   workspace: { id: string } | null;
   sessions?: Array<{ id: string; title: string }>;
 }>(null);
@@ -15,7 +15,17 @@ const githubReady = ref(false);
 onMounted(async () => {
   try {
     me.value = await $fetch("/api/me");
-  } catch {
+    if (me.value?.user.disabled) {
+      await navigateTo("/disabled");
+      return;
+    }
+  } catch (err) {
+    const status = (err as { statusCode?: number; data?: { disabled?: boolean } }).statusCode;
+    const disabled = (err as { data?: { disabled?: boolean } }).data?.disabled;
+    if (status === 403 && disabled) {
+      await navigateTo("/disabled");
+      return;
+    }
     me.value = null;
   }
   try {
@@ -32,6 +42,9 @@ async function signIn() {
   try {
     await $fetch("/api/auth/dev", { method: "POST", body: { login: login.value, locale: locale.value } });
     me.value = await $fetch("/api/me");
+    if (me.value?.user.disabled) {
+      await navigateTo("/disabled");
+    }
   } catch {
     error.value = t("auth.error");
   } finally {

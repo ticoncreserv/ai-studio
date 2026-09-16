@@ -35,7 +35,11 @@ export async function finishGitHubLogin(
   const fresh = platform().store.read().users.find((row) => row.id === user.id) ?? user;
   platform().syncMembership(fresh);
   setCookie(event, "atelier_session", signSession(user.id), { httpOnly: true, sameSite: "lax", path: "/" });
-  return { user, identity, next: identity.accessPending ? "/pending" : "/" };
+  return {
+    user: fresh,
+    identity,
+    next: fresh.disabled ? "/disabled" : identity.accessPending ? "/pending" : "/",
+  };
 }
 
 export function incomingOAuthRedirectUri(event: H3Event): string {

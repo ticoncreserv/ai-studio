@@ -58,7 +58,14 @@ export function useStudio() {
         query: { q: query.value || undefined, session: data.value?.session?.id },
       });
       hydratePresence();
-    } catch {
+    } catch (err) {
+      const status = (err as { statusCode?: number }).statusCode;
+      const disabled = (err as { data?: { disabled?: boolean; message?: string } }).data?.disabled
+        || (err as { statusMessage?: string }).statusMessage === "disabled";
+      if (status === 403 && disabled) {
+        await navigateTo("/disabled");
+        return;
+      }
       loadError.value = true;
     }
   }

@@ -11,6 +11,7 @@ import {
 } from "@lucide/vue";
 
 const { t } = useI18n();
+const relativeTime = useRelativeTime();
 
 type Section = "overview" | "env" | "providers" | "users" | "rules" | "flags" | "workspaces";
 
@@ -47,6 +48,9 @@ const users = ref<
     platformAdmin: boolean;
     envAdmin: boolean;
     repoOwner: boolean;
+    disabled: boolean;
+    canDisable: boolean;
+    workspaceId: string | null;
     workspaceStatus: string | null;
     lastActiveAt: string | null;
   }>
@@ -55,13 +59,25 @@ const rules = ref<Array<{ id: string; level: "platform" | "project" | "user"; ti
 const workspaces = ref<
   Array<{
     id: string;
+    userId: string;
     login: string;
     branch: string;
     status: string;
     lastError: string | null;
     lastActiveAt: string;
+    port: number | null;
+    vitePort: number | null;
+    bytes: number | null;
+    worktree: string;
+    previewPath: string | null;
+    canDeactivateUser: boolean;
   }>
 >([]);
+
+const pendingDestroy = ref<{ id: string; login: string; canDeactivate: boolean } | null>(null);
+const pendingDisable = ref<{ id: string; login: string; hasWorkspace: boolean } | null>(null);
+const alsoDeactivate = ref(false);
+const alsoDestroy = ref(false);
 
 const sections: Array<{ id: Section; label: string; icon: typeof LayoutGrid }> = [
   { id: "overview", label: "admin.overview", icon: LayoutGrid },
@@ -96,7 +112,11 @@ async function refreshData() {
 async function load() {
   forbidden.value = false;
   try {
-    const me = await $fetch<{ user: { platformAdmin?: boolean } }>("/api/me");
+    const me = await $fetch<{ user: { platformAdmin?: boolean; disabled?: boolean } }>("/api/me");
+    if (me.user.disabled) {
+      await navigateTo("/disabled");
+      return;
+    }
     if (!me.user.platformAdmin) {
       forbidden.value = true;
       return;
@@ -134,8 +154,14 @@ function apiErrorMessage(err: unknown): string {
   if (typeof message === "string" && /already hibernat/i.test(message)) {
     return t("admin.alreadyHibernated");
   }
-  if (typeof message === "string" && /last running/i.test(message)) {
-    return t("admin.lastRunning");
+  if (typeof message === "string" && /cannot disable the permanent/i.test(message)) {
+    return t("admin.cannotDisableOwner");
+  }
+  if (typeof message === "string" && /cannot disable an env-listed/i.test(message)) {
+    return t("admin.cannotDisableEnv");
+  }
+  if (typeof message === "string" && /workspace not found/i.test(message)) {
+    return t("admin.workspaceGone");
   }
   if (typeof message === "string" && message.trim() && !/^\[[A-Z]+\]\s+"/.test(message)) {
     return message;
@@ -267,6 +293,103 @@ async function hibernateWorkspace(id: string) {
   } finally {
     busy.value = false;
   }
+}
+
+function requestDestroy(workspace: (typeof workspaces.value)[number]) {
+  alsoDeactivate.value = false;
+  pendingDestroy.value = {
+    id: workspace.id,
+    login: workspace.login,
+    canDeactivate: workspace.canDeactivateUser,
+  };
+}
+
+function cancelDestroy() {
+  pendingDestroy.value = null;
+  alsoDeactivate.value = false;
+}
+
+async function confirmDestroy() {
+  const pending = pendingDestroy.value;
+  if (!pending) return;
+  busy.value = true;
+  error.value = "";
+  try {
+    await $fetch(`/api/admin/workspaces/${pending.id}/destroy`, {
+      method: "POST",
+      body: { deactivateUser: pending.canDeactivate && alsoDeactivate.value },
+    });
+    pendingDestroy.value = null;
+    alsoDeactivate.value = false;
+    await refreshData();
+    flash(t("admin.deletedOk"));
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
+function requestDisable(user: (typeof users.value)[number]) {
+  alsoDestroy.value = false;
+  pendingDisable.value = {
+    id: user.id,
+    login: user.login,
+    hasWorkspace: Boolean(user.workspaceId),
+  };
+}
+
+function cancelDisable() {
+  pendingDisable.value = null;
+  alsoDestroy.value = false;
+}
+
+async function confirmDisable() {
+  const pending = pendingDisable.value;
+  if (!pending) return;
+  busy.value = true;
+  error.value = "";
+  try {
+    await $fetch(`/api/admin/users/${pending.id}`, {
+      method: "PATCH",
+      body: { disabled: true, destroyWorkspace: pending.hasWorkspace && alsoDestroy.value },
+    });
+    pendingDisable.value = null;
+    alsoDestroy.value = false;
+    await refreshData();
+    flash(t("admin.deactivatedOk"));
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function reactivateUser(userId: string) {
+  busy.value = true;
+  error.value = "";
+  try {
+    await $fetch(`/api/admin/users/${userId}`, { method: "PATCH", body: { disabled: false } });
+    await refreshData();
+    flash(t("admin.reactivatedOk"));
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
+function formatBytes(bytes: number | null) {
+  if (bytes == null || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function shortWorktree(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 3) return path;
+  return `…/${parts.slice(-2).join("/")}`;
 }
 
 function statusTone(status: string | null) {
@@ -475,7 +598,7 @@ function statusLabel(status: string | null) {
                 {{ t("admin.noUsers") }}
               </div>
               <div v-else class="admin-panel">
-                <div v-for="user in users" :key="user.id" class="admin-row">
+                <div v-for="user in users" :key="user.id" class="admin-row items-start sm:items-center">
                   <div class="flex min-w-0 items-center gap-3">
                     <UiAvatar :name="user.login" />
                     <div class="min-w-0">
@@ -483,24 +606,46 @@ function statusLabel(status: string | null) {
                         <p class="text-[13px] font-medium">{{ user.login }}</p>
                         <UiBadge v-if="user.platformAdmin" tone="info">{{ t("admin.adminBadge") }}</UiBadge>
                         <UiBadge v-if="user.accessPending" tone="warn">{{ t("admin.pending") }}</UiBadge>
+                        <UiBadge v-if="user.disabled" tone="warn">{{ t("admin.disabledBadge") }}</UiBadge>
                       </div>
                       <p class="mt-0.5 text-[12px] text-ink-400">
                         {{ user.role }}
                         <span v-if="user.workspaceStatus"> · {{ statusLabel(user.workspaceStatus) }}</span>
+                        <span v-else-if="!user.disabled"> · {{ t("admin.noWorkspace") }}</span>
                       </p>
                     </div>
                   </div>
-                  <p v-if="user.repoOwner" class="text-[11px] text-ink-400">{{ t("admin.ownerLocked") }}</p>
-                  <p v-else-if="user.envAdmin" class="text-[11px] text-ink-400">{{ t("admin.envLocked") }}</p>
-                  <UiButton
-                    v-else
-                    size="sm"
-                    variant="outline"
-                    :disabled="busy"
-                    @click="toggleAdmin(user.id, !user.platformAdmin)"
-                  >
-                    {{ user.platformAdmin ? t("admin.revokeAdmin") : t("admin.makeAdmin") }}
-                  </UiButton>
+                  <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    <p v-if="user.repoOwner" class="text-[11px] text-ink-400">{{ t("admin.ownerLocked") }}</p>
+                    <p v-else-if="user.envAdmin" class="text-[11px] text-ink-400">{{ t("admin.envLocked") }}</p>
+                    <UiButton
+                      v-else
+                      size="sm"
+                      variant="outline"
+                      :disabled="busy"
+                      @click="toggleAdmin(user.id, !user.platformAdmin)"
+                    >
+                      {{ user.platformAdmin ? t("admin.revokeAdmin") : t("admin.makeAdmin") }}
+                    </UiButton>
+                    <UiButton
+                      v-if="user.disabled && user.canDisable"
+                      size="sm"
+                      variant="outline"
+                      :disabled="busy"
+                      @click="reactivateUser(user.id)"
+                    >
+                      {{ t("admin.reactivate") }}
+                    </UiButton>
+                    <UiButton
+                      v-else-if="user.canDisable"
+                      size="sm"
+                      variant="ghost"
+                      :disabled="busy"
+                      @click="requestDisable(user)"
+                    >
+                      {{ t("admin.deactivate") }}
+                    </UiButton>
+                  </div>
                 </div>
               </div>
             </template>
@@ -544,24 +689,54 @@ function statusLabel(status: string | null) {
                 {{ t("admin.noWorkspaces") }}
               </div>
               <div v-else class="admin-panel">
-                <div v-for="workspace in workspaces" :key="workspace.id" class="admin-row">
+                <div v-for="workspace in workspaces" :key="workspace.id" class="admin-row items-start">
                   <div class="min-w-0">
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
                       <p class="text-[13px] font-medium">{{ workspace.login }}</p>
                       <UiBadge :tone="statusTone(workspace.status)">{{ statusLabel(workspace.status) }}</UiBadge>
                     </div>
                     <p class="mt-0.5 font-mono text-[11px] text-ink-400">{{ workspace.branch }}</p>
+                    <p class="mt-1 text-[12px] text-ink-400">
+                      {{ t("admin.lastActive") }} · {{ relativeTime(workspace.lastActiveAt) }}
+                      <span v-if="formatBytes(workspace.bytes)"> · {{ formatBytes(workspace.bytes) }}</span>
+                    </p>
+                    <p v-if="workspace.port" class="mt-0.5 font-mono text-[11px] text-ink-400">
+                      :{{ workspace.port }}<span v-if="workspace.vitePort"> · Vite :{{ workspace.vitePort }}</span>
+                    </p>
+                    <p class="mt-0.5 truncate font-mono text-[11px] text-ink-300" :title="workspace.worktree">
+                      {{ shortWorktree(workspace.worktree) }}
+                    </p>
+                    <a
+                      v-if="workspace.previewPath"
+                      class="mt-1 inline-block text-[12px] font-medium text-coral-400 hover:text-coral-300"
+                      :href="workspace.previewPath"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {{ workspace.previewPath }}
+                    </a>
                     <p v-if="workspace.lastError" class="mt-1 text-[12px] text-amber-200">{{ workspace.lastError }}</p>
                   </div>
-                  <UiButton
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    :disabled="busy || workspace.status === 'hibernated'"
-                    @click.prevent="hibernateWorkspace(workspace.id)"
-                  >
-                    {{ t("admin.hibernate") }}
-                  </UiButton>
+                  <div class="flex shrink-0 flex-col gap-2 sm:flex-row">
+                    <UiButton
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      :disabled="busy || workspace.status === 'hibernated'"
+                      @click.prevent="hibernateWorkspace(workspace.id)"
+                    >
+                      {{ t("admin.hibernate") }}
+                    </UiButton>
+                    <UiButton
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      :disabled="busy"
+                      @click.prevent="requestDestroy(workspace)"
+                    >
+                      {{ t("admin.deleteWorkspace") }}
+                    </UiButton>
+                  </div>
                 </div>
               </div>
             </template>
@@ -571,4 +746,42 @@ function statusLabel(status: string | null) {
       </div>
     </div>
   </div>
+  <UiDialog
+    :open="pendingDestroy != null"
+    :title="t('admin.deleteWorkspaceTitle', { login: pendingDestroy?.login ?? '' })"
+    @close="cancelDestroy"
+  >
+    <p class="text-sm leading-relaxed text-ink-500">{{ t("admin.deleteWorkspaceBody") }}</p>
+    <label v-if="pendingDestroy?.canDeactivate" class="mt-4 flex items-start gap-2 text-[13px] text-ink-700">
+      <input v-model="alsoDeactivate" type="checkbox" class="mt-0.5" />
+      <span>{{ t("admin.deleteWorkspaceAlsoDisable") }}</span>
+    </label>
+    <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <UiButton size="sm" variant="outline" data-autofocus @click="cancelDestroy">
+        {{ t("admin.removeKeyCancel") }}
+      </UiButton>
+      <UiButton size="sm" variant="danger" :disabled="busy" @click="confirmDestroy">
+        {{ t("admin.deleteWorkspace") }}
+      </UiButton>
+    </div>
+  </UiDialog>
+  <UiDialog
+    :open="pendingDisable != null"
+    :title="t('admin.deactivateTitle', { login: pendingDisable?.login ?? '' })"
+    @close="cancelDisable"
+  >
+    <p class="text-sm leading-relaxed text-ink-500">{{ t("admin.deactivateBody") }}</p>
+    <label v-if="pendingDisable?.hasWorkspace" class="mt-4 flex items-start gap-2 text-[13px] text-ink-700">
+      <input v-model="alsoDestroy" type="checkbox" class="mt-0.5" />
+      <span>{{ t("admin.deactivateAlsoDestroy") }}</span>
+    </label>
+    <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <UiButton size="sm" variant="outline" data-autofocus @click="cancelDisable">
+        {{ t("admin.removeKeyCancel") }}
+      </UiButton>
+      <UiButton size="sm" variant="danger" :disabled="busy" @click="confirmDisable">
+        {{ t("admin.deactivate") }}
+      </UiButton>
+    </div>
+  </UiDialog>
 </template>

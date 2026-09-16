@@ -12,6 +12,7 @@ export interface UserRecord {
   githubId?: string;
   accessPending?: boolean;
   platformAdmin?: boolean;
+  disabled?: boolean;
 }
 
 export interface WorkspaceRecord {

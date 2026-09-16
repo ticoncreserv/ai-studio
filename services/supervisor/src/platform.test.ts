@@ -7,6 +7,7 @@ import { formatAgentError } from "./acp/errors.js";
 import { Platform } from "./platform.js";
 import { JsonStore, type UserRecord } from "./store.js";
 import { listBranchMigrations } from "./migrations.js";
+import { userEnvPath, writeUserEnv } from "./runtime/env-file.js";
 
 const dirs: string[] = [];
 
@@ -292,6 +293,65 @@ describe("platform", () => {
     p.setPlatformAdmin(owner, bob.id, false);
     expect(p.isPlatformAdmin(bob)).toBe(false);
     expect(p.isPlatformAdmin(owner)).toBe(true);
+  });
+
+  it("destroys the local clone, keeps overlay and sessions, and reclones on next active login", async () => {
+    const p = platform();
+    const user = await p.loginDev("kaio");
+    const ws = await p.ensureWorkspace(user);
+    const firstId = ws.id;
+    writeUserEnv(user.id, { EXTRA: "keep" }, p.envRoot());
+    const overlay = userEnvPath(user.id, p.envRoot());
+    expect(existsSync(overlay)).toBe(true);
+    p.createSession(ws.id, "mock");
+    const sessionCount = p.store.read().sessions.filter((row) => row.workspaceId === ws.id).length;
+    expect(sessionCount).toBeGreaterThan(0);
+
+    const listed = p.listAdminWorkspaces().find((row) => row.id === ws.id);
+    expect(listed).toMatchObject({ login: "kaio", worktree: ws.worktree, previewPath: null });
+    expect(listed?.bytes).toBeGreaterThan(0);
+    expect(listed?.lastActiveAt).toBeTruthy();
+
+    const destroyed = await p.adminDestroy(ws.id);
+    expect(destroyed.status).toBe("destroyed");
+    expect(existsSync(ws.worktree)).toBe(false);
+    expect(existsSync(overlay)).toBe(true);
+    expect(p.store.read().sessions.filter((row) => row.workspaceId === ws.id)).toHaveLength(sessionCount);
+    expect(p.listAdminWorkspaces().find((row) => row.id === ws.id)).toBeUndefined();
+    await expect(p.adminDestroy(ws.id)).rejects.toThrow(/not found/i);
+
+    const again = await p.loginDev("kaio");
+    const live = p.store.read().workspaces.find((row) => row.userId === again.id && row.status !== "destroyed");
+    expect(live?.id).not.toBe(firstId);
+    expect(live?.status).toBe("ready");
+    expect(existsSync(live!.worktree)).toBe(true);
+  });
+
+  it("skips warming a disabled user and refuses to disable the permanent admin", async () => {
+    const p = platform();
+    const owner = addUser(p, "ticoncreserv");
+    const bob = await p.loginDev("bob-disabled");
+    const ws = await p.ensureWorkspace(bob);
+    await p.setUserDisabled(owner, bob.id, true);
+    expect(p.store.read().users.find((row) => row.id === bob.id)?.disabled).toBe(true);
+    expect(p.listUsers().find((row) => row.id === bob.id)).toMatchObject({ disabled: true, canDisable: true });
+
+    await p.loginDev("bob-disabled");
+    const live = p.store.read().workspaces.filter((row) => row.userId === bob.id && row.status !== "destroyed");
+    expect(live).toHaveLength(1);
+    expect(live[0]!.id).toBe(ws.id);
+
+    await expect(p.setUserDisabled(owner, owner.id, true)).rejects.toThrow(/permanent platform admin/i);
+    const ownerWs = await p.ensureWorkspace(owner);
+    await expect(p.adminDestroy(ownerWs.id, { deactivateUser: true })).rejects.toThrow(/permanent platform admin/i);
+    expect(p.store.read().users.find((row) => row.id === owner.id)?.disabled).toBeFalsy();
+
+    const carol = await p.loginDev("carol-gone");
+    const cws = await p.ensureWorkspace(carol);
+    await p.setUserDisabled(owner, carol.id, true, { destroyWorkspace: true });
+    expect(p.store.read().users.find((row) => row.id === carol.id)?.disabled).toBe(true);
+    expect(p.store.read().workspaces.find((row) => row.id === cws.id)?.status).toBe("destroyed");
+    expect(existsSync(cws.worktree)).toBe(false);
   });
 });
 

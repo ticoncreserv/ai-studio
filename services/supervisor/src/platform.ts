@@ -113,6 +113,19 @@ export class Platform {
     return isPermanentPlatformAdmin(user.login, this.repoOwnerLogin());
   }
 
+  canDisableUser(user: UserRecord): boolean {
+    if (this.isRepoOwner(user)) return false;
+    if (adminLoginsFromEnv().some((login) => sameLogin(login, user.login))) return false;
+    return true;
+  }
+
+  assertCanDisable(user: UserRecord): void {
+    if (this.isRepoOwner(user)) throw new Error("Cannot disable the permanent platform admin");
+    if (adminLoginsFromEnv().some((login) => sameLogin(login, user.login))) {
+      throw new Error("Cannot disable an env-listed admin");
+    }
+  }
+
   isPlatformAdmin(user: UserRecord): boolean {
     const row = this.store.read().users.find((item) => item.id === user.id) ?? user;
     return matchPlatformAdmin(row, {
@@ -163,8 +176,10 @@ export class Platform {
     } else {
       this.syncMembership(user);
     }
-    await this.warmForUser(user);
-    return user;
+    const stored = this.store.read().users.find((row) => row.id === user.id) ?? user;
+    if (stored.disabled) return stored;
+    await this.warmForUser(stored);
+    return stored;
   }
 
   syncMembership(user: UserRecord): void {
@@ -874,6 +889,8 @@ export class Platform {
         platformAdmin: this.isPlatformAdmin(user),
         envAdmin: adminLoginsFromEnv().some((login) => sameLogin(login, user.login)),
         repoOwner: this.isRepoOwner(user),
+        disabled: Boolean(user.disabled),
+        canDisable: this.canDisableUser(user),
         workspaceId: workspace?.id ?? null,
         workspaceStatus: workspace?.status ?? null,
         lastActiveAt: workspace?.lastActiveAt ?? null,
@@ -907,6 +924,30 @@ export class Platform {
     return this.listUsers().find((row) => row.id === userId);
   }
 
+  async setUserDisabled(
+    actor: UserRecord,
+    userId: string,
+    disabled: boolean,
+    options: { destroyWorkspace?: boolean } = {},
+  ) {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const target = this.store.read().users.find((row) => row.id === userId);
+    if (!target) throw new Error("User not found");
+    if (disabled) this.assertCanDisable(target);
+    this.store.update((d) => {
+      const row = d.users.find((user) => user.id === userId);
+      if (row) row.disabled = disabled;
+    });
+    if (disabled) {
+      const live = this.store.read().workspaces.find((row) => row.userId === userId && row.status !== "destroyed");
+      if (live) {
+        if (options.destroyWorkspace) await this.adminDestroy(live.id);
+        else if (live.status === "running") await this.hibernate(live.id);
+      }
+    }
+    return this.listUsers().find((row) => row.id === userId);
+  }
+
   listAdminWorkspaces() {
     const db = this.store.read();
     return db.workspaces
@@ -922,6 +963,11 @@ export class Platform {
           lastError: row.lastError ?? null,
           lastActiveAt: row.lastActiveAt,
           port: row.port ?? null,
+          vitePort: row.vitePort ?? null,
+          bytes: row.bytes ?? null,
+          worktree: row.worktree,
+          previewPath: row.status === "running" && row.previewToken ? `/-/p/${row.previewToken}` : null,
+          canDeactivateUser: user ? this.canDisableUser(user) : false,
         };
       });
   }
@@ -931,6 +977,36 @@ export class Platform {
     if (ws.status === "destroyed") throw new Error("Workspace not found");
     if (ws.status === "hibernated") throw new Error("Workspace already hibernated");
     return this.hibernate(workspaceId);
+  }
+
+  async adminDestroy(workspaceId: string, options: { deactivateUser?: boolean } = {}) {
+    const ws = this.requireWorkspace(workspaceId);
+    if (ws.status === "destroyed") throw new Error("Workspace not found");
+    const owner = this.store.read().users.find((row) => row.id === ws.userId);
+    if (options.deactivateUser) {
+      if (!owner) throw new Error("User not found");
+      this.assertCanDisable(owner);
+    }
+    for (const session of this.sessions(workspaceId)) {
+      this.runs.get(session.id)?.stop();
+      this.runs.delete(session.id);
+    }
+    await this.runtime.destroy(workspaceId);
+    this.store.update((d) => {
+      const row = d.workspaces.find((item) => item.id === workspaceId);
+      if (!row) return;
+      row.status = "destroyed";
+      row.desired = "destroyed";
+      row.port = undefined;
+      row.vitePort = undefined;
+    });
+    if (options.deactivateUser && owner) {
+      this.store.update((d) => {
+        const row = d.users.find((user) => user.id === owner.id);
+        if (row) row.disabled = true;
+      });
+    }
+    return this.requireWorkspace(workspaceId);
   }
 
   private seedWorktreePath(): string | undefined {
@@ -1206,6 +1282,8 @@ export function getPlatform(): Platform {
   if (
     !current ||
     typeof current.adminHibernate !== "function" ||
+    typeof current.adminDestroy !== "function" ||
+    typeof current.setUserDisabled !== "function" ||
     typeof current.isPlatformAdmin !== "function" ||
     typeof current.repoOwnerLogin !== "function"
   ) {

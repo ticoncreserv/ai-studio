@@ -2,9 +2,12 @@ import type { H3Event } from "h3";
 import { canInvite } from "@atelier/domain";
 import { platform, userFromEvent } from "./platform";
 
-export function requireUser(event: H3Event) {
+export function requireUser(event: H3Event, options: { allowDisabled?: boolean } = {}) {
   const user = userFromEvent(event);
   if (!user) throw createError({ statusCode: 401, statusMessage: "unauthorized" });
+  if (user.disabled && !options.allowDisabled) {
+    throw createError({ statusCode: 403, statusMessage: "disabled", data: { disabled: true, message: "disabled" } });
+  }
   return user;
 }
 
