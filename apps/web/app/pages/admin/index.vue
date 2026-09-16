@@ -84,6 +84,7 @@ const pendingDestroy = ref<{ id: string; login: string; canDeactivate: boolean }
 const pendingDisable = ref<{ id: string; login: string; hasWorkspace: boolean } | null>(null);
 const alsoDeactivate = ref(false);
 const alsoDestroy = ref(false);
+const listQuery = ref("");
 
 type NavItem = { id: Section; label: string; icon: typeof LayoutGrid };
 
@@ -129,6 +130,38 @@ const showSetupBanner = computed(
     Boolean(overview.value) &&
     (!overview.value!.githubConfigured || !overview.value!.cursorKey),
 );
+
+const filteredUsers = computed(() => {
+  const needle = fold(listQuery.value.trim());
+  if (!needle) return users.value;
+  return users.value.filter((user) => {
+    const haystack = [user.login, user.name, user.role, user.workspaceStatus ?? ""]
+      .map((part) => fold(String(part)))
+      .join(" ");
+    return haystack.includes(needle);
+  });
+});
+
+const filteredWorkspaces = computed(() => {
+  const needle = fold(listQuery.value.trim());
+  if (!needle) return workspaces.value;
+  return workspaces.value.filter((workspace) => {
+    const haystack = [
+      workspace.login,
+      workspace.branch,
+      workspace.status,
+      workspace.worktree,
+      workspace.lastError ?? "",
+      workspace.previewPath ?? "",
+      workspace.port != null ? String(workspace.port) : "",
+      workspace.vitePort != null ? String(workspace.vitePort) : "",
+    ]
+      .map((part) => fold(String(part)))
+      .join(" ");
+    return haystack.includes(needle);
+  });
+});
+
 const envEditor = ref<{ submit: () => void } | null>(null);
 
 async function refreshData() {
@@ -230,6 +263,7 @@ onMounted(() => {
 
 watch(section, () => {
   error.value = "";
+  listQuery.value = "";
 });
 
 async function signOut() {
@@ -686,11 +720,27 @@ function ruleHint(level: "platform" | "project" | "user") {
               <section v-else-if="section === 'users'" class="cx-section">
                 <p class="cx-section-label">{{ t("admin.usersSection") }}</p>
                 <p class="cx-section-note">{{ t("admin.usersHint") }}</p>
+                <div class="cx-search mb-2">
+                  <Search class="h-3 w-3 shrink-0 text-ink-400" />
+                  <input
+                    v-model="listQuery"
+                    type="text"
+                    autocomplete="off"
+                    :placeholder="t('admin.searchUsers')"
+                    :aria-label="t('admin.searchUsers')"
+                  />
+                </div>
                 <div v-if="!users.length" class="cx-panel px-4 py-7 text-center text-[13px] text-ink-400">
                   {{ t("admin.noUsers") }}
                 </div>
+                <div
+                  v-else-if="!filteredUsers.length"
+                  class="cx-panel px-4 py-7 text-center text-[13px] text-ink-400"
+                >
+                  {{ t("admin.noUserMatches") }}
+                </div>
                 <div v-else class="cx-panel">
-                  <div v-for="user in users" :key="user.id" class="cx-row cx-row-wrap">
+                  <div v-for="user in filteredUsers" :key="user.id" class="cx-row cx-row-wrap">
                     <div class="flex min-w-0 items-center gap-2.5">
                       <UiAvatar :name="user.login" />
                       <div class="min-w-0">
@@ -745,11 +795,31 @@ function ruleHint(level: "platform" | "project" | "user") {
               <section v-else-if="section === 'workspaces'" class="cx-section">
                 <p class="cx-section-label">{{ t("admin.workspacesSection") }}</p>
                 <p class="cx-section-note">{{ t("admin.workspacesHint") }}</p>
+                <div class="cx-search mb-2">
+                  <Search class="h-3 w-3 shrink-0 text-ink-400" />
+                  <input
+                    v-model="listQuery"
+                    type="text"
+                    autocomplete="off"
+                    :placeholder="t('admin.searchWorkspaces')"
+                    :aria-label="t('admin.searchWorkspaces')"
+                  />
+                </div>
                 <div v-if="!workspaces.length" class="cx-panel px-4 py-7 text-center text-[13px] text-ink-400">
                   {{ t("admin.noWorkspaces") }}
                 </div>
+                <div
+                  v-else-if="!filteredWorkspaces.length"
+                  class="cx-panel px-4 py-7 text-center text-[13px] text-ink-400"
+                >
+                  {{ t("admin.noWorkspaceMatches") }}
+                </div>
                 <div v-else class="cx-panel">
-                  <div v-for="workspace in workspaces" :key="workspace.id" class="cx-row cx-row-top cx-row-wrap">
+                  <div
+                    v-for="workspace in filteredWorkspaces"
+                    :key="workspace.id"
+                    class="cx-row cx-row-top cx-row-wrap"
+                  >
                     <div class="min-w-0">
                       <div class="flex flex-wrap items-center gap-1.5">
                         <p class="cx-row-title">{{ workspace.login }}</p>
