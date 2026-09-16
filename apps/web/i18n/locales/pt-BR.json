@@ -408,7 +408,7 @@
     "running": "Em execução",
     "hibernated": "Hibernados",
     "errored": "Com erro",
-    "userCount": "Usuários autenticados",
+    "userCount": "Usuários",
     "lastError": "Último erro de preview",
     "noError": "Nenhum erro de preview registrado.",
     "envSection": "Chaves compartilhadas",

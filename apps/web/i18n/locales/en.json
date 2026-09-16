@@ -408,7 +408,7 @@
     "running": "Running",
     "hibernated": "Hibernated",
     "errored": "Error",
-    "userCount": "Signed-in users",
+    "userCount": "Users",
     "lastError": "Last preview error",
     "noError": "No preview errors recorded.",
     "envSection": "Shared keys",
