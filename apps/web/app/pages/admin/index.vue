@@ -907,6 +907,9 @@ function ruleHint(level: "platform" | "project" | "user") {
                       <div class="min-w-0">
                         <p class="cx-row-title">{{ t("admin.github") }}</p>
                         <p class="cx-row-desc">{{ t("admin.githubHint") }}</p>
+                        <NuxtLink to="/setup/github" class="mt-1 inline-block text-[12px] text-coral-400 hover:text-coral-300">
+                          {{ t("admin.githubSetup") }}
+                        </NuxtLink>
                       </div>
                       <UiBadge :tone="overview.githubConfigured ? 'live' : 'warn'">
                         {{ overview.githubConfigured ? t("admin.configured") : t("admin.missing") }}

@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("platform", () => {
-  it("lets local login succeed when GitHub App credentials are missing", async () => {
+  it("lets GitHub login persist when clone credentials are missing", async () => {
     const previousVitest = process.env.VITEST;
     const previousAppId = process.env.GITHUB_APP_ID;
     const previousKey = process.env.GITHUB_APP_PRIVATE_KEY;

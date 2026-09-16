@@ -19,8 +19,14 @@ import {
 } from "@atelier/supervisor";
 import { randomBytes } from "node:crypto";
 import { requestPublicUrl } from "../../utils/public-url";
+import { platform, userFromEvent } from "../../utils/platform";
 
 export default defineEventHandler(async (event) => {
+  const user = userFromEvent(event);
+  const admin = Boolean(user && platform().isPlatformAdmin(user));
+  if (!canSetupGitHubApp() && !admin) {
+    throw createError({ statusCode: 404, statusMessage: "Not Found" });
+  }
   const configured = hasGitHubOAuth();
   const canCreate = canSetupGitHubApp() && !configured;
   const creds = loadGitHubAppCredentials();
@@ -57,7 +63,7 @@ export default defineEventHandler(async (event) => {
       url: `${publicUrl}/api/webhooks/github`,
       settingsUrl: githubAppWebhookSettingsUrl(creds),
       hasSecret: Boolean(webhookSecret),
-      secret: canSetupGitHubApp() && webhookSecret ? webhookSecret : null,
+      secret: webhookSecret || null,
     },
   };
 });

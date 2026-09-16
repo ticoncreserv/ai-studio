@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { LocalAuthProvider, signState, verifyState } from "./auth.js";
+import { createAuthProvider, signState, verifyState } from "./auth.js";
 import { signSession, verifySession } from "./session-cookie.js";
 
 describe("auth", () => {
-  it("issues a local identity and a sealed cookie", async () => {
-    const identity = await new LocalAuthProvider().completeLogin({ login: "joao", locale: "pt-BR" });
-    expect(identity.login).toBe("joao");
-    expect(identity.commitEmail).toContain("users.noreply.github.com");
+  it("always uses GitHub for studio login", () => {
+    const previousId = process.env.GITHUB_CLIENT_ID;
+    const previousSecret = process.env.GITHUB_CLIENT_SECRET;
+    delete process.env.GITHUB_CLIENT_ID;
+    delete process.env.GITHUB_CLIENT_SECRET;
+    try {
+      expect(createAuthProvider().id).toBe("github");
+    } finally {
+      if (previousId === undefined) delete process.env.GITHUB_CLIENT_ID;
+      else process.env.GITHUB_CLIENT_ID = previousId;
+      if (previousSecret === undefined) delete process.env.GITHUB_CLIENT_SECRET;
+      else process.env.GITHUB_CLIENT_SECRET = previousSecret;
+    }
+  });
+
+  it("issues a sealed session cookie", () => {
     const cookie = signSession("user-1");
     expect(verifySession(cookie)?.userId).toBe("user-1");
     expect(verifySession("tampered")).toBeNull();

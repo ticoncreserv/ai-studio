@@ -17,6 +17,7 @@ import {
   ensureGitHubWebhookSecret,
   githubAppManifest,
   redeemGitHubAppCode,
+  canSetupGitHubApp,
   syncGitHubAppPublicUrls,
   verifyGitHubWebhookSignature,
   saveGitHubAppCredentials,
@@ -32,6 +33,7 @@ const envKeys = [
   "GITHUB_WEBHOOK_SECRET",
   "ATELIER_PUBLIC_URL",
   "ATELIER_INCLUDE_LOOPBACK_CALLBACKS",
+  "ATELIER_ALLOW_GITHUB_APP_SETUP",
 ];
 
 beforeEach(() => {
@@ -270,5 +272,18 @@ describe("github app manifest", () => {
       if (previous === undefined) delete process.env.ATELIER_REPO;
       else process.env.ATELIER_REPO = previous;
     }
+  });
+});
+
+describe("github app setup flag", () => {
+  it("is off unless ATELIER_ALLOW_GITHUB_APP_SETUP is explicitly enabled", () => {
+    delete process.env.ATELIER_ALLOW_GITHUB_APP_SETUP;
+    expect(canSetupGitHubApp()).toBe(false);
+    process.env.ATELIER_ALLOW_GITHUB_APP_SETUP = "0";
+    expect(canSetupGitHubApp()).toBe(false);
+    process.env.ATELIER_ALLOW_GITHUB_APP_SETUP = "1";
+    expect(canSetupGitHubApp()).toBe(true);
+    process.env.ATELIER_ALLOW_GITHUB_APP_SETUP = "true";
+    expect(canSetupGitHubApp()).toBe(true);
   });
 });
