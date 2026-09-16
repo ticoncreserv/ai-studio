@@ -4,17 +4,37 @@ import { randomUUID } from "node:crypto";
 import type { SessionEvent } from "@atelier/contracts";
 import { git } from "./git-ops.js";
 
+function porcelainPath(line: string): string | undefined {
+  return line
+    .replace(/^[ MADRCU?!]{1,2}\s+/, "")
+    .replace(/^"|"$/g, "")
+    .split(" -> ")
+    .pop();
+}
+
+function isStudioOnlyPath(path: string): boolean {
+  return path.startsWith(".cursor/") || path.startsWith("var/") || path === ".env" || path === "var";
+}
+
+export async function worktreeFingerprint(worktree: string): Promise<string> {
+  const status = await git(worktree, ["status", "--porcelain"]).catch(() => "");
+  const parts: string[] = [];
+  for (const line of status.split("\n").filter(Boolean)) {
+    const path = porcelainPath(line);
+    if (!path || isStudioOnlyPath(path)) continue;
+    const diff = await git(worktree, ["diff", "HEAD", "--", path]).catch(() => "");
+    parts.push(line, diff);
+  }
+  return parts.join("\n");
+}
+
 export async function worktreeDiffEvents(worktree: string): Promise<SessionEvent[]> {
   const status = await git(worktree, ["status", "--porcelain"]).catch(() => "");
   if (!status.trim()) return [];
   const events: SessionEvent[] = [];
   for (const line of status.split("\n").filter(Boolean)) {
-    const path = line
-      .replace(/^[ MADRCU?!]{1,2}\s+/, "")
-      .replace(/^"|"$/g, "")
-      .split(" -> ")
-      .pop();
-    if (!path || path.startsWith(".cursor/") || path.startsWith("var/") || path === ".env" || path === "var") continue;
+    const path = porcelainPath(line);
+    if (!path || isStudioOnlyPath(path)) continue;
     const target = join(worktree, path);
     if (existsSync(target) && statSync(target).isDirectory()) continue;
     let contents = "";

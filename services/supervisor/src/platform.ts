@@ -57,7 +57,14 @@ import {
 } from "./runtime/env-file.js";
 import { probeConnections } from "./runtime/connection-probe.js";
 import { mentionIndexFromWorktree, worktreeBytes } from "./runtime/worktree-meta.js";
-import { commitWorktree, restoreCheckpoint, restoreFile, syncBaseBranch, worktreeDiffEvents } from "./runtime/worktree-diff.js";
+import {
+  commitWorktree,
+  restoreCheckpoint,
+  restoreFile,
+  syncBaseBranch,
+  worktreeDiffEvents,
+  worktreeFingerprint,
+} from "./runtime/worktree-diff.js";
 import { formatAgentError } from "./acp/errors.js";
 import type { AcpPromptBlock } from "./acp/session.js";
 import type { ProviderRun } from "./providers/types.js";
@@ -664,6 +671,7 @@ export class Platform {
         }
       }
       const blocks: AcpPromptBlock[] = [{ type: "text", text: packed.text }, ...this.attachmentBlocks(command.attachments)];
+      const fingerprintBefore = await worktreeFingerprint(ws.worktree);
       await run.prompt(blocks);
       if (streamed.trim()) {
         this.append(session.id, {
@@ -675,6 +683,7 @@ export class Platform {
         });
       }
       try {
+        if ((await worktreeFingerprint(ws.worktree)) === fingerprintBefore) return;
         for (const event of await worktreeDiffEvents(ws.worktree)) this.append(session.id, event);
         const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(userText));
         if (sha) {

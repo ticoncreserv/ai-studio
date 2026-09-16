@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git } from "./git-ops.js";
-import { commitWorktree, restoreFile, splitHunks, syncBaseBranch, worktreeDiffEvents } from "./worktree-diff.js";
+import { commitWorktree, restoreFile, splitHunks, syncBaseBranch, worktreeDiffEvents, worktreeFingerprint } from "./worktree-diff.js";
 
 const dirs: string[] = [];
 const user = { name: "Ada", email: "ada@example.com" };
@@ -57,5 +57,20 @@ describe("worktree diffs", () => {
     writeFileSync(join(dir, "var", "rule-provenance.json"), "{}\n");
     mkdirSync(join(dir, "scratch"), { recursive: true });
     await expect(worktreeDiffEvents(dir)).resolves.toEqual([]);
+  });
+
+  it("keeps a stable fingerprint when only studio var/ files change", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-fp-"));
+    dirs.push(dir);
+    await git(dir, ["init"]);
+    writeFileSync(join(dir, "keep.txt"), "ok\n");
+    await git(dir, ["add", "-A"], user);
+    await git(dir, ["commit", "-m", "base"], user);
+    const before = await worktreeFingerprint(dir);
+    mkdirSync(join(dir, "var"), { recursive: true });
+    writeFileSync(join(dir, "var", "rule-provenance.json"), "{}\n");
+    expect(await worktreeFingerprint(dir)).toBe(before);
+    writeFileSync(join(dir, "keep.txt"), "changed\n");
+    expect(await worktreeFingerprint(dir)).not.toBe(before);
   });
 });
