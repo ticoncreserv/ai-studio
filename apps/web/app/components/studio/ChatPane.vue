@@ -24,14 +24,31 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const scroller = ref<HTMLElement | null>(null);
+const bottom = ref<HTMLElement | null>(null);
+
+function scrollToBottom(behavior: ScrollBehavior = "auto") {
+  const el = scroller.value;
+  if (!el) return;
+  el.scrollTop = el.scrollHeight;
+  bottom.value?.scrollIntoView({ block: "end", behavior });
+}
+
+async function stickToBottom(behavior: ScrollBehavior = "auto") {
+  await nextTick();
+  scrollToBottom(behavior);
+  requestAnimationFrame(() => scrollToBottom(behavior));
+}
 
 watch(
-  () => props.events.length,
-  async () => {
-    await nextTick();
-    if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight;
+  () => [props.events.length, props.events.at(-1)?.id, props.events.at(-1)?.type, props.sending] as const,
+  () => {
+    void stickToBottom();
   },
 );
+
+onMounted(() => {
+  void stickToBottom();
+});
 
 const suggestions = computed(() => [t("chat.suggestion1"), t("chat.suggestion2"), t("chat.suggestion3")]);
 </script>
@@ -84,6 +101,7 @@ const suggestions = computed(() => [t("chat.suggestion1"), t("chat.suggestion2")
         <UiSpinner size="sm" :label="t('chat.thinking')" />
         {{ t("chat.thinking") }}
       </p>
+      <div ref="bottom" class="h-px w-full shrink-0" aria-hidden="true" />
     </div>
 
     <slot />
