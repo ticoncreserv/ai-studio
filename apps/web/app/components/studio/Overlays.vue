@@ -62,10 +62,11 @@ function submitQuestion() {
 </script>
 
 <template>
-  <div v-if="data.divergence.pendingInBranch.length || data.lock" class="pointer-events-none absolute inset-x-0 top-14 z-20 flex flex-col gap-2 px-4 pt-2">
-    <div v-if="data.divergence.pendingInBranch.length" class="pointer-events-auto rounded-[10px] border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-100 shadow-lift">
+  <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length || data.lock" class="pointer-events-none absolute inset-x-0 top-14 z-20 flex flex-col gap-2 px-4 pt-2">
+    <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length" class="pointer-events-auto rounded-[10px] border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-100 shadow-lift">
       <p class="font-semibold">{{ t("workspace.divergence") }}</p>
-      <p>{{ t("workspace.pendingMigrations", { count: data.divergence.pendingInBranch.length }) }}</p>
+      <p v-if="data.divergence.pendingInBranch.length">{{ t("workspace.pendingMigrations", { count: data.divergence.pendingInBranch.length }) }}</p>
+      <p v-if="data.divergence.extraInDatabase.length">{{ t("workspace.extraMigrations", { count: data.divergence.extraInDatabase.length }) }}</p>
     </div>
     <div v-if="data.lock && data.lock.sessionId !== data.session?.id" class="pointer-events-auto rounded-xl border border-line bg-paper px-3 py-2 text-[12px] text-ink-700 shadow-lift">
       {{ t("workspace.lockHeld") }}

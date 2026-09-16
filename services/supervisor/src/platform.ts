@@ -26,6 +26,7 @@ import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type W
 import { createProvider, listProviders } from "./providers/index.js";
 import { fixtureAppDir, repoRoot } from "./paths.js";
 import { applyHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
+import { worktreeDivergence } from "./migrations.js";
 import { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
 
 export class Platform {
@@ -516,6 +517,15 @@ export class Platform {
     const ws = this.requireWorkspace(workspaceId);
     const env = { ...PREVIEW_SIDE_EFFECTS, ...isolationEnv(workspaceId, `http://127.0.0.1:${ws.port ?? 0}`) };
     return { env, validation: validateEnvContract(spec, env), spec };
+  }
+
+  workspaceDivergence(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    const applied = this.store
+      .read()
+      .migrationLog.filter((row) => row.branch === ws.branch)
+      .map((row) => ({ migration: row.name }));
+    return worktreeDivergence(ws.worktree, applied);
   }
 
   evaluateShell(command: string, worktree: string) {

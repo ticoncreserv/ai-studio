@@ -20,6 +20,12 @@ export function diffMigrations(files: MigrationFile[], applied: AppliedMigration
   };
 }
 
+/** Unknown applied set is not divergence — do not invent pending migrations. */
+export function knownDivergence(files: MigrationFile[], applied: AppliedMigration[]): Divergence {
+  if (applied.length === 0) return { pendingInBranch: [], extraInDatabase: [] };
+  return diffMigrations(files, applied);
+}
+
 export function mayMigrateForward(connectionKind: "app" | "erp", env: "homologation" | "production"): boolean {
   return connectionKind === "app" && env === "homologation";
 }

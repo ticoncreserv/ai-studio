@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { foldEvents } from "@atelier/domain";
 import { Platform } from "./platform.js";
 import { JsonStore } from "./store.js";
+import { listBranchMigrations } from "./migrations.js";
 
 const dirs: string[] = [];
 
@@ -79,5 +80,40 @@ describe("platform", () => {
     const ws = await p.ensureWorkspace(user);
     const share = p.sharePreview(ws.id);
     expect(p.resolveShare(share.token)?.id).toBe(ws.id);
+  });
+
+  it("does not invent schema divergence without an applied snapshot", async () => {
+    const p = platform();
+    const user = await p.loginDev("fernanda");
+    const ws = await p.ensureWorkspace(user);
+    expect(p.workspaceDivergence(ws.id)).toEqual({ pendingInBranch: [], extraInDatabase: [] });
+  });
+
+  it("reports pending branch migrations once the studio has an applied snapshot", async () => {
+    const p = platform();
+    const user = await p.loginDev("gabriel");
+    const ws = await p.ensureWorkspace(user);
+    const dir = join(ws.worktree, "database", "migrations");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "2024_01_01_create_users.php"), "<?php");
+    writeFileSync(join(dir, "2026_04_01_add_quote_window.php"), "<?php");
+    p.store.update((db) => {
+      db.migrationLog.push({
+        id: "m1",
+        author: "studio",
+        branch: ws.branch,
+        name: "2024_01_01_create_users",
+        at: new Date().toISOString(),
+        output: "INFO  Running migrations.",
+      });
+    });
+    expect(listBranchMigrations(ws.worktree).map((f) => f.name)).toEqual([
+      "2024_01_01_create_users",
+      "2026_04_01_add_quote_window",
+    ]);
+    expect(p.workspaceDivergence(ws.id)).toEqual({
+      pendingInBranch: ["2026_04_01_add_quote_window"],
+      extraInDatabase: [],
+    });
   });
 });
