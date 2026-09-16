@@ -3,7 +3,21 @@ import { ensureViteHotFile, publicViteOrigin, viteDevAssetPath } from "@atelier/
 import { platform } from "./platform";
 import { rewritePreviewDocument, rewritePreviewLocation, rewriteSetCookie, rewriteViteBareImports } from "./preview-rewrite";
 
-const FORWARD_HEADERS = ["cookie", "content-type", "accept", "x-xsrf-token", "x-requested-with", "authorization", "origin"];
+const FORWARD_HEADERS = [
+  "cookie",
+  "content-type",
+  "accept",
+  "x-xsrf-token",
+  "x-requested-with",
+  "authorization",
+  "origin",
+  "x-inertia",
+  "x-inertia-version",
+  "x-inertia-partial-data",
+  "x-inertia-partial-component",
+  "x-inertia-reset",
+  "x-inertia-error-bag",
+];
 
 export async function proxyPreview(event: H3Event, token: string, rest = "") {
   const ws = platform().store.read().workspaces.find((row) => row.previewToken === token);
