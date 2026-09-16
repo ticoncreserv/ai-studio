@@ -1,26 +1,19 @@
 <script setup lang="ts">
 const { t } = useI18n();
 const route = useRoute();
-const setup = ref<{
-  configured: boolean;
-  canCreate: boolean;
-  org: string;
-  repo: string;
-  publicUrl: string;
-  action: string | null;
-  manifest: Record<string, unknown> | null;
-  installUrl: string;
-  storePath: string;
-} | null>(null);
-const loadError = ref("");
-
-onMounted(async () => {
-  try {
-    setup.value = await $fetch("/api/setup/github");
-  } catch {
-    loadError.value = t("setup.github.error");
-  }
-});
+const { data: setup, error: loadError } = await useAsyncData("github-setup", () =>
+  $fetch<{
+    configured: boolean;
+    canCreate: boolean;
+    org: string;
+    repo: string;
+    publicUrl: string;
+    action: string | null;
+    manifest: Record<string, unknown> | null;
+    installUrl: string;
+    storePath: string;
+  }>("/api/setup/github"),
+);
 
 const created = computed(() => route.query.created === "1");
 const errorKey = computed(() => {
@@ -46,7 +39,7 @@ const errorKey = computed(() => {
           {{ t("setup.github.saved") }}
         </p>
         <p v-if="errorKey" class="mt-4 text-sm text-red-400">{{ t(errorKey) }}</p>
-        <p v-if="loadError" class="mt-4 text-sm text-red-400">{{ loadError }}</p>
+        <p v-if="loadError" class="mt-4 text-sm text-red-400">{{ t("setup.github.error") }}</p>
 
         <template v-if="setup">
           <form v-if="setup.canCreate && setup.action && setup.manifest" class="mt-6" :action="setup.action" method="post">
