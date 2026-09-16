@@ -44,6 +44,11 @@ function toggleAnswer(questionId: string, optionId: string, multiple?: boolean) 
   emit("update:questionAnswers", current);
 }
 
+function runPaletteCommand(cmd: { id: string; run: () => void }) {
+  emit("update:dialog", null);
+  cmd.run();
+}
+
 function submitQuestion() {
   if (!props.pendingQuestion || props.pendingQuestion.type !== "question") return;
   emit("command", {
@@ -87,7 +92,7 @@ function submitQuestion() {
         <li v-for="cmd in filteredCommands" :key="cmd.id">
           <button
             class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-ink-700 hover:bg-canvas"
-            @click="cmd.run(); emit('update:dialog', null)"
+            @click="runPaletteCommand(cmd)"
           >
             <span>{{ cmd.label }}</span>
             <UiKbd v-if="cmd.keys">{{ cmd.keys }}</UiKbd>

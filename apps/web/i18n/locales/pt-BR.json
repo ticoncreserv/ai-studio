@@ -190,6 +190,9 @@
     "sync": "Sincronizar com a base",
     "hibernate": "Hibernar workspace",
     "rules": "Abrir regras",
+    "connections": "Abrir conexões",
+    "settings": "Abrir ajustes do workspace",
+    "invite": "Convidar alguém do time",
     "share": "Compartilhar preview",
     "empty": "Nenhum comando corresponde."
   },

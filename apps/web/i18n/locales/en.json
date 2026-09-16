@@ -190,6 +190,9 @@
     "sync": "Sync with base",
     "hibernate": "Hibernate workspace",
     "rules": "Open rules",
+    "connections": "Open connections",
+    "settings": "Open workspace settings",
+    "invite": "Invite a teammate",
     "share": "Share preview",
     "empty": "No commands match."
   },

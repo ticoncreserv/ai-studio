@@ -59,10 +59,15 @@ const menu = ref(false);
       <UiIconButton :label="t('nav.invite')" @click="emit('invite')">
         <UserPlus class="h-4 w-4" />
       </UiIconButton>
-      <UiButton size="sm" variant="soft" @click="emit('share')">
-        <Share2 class="h-3.5 w-3.5" />
-        <span class="hidden sm:inline">{{ t("nav.share") }}</span>
-      </UiButton>
+      <UiIconButton :label="t('nav.share')" @click="emit('share')">
+        <Share2 class="h-4 w-4" />
+      </UiIconButton>
+      <UiIconButton :label="t('nav.rules')" @click="emit('rules')">
+        <BookOpen class="h-4 w-4" />
+      </UiIconButton>
+      <UiIconButton :label="t('nav.settings')" @click="emit('settings')">
+        <SlidersHorizontal class="h-4 w-4" />
+      </UiIconButton>
       <div class="relative">
         <UiIconButton :label="t('nav.more')" @click="menu = !menu">
           <MoreHorizontal class="h-4 w-4" />

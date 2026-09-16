@@ -188,6 +188,9 @@ export function useStudio() {
     { id: "new", label: t("command.newSession"), run: newSession },
     { id: "sync", label: t("command.sync"), run: () => sendCommand({ type: "sync_base" }) },
     { id: "rules", label: t("command.rules"), run: () => (sheet.value = "rules") },
+    { id: "connections", label: t("command.connections"), run: () => (sheet.value = "connections") },
+    { id: "settings", label: t("command.settings"), run: () => (sheet.value = "settings") },
+    { id: "invite", label: t("command.invite"), run: () => (dialog.value = "invite") },
     { id: "share", label: t("command.share"), run: () => (dialog.value = "share") },
     { id: "shortcuts", label: t("command.shortcuts"), keys: "⌘/", run: () => (dialog.value = "shortcuts") },
   ]);
