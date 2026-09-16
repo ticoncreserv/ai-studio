@@ -166,19 +166,19 @@ function submitQuestion() {
     <p class="mt-1 text-[12px] text-ink-500">{{ t("flags.hint") }}</p>
     <label class="mt-3 flex items-center justify-between">
       <span class="text-sm">{{ t("flags.publish") }}</span>
-      <UiSwitch :model-value="!!data.flags.publish" :label="t('flags.publish')" @update:model-value="emit('patchFlags', { publish: $event })" />
+      <UiSwitch :model-value="!!data.flags?.publish" :label="t('flags.publish')" @update:model-value="emit('patchFlags', { publish: $event })" />
     </label>
     <label class="mt-3 flex items-center justify-between">
       <span class="text-sm">{{ t("flags.multiProvider") }}</span>
-      <UiSwitch :model-value="!!data.flags.multiProvider" :label="t('flags.multiProvider')" @update:model-value="emit('patchFlags', { multiProvider: $event })" />
+      <UiSwitch :model-value="!!data.flags?.multiProvider" :label="t('flags.multiProvider')" @update:model-value="emit('patchFlags', { multiProvider: $event })" />
     </label>
     <label class="mt-3 flex items-center justify-between">
       <span class="text-sm">{{ t("flags.spectator") }}</span>
-      <UiSwitch :model-value="!!data.flags.spectator" :label="t('flags.spectator')" @update:model-value="emit('patchFlags', { spectator: $event })" />
+      <UiSwitch :model-value="!!data.flags?.spectator" :label="t('flags.spectator')" @update:model-value="emit('patchFlags', { spectator: $event })" />
     </label>
     <label class="mt-3 flex items-center justify-between">
       <span class="text-sm">{{ t("flags.recipes") }}</span>
-      <UiSwitch :model-value="!!data.flags.recipes" :label="t('flags.recipes')" @update:model-value="emit('patchFlags', { recipes: $event })" />
+      <UiSwitch :model-value="!!data.flags?.recipes" :label="t('flags.recipes')" @update:model-value="emit('patchFlags', { recipes: $event })" />
     </label>
     <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("workspace.diskQuota") }}</p>
     <p class="mt-1 text-sm text-ink-600">{{ t("workspace.quotaUsed", { used: data.quota.usedMb, limit: data.quota.limitMb }) }}</p>
