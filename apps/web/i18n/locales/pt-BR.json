@@ -430,6 +430,13 @@
     "lastRunning": "Não é possível hibernar o último workspace em execução.",
     "noWorkspaces": "Ainda não há workspaces.",
     "status": "Status",
+    "statusRunning": "Em execução",
+    "statusReady": "Pronto",
+    "statusHibernated": "Hibernado",
+    "statusError": "Erro",
+    "statusProvisioning": "Provisionando",
+    "statusStarting": "Iniciando",
+    "statusDestroyed": "Destruído",
     "branch": "Branch",
     "login": "Usuário"
   }

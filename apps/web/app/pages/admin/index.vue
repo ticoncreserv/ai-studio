@@ -274,6 +274,17 @@ function statusTone(status: string | null) {
   if (status === "error" || status === "hibernated") return "warn" as const;
   return "neutral" as const;
 }
+
+function statusLabel(status: string | null) {
+  if (status === "running") return t("admin.statusRunning");
+  if (status === "ready") return t("admin.statusReady");
+  if (status === "hibernated") return t("admin.statusHibernated");
+  if (status === "error") return t("admin.statusError");
+  if (status === "provisioning") return t("admin.statusProvisioning");
+  if (status === "starting") return t("admin.statusStarting");
+  if (status === "destroyed") return t("admin.statusDestroyed");
+  return status ?? "";
+}
 </script>
 
 <template>
@@ -475,7 +486,7 @@ function statusTone(status: string | null) {
                       </div>
                       <p class="mt-0.5 text-[12px] text-ink-400">
                         {{ user.role }}
-                        <span v-if="user.workspaceStatus"> · {{ user.workspaceStatus }}</span>
+                        <span v-if="user.workspaceStatus"> · {{ statusLabel(user.workspaceStatus) }}</span>
                       </p>
                     </div>
                   </div>
@@ -537,7 +548,7 @@ function statusTone(status: string | null) {
                   <div class="min-w-0">
                     <div class="flex items-center gap-2">
                       <p class="text-[13px] font-medium">{{ workspace.login }}</p>
-                      <UiBadge :tone="statusTone(workspace.status)">{{ workspace.status }}</UiBadge>
+                      <UiBadge :tone="statusTone(workspace.status)">{{ statusLabel(workspace.status) }}</UiBadge>
                     </div>
                     <p class="mt-0.5 font-mono text-[11px] text-ink-400">{{ workspace.branch }}</p>
                     <p v-if="workspace.lastError" class="mt-1 text-[12px] text-amber-200">{{ workspace.lastError }}</p>
