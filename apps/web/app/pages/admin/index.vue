@@ -427,9 +427,10 @@ function statusTone(status: string | null) {
             </div>
 
             <div v-else-if="section === 'env'" class="admin-panel flex min-h-0 flex-1 flex-col">
-              <div class="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+              <div class="flex min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-5">
                 <AdminEnvEditor
                   ref="envEditor"
+                  class="min-h-0 flex-1"
                   :env="env.env"
                   :raw="env.raw"
                   :show-footer="false"

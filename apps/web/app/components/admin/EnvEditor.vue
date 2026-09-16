@@ -74,8 +74,8 @@ defineExpose({ submit });
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-col">
-    <div class="mb-3 inline-flex self-start rounded-[9px] border border-line bg-black/20 p-0.5">
+  <div class="flex min-h-0 flex-1 flex-col">
+    <div class="mb-3 inline-flex shrink-0 self-start rounded-[9px] border border-line bg-black/20 p-0.5">
       <button
         type="button"
         class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
@@ -93,7 +93,7 @@ defineExpose({ submit });
         {{ t("admin.raw") }}
       </button>
     </div>
-    <div v-if="mode === 'form'" class="space-y-2">
+    <div v-if="mode === 'form'" class="thin-scroll min-h-0 flex-1 space-y-2 overflow-y-auto">
       <div v-if="!rows.length" class="flex flex-col items-start gap-3 py-6">
         <p class="text-[13px] text-ink-400">{{ t("admin.envEmpty") }}</p>
         <UiButton size="sm" variant="outline" @click="addRow">{{ t("admin.addKey") }}</UiButton>
@@ -119,12 +119,13 @@ defineExpose({ submit });
         <UiButton size="sm" variant="ghost" @click="addRow">{{ t("admin.addKey") }}</UiButton>
       </template>
     </div>
-    <textarea
-      v-else
-      v-model="raw"
-      class="h-64 w-full rounded-[10px] border border-line bg-black/25 p-3 font-mono text-[12px] outline-none focus:border-coral-500/40"
-    />
-    <div v-if="showFooter" class="admin-action-bar mt-4">
+    <div v-else class="relative min-h-48 flex-1">
+      <textarea
+        v-model="raw"
+        class="thin-scroll absolute inset-0 h-full w-full resize-none overflow-y-auto rounded-[10px] border border-line bg-black/25 p-3 font-mono text-[12px] outline-none focus:border-coral-500/40"
+      />
+    </div>
+    <div v-if="showFooter" class="admin-action-bar mt-4 shrink-0">
       <slot name="actions" />
       <UiButton size="sm" @click="submit">
         <slot name="save-label">{{ t("admin.saveEnv") }}</slot>
