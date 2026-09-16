@@ -62,25 +62,35 @@ function submit() {
 
 <template>
   <div>
-    <div class="mb-3 flex gap-2">
-      <UiButton size="sm" :variant="mode === 'form' ? 'primary' : 'outline'" @click="mode = 'form'">
+    <div class="mb-3 inline-flex rounded-[9px] border border-line bg-black/20 p-0.5">
+      <button
+        type="button"
+        class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
+        :class="mode === 'form' ? 'bg-white/10 text-ink-950' : 'text-ink-400'"
+        @click="mode = 'form'"
+      >
         {{ t("admin.form") }}
-      </UiButton>
-      <UiButton size="sm" :variant="mode === 'raw' ? 'primary' : 'outline'" @click="mode = 'raw'">
+      </button>
+      <button
+        type="button"
+        class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
+        :class="mode === 'raw' ? 'bg-white/10 text-ink-950' : 'text-ink-400'"
+        @click="mode = 'raw'"
+      >
         {{ t("admin.raw") }}
-      </UiButton>
+      </button>
     </div>
     <div v-if="mode === 'form'" class="space-y-2">
       <div v-for="(row, index) in rows" :key="index" class="flex items-center gap-2">
         <input
           v-model="row.key"
-          class="h-9 w-[38%] rounded-[8px] border border-line bg-white/5 px-2 font-mono text-[12px] outline-none"
+          class="h-9 w-[38%] rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
           :placeholder="t('admin.envKey')"
         />
         <input
           v-model="row.value"
           :type="isSecret(row.key) && !revealed[row.key] ? 'password' : 'text'"
-          class="h-9 min-w-0 flex-1 rounded-[8px] border border-line bg-white/5 px-2 font-mono text-[12px] outline-none"
+          class="h-9 min-w-0 flex-1 rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
           :placeholder="t('admin.envValue')"
         />
         <UiButton v-if="isSecret(row.key)" size="sm" variant="ghost" @click="reveal(row.key)">
@@ -93,7 +103,7 @@ function submit() {
     <textarea
       v-else
       v-model="raw"
-      class="h-64 w-full rounded-[10px] border border-line bg-white/5 p-3 font-mono text-[12px] outline-none"
+      class="h-64 w-full rounded-[10px] border border-line bg-black/25 p-3 font-mono text-[12px] outline-none focus:border-coral-500/40"
     />
     <UiButton class="mt-4" @click="submit">
       <slot name="save-label">{{ t("admin.saveEnv") }}</slot>

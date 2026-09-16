@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import {
+  ArrowLeft,
+  BookOpen,
+  Flag,
+  KeyRound,
+  LayoutGrid,
+  MonitorSmartphone,
+  Sparkles,
+  Users,
+} from "@lucide/vue";
+
 const { t } = useI18n();
 
 type Section = "overview" | "env" | "providers" | "users" | "rules" | "flags" | "workspaces";
@@ -51,15 +62,17 @@ const workspaces = ref<
   }>
 >([]);
 
-const sections: Array<{ id: Section; label: string }> = [
-  { id: "overview", label: "admin.overview" },
-  { id: "env", label: "admin.env" },
-  { id: "providers", label: "admin.providers" },
-  { id: "users", label: "admin.users" },
-  { id: "rules", label: "admin.rules" },
-  { id: "flags", label: "admin.flags" },
-  { id: "workspaces", label: "admin.workspaces" },
+const sections: Array<{ id: Section; label: string; icon: typeof LayoutGrid }> = [
+  { id: "overview", label: "admin.overview", icon: LayoutGrid },
+  { id: "env", label: "admin.env", icon: KeyRound },
+  { id: "providers", label: "admin.providers", icon: Sparkles },
+  { id: "users", label: "admin.users", icon: Users },
+  { id: "rules", label: "admin.rules", icon: BookOpen },
+  { id: "flags", label: "admin.flags", icon: Flag },
+  { id: "workspaces", label: "admin.workspaces", icon: MonitorSmartphone },
 ];
+
+const current = computed(() => sections.find((item) => item.id === section.value) ?? sections[0]!);
 
 async function load() {
   loading.value = true;
@@ -172,232 +185,311 @@ async function hibernateWorkspace(id: string) {
     await load();
   });
 }
+
+function statusTone(status: string | null) {
+  if (status === "running") return "live" as const;
+  if (status === "error" || status === "hibernated") return "warn" as const;
+  return "neutral" as const;
+}
 </script>
 
 <template>
-  <main class="mesh relative min-h-screen overflow-hidden">
-    <div class="grain pointer-events-none absolute inset-0 opacity-[0.09]" />
-    <div class="relative mx-auto w-full max-w-6xl px-4 py-5 sm:px-6">
-      <header class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <UiLogo :size="28" />
-          <div>
-            <p class="text-[14px] font-semibold tracking-tight">{{ t("admin.title") }}</p>
-            <p class="hidden text-[12px] text-ink-400 sm:block">{{ t("admin.lede") }}</p>
-          </div>
-        </div>
-        <NuxtLink to="/" class="text-[13px] font-medium text-coral-400">{{ t("admin.back") }}</NuxtLink>
-      </header>
+  <div class="admin-shell mesh flex h-screen flex-col overflow-hidden">
+    <div class="grain pointer-events-none absolute inset-0 opacity-[0.07]" />
+    <header class="menubar relative z-10 flex h-12 shrink-0 items-center gap-3 px-4">
+      <NuxtLink to="/" class="flex items-center gap-2 text-ink-500 transition hover:text-ink-800">
+        <ArrowLeft class="h-3.5 w-3.5" />
+        <span class="text-[12px] font-medium">{{ t("admin.back") }}</span>
+      </NuxtLink>
+      <span class="h-3 w-px bg-white/10" />
+      <UiLogo :size="22" />
+      <p class="text-[13px] font-semibold tracking-tight">{{ t("admin.title") }}</p>
+    </header>
 
-      <p v-if="toast" class="mt-4 rounded-[10px] border border-line bg-white/5 px-3 py-2 text-sm text-ink-700">
-        {{ toast }}
-      </p>
-      <p v-if="error" class="mt-4 text-sm text-red-400">{{ error }}</p>
+    <p
+      v-if="toast"
+      class="absolute top-16 left-1/2 z-20 -translate-x-1/2 rounded-full border border-line bg-paper/90 px-4 py-1.5 text-[12px] font-medium text-ink-800 shadow-float backdrop-blur-xl"
+    >
+      {{ toast }}
+    </p>
 
-      <div v-if="loading" class="mt-16 flex justify-center">
-        <UiSpinner size="lg" :label="t('nav.working')" />
+    <div v-if="loading" class="relative flex flex-1 items-center justify-center">
+      <UiSpinner size="lg" :label="t('nav.working')" />
+    </div>
+
+    <div v-else-if="forbidden" class="relative flex flex-1 items-center justify-center px-6">
+      <div class="admin-panel max-w-md p-8">
+        <h1 class="text-xl font-semibold tracking-tight">{{ t("admin.forbidden") }}</h1>
+        <NuxtLink to="/" class="mt-4 inline-flex items-center gap-2 text-[13px] font-medium text-coral-400">
+          <ArrowLeft class="h-3.5 w-3.5" /> {{ t("admin.back") }}
+        </NuxtLink>
       </div>
+    </div>
 
-      <div v-else-if="forbidden" class="glass-window mx-auto mt-16 max-w-md p-8">
-        <h1 class="text-2xl font-semibold">{{ t("admin.forbidden") }}</h1>
-        <NuxtLink to="/" class="mt-4 inline-block text-sm font-medium text-coral-400">{{ t("admin.back") }}</NuxtLink>
-      </div>
+    <div v-else class="relative flex min-h-0 flex-1">
+      <nav class="admin-rail hidden w-[232px] shrink-0 flex-col p-2 lg:flex">
+        <p class="px-3 pt-2 pb-1 text-[10px] font-semibold tracking-[0.16em] text-ink-300 uppercase">
+          {{ t("admin.title") }}
+        </p>
+        <button
+          v-for="item in sections"
+          :key="item.id"
+          type="button"
+          class="mt-0.5 flex items-center gap-2.5 rounded-[9px] px-3 py-2 text-left text-[13px] transition"
+          :class="
+            section === item.id
+              ? 'bg-white/[0.07] font-medium text-ink-950'
+              : 'text-ink-500 hover:bg-white/[0.04] hover:text-ink-800'
+          "
+          @click="section = item.id"
+        >
+          <component :is="item.icon" class="h-3.5 w-3.5 shrink-0 opacity-80" />
+          {{ t(item.label) }}
+        </button>
+      </nav>
 
-      <div v-else class="mt-6 grid gap-4 lg:grid-cols-[220px_1fr]">
-        <nav class="glass-window flex flex-row gap-1 overflow-x-auto p-2 lg:flex-col">
+      <div class="flex min-w-0 flex-1 flex-col">
+        <div class="flex gap-1 overflow-x-auto border-b border-line px-3 py-2 lg:hidden">
           <button
             v-for="item in sections"
             :key="item.id"
             type="button"
-            class="rounded-[9px] px-3 py-2 text-left text-[13px] font-medium whitespace-nowrap"
-            :class="section === item.id ? 'bg-white/10 text-ink-950' : 'text-ink-500 hover:bg-white/5'"
+            class="rounded-full px-3 py-1.5 text-[12px] whitespace-nowrap"
+            :class="section === item.id ? 'bg-white/10 text-ink-950' : 'text-ink-500'"
             @click="section = item.id"
           >
             {{ t(item.label) }}
           </button>
-        </nav>
+        </div>
 
-        <section class="glass-window min-w-0 p-5 sm:p-6">
-          <template v-if="section === 'overview' && overview">
-            <h2 class="text-xl font-semibold">{{ t("admin.overview") }}</h2>
-            <dl class="mt-4 grid gap-3 sm:grid-cols-2">
-              <div class="rounded-2xl border border-line bg-canvas/50 p-3">
-                <dt class="text-[11px] uppercase tracking-[0.14em] text-ink-300">{{ t("admin.github") }}</dt>
-                <dd class="mt-1 text-sm font-medium">
-                  {{ overview.githubConfigured ? t("admin.configured") : t("admin.missing") }}
-                </dd>
-              </div>
-              <div class="rounded-2xl border border-line bg-canvas/50 p-3">
-                <dt class="text-[11px] uppercase tracking-[0.14em] text-ink-300">{{ t("admin.cursorKey") }}</dt>
-                <dd class="mt-1 text-sm font-medium">
-                  {{ overview.cursorKey ? t("admin.configured") : t("admin.missing") }}
-                </dd>
-              </div>
-              <div class="rounded-2xl border border-line bg-canvas/50 p-3 sm:col-span-2">
-                <dt class="text-[11px] uppercase tracking-[0.14em] text-ink-300">{{ t("admin.publicUrl") }}</dt>
-                <dd class="mt-1 font-mono text-[13px]">{{ overview.publicUrl }}</dd>
-              </div>
-              <div class="rounded-2xl border border-line bg-canvas/50 p-3">
-                <dt class="text-[11px] uppercase tracking-[0.14em] text-ink-300">{{ t("admin.userCount") }}</dt>
-                <dd class="mt-1 text-2xl font-semibold">{{ overview.users }}</dd>
-              </div>
-              <div class="rounded-2xl border border-line bg-canvas/50 p-3">
-                <dt class="text-[11px] uppercase tracking-[0.14em] text-ink-300">{{ t("admin.running") }}</dt>
-                <dd class="mt-1 text-2xl font-semibold">{{ overview.running }}</dd>
-              </div>
-              <div class="rounded-2xl border border-line bg-canvas/50 p-3">
-                <dt class="text-[11px] uppercase tracking-[0.14em] text-ink-300">{{ t("admin.hibernated") }}</dt>
-                <dd class="mt-1 text-2xl font-semibold">{{ overview.hibernated }}</dd>
-              </div>
-              <div class="rounded-2xl border border-line bg-canvas/50 p-3">
-                <dt class="text-[11px] uppercase tracking-[0.14em] text-ink-300">{{ t("admin.errored") }}</dt>
-                <dd class="mt-1 text-2xl font-semibold">{{ overview.error }}</dd>
-              </div>
-            </dl>
-            <p class="mt-4 text-sm text-ink-500">
-              {{ overview.lastPreviewError ? `${t("admin.lastError")}: ${overview.lastPreviewError}` : t("admin.noError") }}
-            </p>
-          </template>
-
-          <template v-else-if="section === 'env'">
-            <h2 class="text-xl font-semibold">{{ t("admin.env") }}</h2>
-            <p class="mt-2 text-sm text-ink-500">{{ t("admin.envHint") }}</p>
-            <AdminEnvEditor class="mt-4" :env="env.env" :raw="env.raw" reveal-url="/api/admin/env" @save="saveEnv" />
-            <UiButton class="mt-3" variant="outline" :disabled="busy" @click="applyEnv">
-              {{ t("admin.applyEnv") }}
-            </UiButton>
-          </template>
-
-          <template v-else-if="section === 'providers'">
-            <h2 class="text-xl font-semibold">{{ t("admin.providers") }}</h2>
-            <p class="mt-2 text-sm text-ink-500">{{ t("admin.providersHint") }}</p>
-            <article v-for="provider in providers" :key="provider.id" class="mt-4 rounded-2xl border border-line bg-canvas/50 p-4">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <h3 class="font-semibold">{{ provider.label }}</h3>
-                <UiBadge :tone="provider.implemented ? 'live' : 'neutral'">
-                  {{ provider.implemented ? t("admin.enabled") : t("admin.comingSoon") }}
-                </UiBadge>
-              </div>
-              <label class="mt-3 flex items-center justify-between">
-                <span class="text-sm">{{ t("admin.enabled") }}</span>
-                <UiSwitch
-                  :model-value="provider.enabled"
-                  :label="t('admin.enabled')"
-                  @update:model-value="provider.enabled = $event"
-                />
-              </label>
-              <p class="mt-2 text-[12px] text-ink-400">
-                {{ provider.hasKey ? t("admin.hasKey") : t("admin.noKey") }}
+        <main class="thin-scroll min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8 sm:py-8">
+          <div class="mx-auto w-full max-w-3xl">
+            <p v-if="error" class="mb-4 text-[13px] text-red-400">{{ error }}</p>
+            <div class="mb-6">
+              <h1 class="text-[22px] font-semibold tracking-tight">{{ t(current.label) }}</h1>
+              <p
+                v-if="section !== 'overview'"
+                class="mt-1.5 max-w-xl text-[13px] leading-relaxed text-ink-500"
+              >
+                {{
+                  section === "env"
+                    ? t("admin.envHint")
+                    : section === "providers"
+                      ? t("admin.providersHint")
+                      : section === "users"
+                        ? t("admin.usersHint")
+                        : section === "rules"
+                          ? t("admin.rulesHint")
+                          : section === "flags"
+                            ? t("admin.flagsHint")
+                            : t("admin.workspacesHint")
+                }}
               </p>
-              <label class="mt-3 block">
-                <span class="mb-1 block text-[12px] text-ink-400">{{ t("admin.apiKey") }}</span>
-                <UiInput v-model="providerKeys[provider.id]" type="password" :placeholder="t('admin.apiKeyPlaceholder')" />
-              </label>
-              <UiButton class="mt-3" size="sm" :disabled="busy" @click="saveProvider(provider.id, provider.enabled)">
-                {{ t("admin.saveProvider") }}
-              </UiButton>
-            </article>
-          </template>
-
-          <template v-else-if="section === 'users'">
-            <h2 class="text-xl font-semibold">{{ t("admin.users") }}</h2>
-            <p class="mt-2 text-sm text-ink-500">{{ t("admin.usersHint") }}</p>
-            <p v-if="!users.length" class="mt-4 text-sm text-ink-400">{{ t("admin.noUsers") }}</p>
-            <div class="mt-4 overflow-x-auto">
-              <table class="w-full min-w-[640px] text-left text-[13px]">
-                <thead class="text-[11px] uppercase tracking-[0.12em] text-ink-300">
-                  <tr>
-                    <th class="pb-2 font-medium">{{ t("admin.login") }}</th>
-                    <th class="pb-2 font-medium">{{ t("admin.role") }}</th>
-                    <th class="pb-2 font-medium">{{ t("admin.status") }}</th>
-                    <th class="pb-2 font-medium">{{ t("admin.lastActive") }}</th>
-                    <th class="pb-2 font-medium" />
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="user in users" :key="user.id" class="border-t border-line">
-                    <td class="py-3">
-                      <p class="font-medium">{{ user.login }}</p>
-                      <p class="text-[11px] text-ink-400">{{ user.name }}</p>
-                    </td>
-                    <td class="py-3">{{ user.role }}</td>
-                    <td class="py-3">
-                      <span v-if="user.accessPending">{{ t("admin.pending") }}</span>
-                      <span v-else>{{ user.workspaceStatus ?? "—" }}</span>
-                    </td>
-                    <td class="py-3 font-mono text-[11px]">{{ user.lastActiveAt?.slice(0, 16) ?? "—" }}</td>
-                    <td class="py-3 text-right">
-                      <p v-if="user.envAdmin" class="text-[11px] text-ink-400">{{ t("admin.envLocked") }}</p>
-                      <UiButton
-                        v-else
-                        size="sm"
-                        variant="outline"
-                        :disabled="busy"
-                        @click="toggleAdmin(user.id, !user.platformAdmin)"
-                      >
-                        {{ user.platformAdmin ? t("admin.revokeAdmin") : t("admin.makeAdmin") }}
-                      </UiButton>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+              <p v-else class="mt-1.5 max-w-xl text-[13px] leading-relaxed text-ink-500">
+                {{ t("admin.lede") }}
+              </p>
             </div>
-          </template>
 
-          <template v-else-if="section === 'rules'">
-            <h2 class="text-xl font-semibold">{{ t("admin.rules") }}</h2>
-            <p class="mt-2 text-sm text-ink-500">{{ t("admin.rulesHint") }}</p>
-            <label v-for="layer in rules" :key="layer.id" class="mt-4 block">
-              <span class="text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{
-                layer.level === "platform" ? t("rules.platform") : t("rules.project")
-              }}</span>
-              <textarea
-                v-model="layer.body"
-                class="mt-2 h-32 w-full rounded-[10px] border border-line bg-white/5 p-3 text-sm outline-none"
-              />
-            </label>
-            <UiButton class="mt-4" :disabled="busy" @click="saveRules">
-              {{ t("admin.saveRules") }}
-            </UiButton>
-          </template>
-
-          <template v-else-if="section === 'flags' && overview">
-            <h2 class="text-xl font-semibold">{{ t("admin.flags") }}</h2>
-            <p class="mt-2 text-sm text-ink-500">{{ t("admin.flagsHint") }}</p>
-            <label v-for="flag in (['publish', 'multiProvider', 'spectator', 'recipes'] as const)" :key="flag" class="mt-4 flex items-center justify-between">
-              <span class="text-sm">{{ t(`flags.${flag}`) }}</span>
-              <UiSwitch
-                :model-value="!!overview.flags[flag]"
-                :label="t(`flags.${flag}`)"
-                @update:model-value="patchFlag(flag, $event)"
-              />
-            </label>
-          </template>
-
-          <template v-else-if="section === 'workspaces'">
-            <h2 class="text-xl font-semibold">{{ t("admin.workspaces") }}</h2>
-            <p class="mt-2 text-sm text-ink-500">{{ t("admin.workspacesHint") }}</p>
-            <p v-if="!workspaces.length" class="mt-4 text-sm text-ink-400">{{ t("admin.noWorkspaces") }}</p>
-            <article v-for="workspace in workspaces" :key="workspace.id" class="mt-3 rounded-2xl border border-line bg-canvas/50 p-4">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p class="font-medium">{{ workspace.login }}</p>
-                  <p class="font-mono text-[11px] text-ink-400">{{ workspace.branch }} · {{ workspace.status }}</p>
+            <template v-if="section === 'overview' && overview">
+              <p class="mb-2 text-[11px] font-medium tracking-[0.14em] text-ink-300 uppercase">
+                {{ t("admin.fleet") }}
+              </p>
+              <div class="admin-panel mb-6 grid grid-cols-2 sm:grid-cols-4">
+                <div class="admin-stat">
+                  <p class="text-[11px] text-ink-400">{{ t("admin.userCount") }}</p>
+                  <p class="mt-1 font-display text-[28px] leading-none">{{ overview.users }}</p>
                 </div>
-                <UiButton
-                  size="sm"
-                  variant="outline"
-                  :disabled="busy || workspace.status === 'hibernated'"
-                  @click="hibernateWorkspace(workspace.id)"
-                >
-                  {{ t("admin.hibernate") }}
+                <div class="admin-stat">
+                  <p class="text-[11px] text-ink-400">{{ t("admin.running") }}</p>
+                  <p class="mt-1 font-display text-[28px] leading-none text-emerald-300">{{ overview.running }}</p>
+                </div>
+                <div class="admin-stat">
+                  <p class="text-[11px] text-ink-400">{{ t("admin.hibernated") }}</p>
+                  <p class="mt-1 font-display text-[28px] leading-none">{{ overview.hibernated }}</p>
+                </div>
+                <div class="admin-stat">
+                  <p class="text-[11px] text-ink-400">{{ t("admin.errored") }}</p>
+                  <p class="mt-1 font-display text-[28px] leading-none" :class="overview.error ? 'text-amber-200' : ''">
+                    {{ overview.error }}
+                  </p>
+                </div>
+              </div>
+
+              <p class="mb-2 text-[11px] font-medium tracking-[0.14em] text-ink-300 uppercase">
+                {{ t("admin.health") }}
+              </p>
+              <div class="admin-panel">
+                <div class="admin-row">
+                  <div>
+                    <p class="text-[13px] font-medium">{{ t("admin.github") }}</p>
+                    <p class="mt-0.5 text-[12px] text-ink-400">{{ t("admin.githubHint") }}</p>
+                  </div>
+                  <UiBadge :tone="overview.githubConfigured ? 'live' : 'warn'">
+                    {{ overview.githubConfigured ? t("admin.configured") : t("admin.missing") }}
+                  </UiBadge>
+                </div>
+                <div class="admin-row">
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-medium">{{ t("admin.publicUrl") }}</p>
+                    <p class="mt-0.5 text-[12px] text-ink-400">{{ t("admin.publicUrlHint") }}</p>
+                  </div>
+                  <p class="font-mono text-[12px] text-ink-700">{{ overview.publicUrl }}</p>
+                </div>
+              </div>
+              <div v-if="overview.lastPreviewError" class="admin-panel mt-4 px-4 py-3">
+                <p class="text-[11px] font-medium text-amber-200">{{ t("admin.lastError") }}</p>
+                <p class="mt-1 text-[13px] leading-relaxed text-ink-600">{{ overview.lastPreviewError }}</p>
+              </div>
+              <p v-else class="mt-4 text-[12px] text-ink-400">{{ t("admin.noError") }}</p>
+            </template>
+
+            <template v-else-if="section === 'env'">
+              <div class="admin-panel p-4 sm:p-5">
+                <AdminEnvEditor :env="env.env" :raw="env.raw" reveal-url="/api/admin/env" @save="saveEnv" />
+                <UiButton class="mt-3" variant="outline" :disabled="busy" @click="applyEnv">
+                  {{ t("admin.applyEnv") }}
                 </UiButton>
               </div>
-              <p v-if="workspace.lastError" class="mt-2 text-[12px] text-amber-200">{{ workspace.lastError }}</p>
-            </article>
-          </template>
-        </section>
+            </template>
+
+            <template v-else-if="section === 'providers'">
+              <article v-for="provider in providers" :key="provider.id" class="admin-panel mb-3">
+                <div class="admin-row">
+                  <div class="flex items-center gap-3">
+                    <span class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] bg-white/5">
+                      <Sparkles class="h-3.5 w-3.5 text-coral-400" />
+                    </span>
+                    <div>
+                      <p class="text-[14px] font-medium">{{ provider.label }}</p>
+                      <p class="text-[12px] text-ink-400">
+                        {{ provider.hasKey ? t("admin.hasKey") : t("admin.noKey") }}
+                      </p>
+                    </div>
+                  </div>
+                  <UiBadge :tone="provider.implemented ? 'info' : 'neutral'">
+                    {{ provider.implemented ? provider.id : t("admin.comingSoon") }}
+                  </UiBadge>
+                </div>
+                <div class="admin-row">
+                  <span class="text-[13px]">{{ t("admin.enabled") }}</span>
+                  <UiSwitch
+                    :model-value="provider.enabled"
+                    :label="t('admin.enabled')"
+                    @update:model-value="provider.enabled = $event"
+                  />
+                </div>
+                <div class="space-y-3 px-4 py-4">
+                  <label class="block">
+                    <span class="mb-1.5 block text-[12px] text-ink-400">{{ t("admin.apiKey") }}</span>
+                    <UiInput
+                      v-model="providerKeys[provider.id]"
+                      type="password"
+                      :placeholder="t('admin.apiKeyPlaceholder')"
+                    />
+                  </label>
+                  <UiButton size="sm" :disabled="busy" @click="saveProvider(provider.id, provider.enabled)">
+                    {{ t("admin.saveProvider") }}
+                  </UiButton>
+                </div>
+              </article>
+            </template>
+
+            <template v-else-if="section === 'users'">
+              <div v-if="!users.length" class="admin-panel px-4 py-8 text-center text-[13px] text-ink-400">
+                {{ t("admin.noUsers") }}
+              </div>
+              <div v-else class="admin-panel">
+                <div v-for="user in users" :key="user.id" class="admin-row">
+                  <div class="flex min-w-0 items-center gap-3">
+                    <UiAvatar :name="user.login" />
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <p class="text-[13px] font-medium">{{ user.login }}</p>
+                        <UiBadge v-if="user.platformAdmin" tone="info">{{ t("admin.adminBadge") }}</UiBadge>
+                        <UiBadge v-if="user.accessPending" tone="warn">{{ t("admin.pending") }}</UiBadge>
+                      </div>
+                      <p class="mt-0.5 text-[12px] text-ink-400">
+                        {{ user.role }}
+                        <span v-if="user.workspaceStatus"> · {{ user.workspaceStatus }}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <p v-if="user.envAdmin" class="text-[11px] text-ink-400">{{ t("admin.envLocked") }}</p>
+                  <UiButton
+                    v-else
+                    size="sm"
+                    variant="outline"
+                    :disabled="busy"
+                    @click="toggleAdmin(user.id, !user.platformAdmin)"
+                  >
+                    {{ user.platformAdmin ? t("admin.revokeAdmin") : t("admin.makeAdmin") }}
+                  </UiButton>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="section === 'rules'">
+              <div class="admin-panel p-4 sm:p-5">
+                <label v-for="layer in rules" :key="layer.id" class="mb-4 block last:mb-0">
+                  <span class="text-[11px] font-medium tracking-[0.14em] text-ink-300 uppercase">{{
+                    layer.level === "platform" ? t("rules.platform") : t("rules.project")
+                  }}</span>
+                  <textarea
+                    v-model="layer.body"
+                    class="mt-2 h-32 w-full rounded-[10px] border border-line bg-black/20 p-3 text-[13px] leading-relaxed outline-none focus:border-coral-500/40"
+                  />
+                </label>
+                <UiButton class="mt-1" :disabled="busy" @click="saveRules">
+                  {{ t("admin.saveRules") }}
+                </UiButton>
+              </div>
+            </template>
+
+            <template v-else-if="section === 'flags' && overview">
+              <div class="admin-panel">
+                <div
+                  v-for="flag in (['publish', 'multiProvider', 'spectator', 'recipes'] as const)"
+                  :key="flag"
+                  class="admin-row"
+                >
+                  <span class="text-[13px]">{{ t(`flags.${flag}`) }}</span>
+                  <UiSwitch
+                    :model-value="!!overview.flags[flag]"
+                    :label="t(`flags.${flag}`)"
+                    @update:model-value="patchFlag(flag, $event)"
+                  />
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="section === 'workspaces'">
+              <div v-if="!workspaces.length" class="admin-panel px-4 py-8 text-center text-[13px] text-ink-400">
+                {{ t("admin.noWorkspaces") }}
+              </div>
+              <div v-else class="admin-panel">
+                <div v-for="workspace in workspaces" :key="workspace.id" class="admin-row">
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <p class="text-[13px] font-medium">{{ workspace.login }}</p>
+                      <UiBadge :tone="statusTone(workspace.status)">{{ workspace.status }}</UiBadge>
+                    </div>
+                    <p class="mt-0.5 font-mono text-[11px] text-ink-400">{{ workspace.branch }}</p>
+                    <p v-if="workspace.lastError" class="mt-1 text-[12px] text-amber-200">{{ workspace.lastError }}</p>
+                  </div>
+                  <UiButton
+                    size="sm"
+                    variant="outline"
+                    :disabled="busy || workspace.status === 'hibernated'"
+                    @click="hibernateWorkspace(workspace.id)"
+                  >
+                    {{ t("admin.hibernate") }}
+                  </UiButton>
+                </div>
+              </div>
+            </template>
+          </div>
+        </main>
       </div>
     </div>
-  </main>
+  </div>
 </template>
