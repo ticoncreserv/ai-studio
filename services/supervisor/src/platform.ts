@@ -45,9 +45,9 @@ import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type W
 import { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
 import { findCursorAgentBinary } from "./providers/ensure-agent.js";
 import { createProvider, listProviders as catalogProviders } from "./providers/index.js";
-import { PROVIDER_CATALOG } from "./providers/types.js";
+import { PROVIDER_CATALOG, type AgentProvider } from "./providers/types.js";
 import { fixtureAppDir, repoRoot } from "./paths.js";
-import { applyHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
+import { applyPatchHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
 import { worktreeDivergence } from "./migrations.js";
 import { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
 import {
@@ -123,7 +123,10 @@ export class Platform {
   private readonly pendingPermissions = new Map<string, { rpcId: number; respond: ProviderRun["respondPermission"] }>();
   private readonly promptText = new PromptTextBuffer();
 
-  constructor(store = new JsonStore(join(repoRoot(), "var", "platform.json"))) {
+  constructor(
+    store = new JsonStore(join(repoRoot(), "var", "platform.json")),
+    private readonly providerFactory: (id: ProviderId) => AgentProvider = createProvider,
+  ) {
     this.store = store;
     this.runtime = process.env.ATELIER_RUNTIME === "docker" ? new DockerRuntime() : new ProcessRuntime();
   }
@@ -528,17 +531,22 @@ export class Platform {
       const accepted = input.command.type === "accept_hunk";
       const state = this.snapshot(session.id);
       const hunk = state.hunks.find((h) => h.id === hunkId);
+      if (hunk) applyPatchHunkToWorktree(ws.worktree, hunk, accepted ? "forward" : "reverse");
       this.mutateHunks(session.id, (next) => applyHunkDecision(next, hunkId, accepted ? "accepted" : "rejected"));
-      if (accepted && hunk) applyHunkToWorktree(ws.worktree, hunk.filePath, hunk.newLines);
-      if (!accepted && hunk) await restoreFile(ws.worktree, hunk.filePath, this.restoreRev(session));
       return;
     }
     if (input.command.type === "accept_file" || input.command.type === "reject_file") {
       const filePath = input.command.filePath;
       const accepted = input.command.type === "accept_file";
+      const state = this.snapshot(session.id);
+      if (accepted) {
+        for (const hunk of state.hunks.filter((item) => item.filePath === filePath)) {
+          applyPatchHunkToWorktree(ws.worktree, hunk, "forward");
+        }
+      } else {
+        await restoreFile(ws.worktree, filePath, this.restoreRev(session));
+      }
       this.mutateHunks(session.id, (state) => applyFileDecision(state, filePath, accepted ? "accepted" : "rejected"));
-      if (accepted) this.applyAcceptedHunks(session.id, ws.worktree);
-      if (!accepted) await restoreFile(ws.worktree, filePath, this.restoreRev(session));
       return;
     }
     if (input.command.type === "sync_base") {
@@ -639,13 +647,6 @@ export class Platform {
     });
   }
 
-  private applyAcceptedHunks(sessionId: string, worktree: string) {
-    const state = this.snapshot(sessionId);
-    for (const hunk of state.hunks.filter((h) => h.status === "accepted")) {
-      applyHunkToWorktree(worktree, hunk.filePath, hunk.newLines);
-    }
-  }
-
   private async runPrompt(
     user: UserRecord,
     session: SessionRecord,
@@ -726,7 +727,7 @@ export class Platform {
     try {
       this.promptText.reset(session.id);
       if (!run) {
-        const provider = createProvider(providerId);
+        const provider = this.providerFactory(providerId);
         run = await provider.start({
           cwd: ws.worktree,
           resumeSessionId: session.acpSessionId,

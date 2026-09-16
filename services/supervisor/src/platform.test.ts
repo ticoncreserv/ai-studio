@@ -2,21 +2,24 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ProviderId } from "@atelier/contracts";
 import { foldEvents } from "@atelier/domain";
 import { formatAgentError } from "./acp/errors.js";
 import { Platform } from "./platform.js";
+import type { AgentProvider } from "./providers/types.js";
 import { JsonStore, type UserRecord } from "./store.js";
 import { listBranchMigrations } from "./migrations.js";
 import { userEnvPath, writeUserEnv } from "./runtime/env-file.js";
+import { git } from "./runtime/git-ops.js";
 import { writePreviewLogs } from "./runtime/preview-logs.js";
 
 const dirs: string[] = [];
 
-function platform(): Platform {
+function platform(providerFactory?: (id: ProviderId) => AgentProvider): Platform {
   const dir = mkdtempSync(join(tmpdir(), "atelier-"));
   dirs.push(dir);
   process.env.ATELIER_WORKTREE_ROOT = join(dir, "workspaces");
-  return new Platform(new JsonStore(join(dir, "platform.json")));
+  return new Platform(new JsonStore(join(dir, "platform.json")), providerFactory);
 }
 
 afterEach(() => {
@@ -77,6 +80,53 @@ describe("platform", () => {
     const hunk = state.hunks[0]!;
     await p.handleCommand({ user, sessionId: session.id, command: { type: "accept_hunk", hunkId: hunk.id } });
     expect(p.snapshot(session.id).hunks[0]?.status).toBe("accepted");
+    expect(readFileSync(join(ws.worktree, hunk.filePath), "utf8")).toContain("<script setup");
+  });
+
+  it("captures direct provider file edits as a diff and checkpoint", async () => {
+    const prompts: string[] = [];
+    const p = platform(() => ({
+      capability: {
+        id: "mock",
+        label: "Writing provider",
+        command: "mock",
+        args: [],
+        modes: ["agent"],
+        images: false,
+        todos: false,
+        plans: false,
+        questions: false,
+      },
+      start: async ({ cwd }) => ({
+        prompt: async (blocks) => {
+          prompts.push(blocks[0]?.text ?? "");
+          mkdirSync(join(cwd, "app"), { recursive: true });
+          writeFileSync(join(cwd, "app", "PromptCreated.php"), "<?php\n\nreturn 'created';\n");
+        },
+        cancel: async () => undefined,
+        stop: () => undefined,
+      }),
+    }));
+    const user = await p.loginDev("direct-writer");
+    const ws = await p.ensureWorkspace(user);
+    const session = p.createSession(ws.id, "mock");
+
+    await p.handleCommand({
+      user,
+      sessionId: session.id,
+      command: { type: "prompt", text: "Create app/PromptCreated.php", attachments: [], mentions: [] },
+    });
+
+    expect(readFileSync(join(ws.worktree, "app", "PromptCreated.php"), "utf8")).toContain("return 'created'");
+    expect(p.snapshot(session.id).hunks.some((hunk) => hunk.filePath === "app/PromptCreated.php")).toBe(true);
+    const checkpoint = p.store
+      .read()
+      .sessions.find((row) => row.id === session.id)
+      ?.events.find((event) => event.type === "checkpoint");
+    expect(checkpoint && checkpoint.type === "checkpoint" ? checkpoint.gitSha : "").toMatch(/^[0-9a-f]{7,}$/);
+    expect(await git(ws.worktree, ["status", "--porcelain", "--", "app/PromptCreated.php"])).toBe("");
+    expect(prompts[0]).toContain("Create app/PromptCreated.php");
+    expect(prompts[0]).toContain("Inspect relevant files before editing");
   });
 
   it("blocks spectator prompts and supports session search", async () => {

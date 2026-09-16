@@ -7,6 +7,16 @@ describe("permission policy", () => {
       evaluatePermission({ kind: "write", path: "/ws/app/Models/User.php", worktree: "/ws" }),
     ).toBe("auto-allow");
     expect(evaluatePermission({ kind: "read", path: "/ws/.env", worktree: "/ws" })).toBe("auto-deny");
+    expect(evaluatePermission({ kind: "read", path: "/ws/.env.local", worktree: "/ws" })).toBe("auto-deny");
+    expect(evaluatePermission({ kind: "write", path: "/ws/../outside.php", worktree: "/ws" })).toBe(
+      "auto-deny",
+    );
+    expect(evaluatePermission({ kind: "read", path: "/ws-other/file.php", worktree: "/ws" })).toBe(
+      "auto-deny",
+    );
+    expect(evaluatePermission({ kind: "write", path: "/ws/.git/config", worktree: "/ws" })).toBe(
+      "auto-deny",
+    );
   });
 
   it("blocks destructive database commands", () => {

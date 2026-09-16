@@ -151,6 +151,12 @@ const emptyDb = (): DbShape => ({
       body: "Follow Inertia + Vue page conventions. Keep Laravel Boost MCP available. Workaround comments are normative.",
     },
     {
+      id: "repository-actions",
+      level: "platform",
+      title: "Repository actions",
+      body: "Work only inside the current repository. Inspect relevant files before editing, preserve unrelated user changes, make the smallest coherent change, follow existing conventions, and run targeted validation before reporting completion.",
+    },
+    {
       id: "user",
       level: "user",
       title: "User",

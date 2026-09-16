@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
-import type { SessionEvent } from "@atelier/contracts";
+import { createHash, randomUUID } from "node:crypto";
+import type { Hunk, SessionEvent } from "@atelier/contracts";
 import { git } from "./git-ops.js";
 
 function porcelainPath(line: string): string | undefined {
@@ -17,15 +17,27 @@ function isStudioOnlyPath(path: string): boolean {
 }
 
 export async function worktreeFingerprint(worktree: string): Promise<string> {
-  const status = await git(worktree, ["status", "--porcelain"]).catch(() => "");
-  const parts: string[] = [];
-  for (const line of status.split("\n").filter(Boolean)) {
-    const path = porcelainPath(line);
-    if (!path || isStudioOnlyPath(path)) continue;
-    const diff = await git(worktree, ["diff", "HEAD", "--", path]).catch(() => "");
-    parts.push(line, diff);
+  const tracked = await git(worktree, [
+    "diff",
+    "HEAD",
+    "--binary",
+    "--",
+    ".",
+    ":(exclude).cursor/**",
+    ":(exclude)var/**",
+    ":(exclude).env",
+  ]).catch(() => "");
+  const untracked = await git(worktree, ["ls-files", "--others", "--exclude-standard", "-z"]).catch(() => "");
+  const fingerprint = createHash("sha256").update(tracked);
+  for (const path of untracked.split("\0").filter(Boolean).sort()) {
+    if (isStudioOnlyPath(path)) continue;
+    const target = join(worktree, path);
+    const stat = lstatSync(target);
+    if (stat.isDirectory()) continue;
+    fingerprint.update("\0").update(path).update("\0");
+    fingerprint.update(stat.isSymbolicLink() ? readlinkSync(target) : readFileSync(target));
   }
-  return parts.join("\n");
+  return fingerprint.digest("hex");
 }
 
 export async function worktreeDiffEvents(worktree: string): Promise<SessionEvent[]> {
@@ -70,22 +82,55 @@ export function splitHunks(filePath: string, diff: string) {
       },
     ];
   }
-  const hunks = [];
+  const hunks: Hunk[] = [];
   const blocks = diff.split(/^@@/m).slice(1);
   for (const block of blocks) {
     const header = block.split("\n")[0] ?? "";
-    const match = header.match(/-(\d+)/);
-    const plus = header.match(/\+(\d+)/);
+    const match = header.match(/-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?/);
+    if (!match) continue;
     const body = block.split("\n").slice(1);
-    hunks.push({
-      id: randomUUID(),
-      filePath,
-      oldStart: Number(match?.[1] ?? 0),
-      newStart: Number(plus?.[1] ?? 1),
-      oldLines: body.filter((line) => line.startsWith("-")).map((line) => line.slice(1)).join("\n"),
-      newLines: body.filter((line) => !line.startsWith("-") && !line.startsWith("\\")).map((line) => line.replace(/^\+/, "")).join("\n"),
-      status: "pending" as const,
-    });
+    let oldLine = Number(match[1]);
+    let newLine = Number(match[2]);
+    let oldStart = oldLine;
+    let newStart = newLine;
+    let oldLines: string[] = [];
+    let newLines: string[] = [];
+    const flush = () => {
+      if (!oldLines.length && !newLines.length) return;
+      hunks.push({
+        id: randomUUID(),
+        filePath,
+        oldStart,
+        newStart,
+        oldLines: oldLines.join("\n"),
+        newLines: newLines.join("\n"),
+        status: "pending" as const,
+      });
+      oldLines = [];
+      newLines = [];
+    };
+    for (const line of body) {
+      if (line.startsWith("-")) {
+        if (!oldLines.length && !newLines.length) {
+          oldStart = oldLine;
+          newStart = newLine;
+        }
+        oldLines.push(line.slice(1));
+        oldLine += 1;
+      } else if (line.startsWith("+")) {
+        if (!oldLines.length && !newLines.length) {
+          oldStart = oldLine;
+          newStart = newLine;
+        }
+        newLines.push(line.slice(1));
+        newLine += 1;
+      } else if (line.startsWith(" ")) {
+        flush();
+        oldLine += 1;
+        newLine += 1;
+      }
+    }
+    flush();
   }
   return hunks.length
     ? hunks

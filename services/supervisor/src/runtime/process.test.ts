@@ -1,10 +1,15 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ProcessRuntime } from "./process.js";
+import {
+  applyHunkToWorktree,
+  applyPatchHunkToWorktree,
+  ProcessRuntime,
+  readWorktreeFile,
+} from "./process.js";
 
 const dirs: string[] = [];
 
@@ -57,5 +62,41 @@ describe("ProcessRuntime.hibernate", () => {
       reused.listen(port, "127.0.0.1", () => resolve());
     });
     await new Promise<void>((resolve) => reused.close(() => resolve()));
+  });
+});
+
+describe("worktree file actions", () => {
+  it("applies one review hunk without replacing the rest of the file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-hunk-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "page.vue"), "first\nold\nlast\n");
+    const hunk = {
+      id: "h1",
+      filePath: "page.vue",
+      oldStart: 2,
+      newStart: 2,
+      oldLines: "old",
+      newLines: "new",
+      status: "pending" as const,
+    };
+
+    applyPatchHunkToWorktree(dir, hunk, "forward");
+    applyPatchHunkToWorktree(dir, hunk, "forward");
+    expect(readWorktreeFile(dir, "page.vue")).toBe("first\nnew\nlast\n");
+
+    applyPatchHunkToWorktree(dir, hunk, "reverse");
+    expect(readWorktreeFile(dir, "page.vue")).toBe("first\nold\nlast\n");
+  });
+
+  it("rejects traversal and symbolic-link escapes", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-path-"));
+    const outside = mkdtempSync(join(tmpdir(), "atelier-outside-"));
+    dirs.push(dir, outside);
+    symlinkSync(outside, join(dir, "linked"), "dir");
+
+    expect(() => applyHunkToWorktree(dir, "../outside.php", "bad")).toThrow(/escapes the worktree/);
+    expect(() => applyHunkToWorktree(dir, ".git", "bad")).toThrow(/protected Git metadata/);
+    expect(() => applyHunkToWorktree(dir, "linked/outside.php", "bad")).toThrow(/symbolic link/);
+    expect(existsSync(join(outside, "outside.php"))).toBe(false);
   });
 });
