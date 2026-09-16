@@ -383,7 +383,7 @@
     "noMatches": "Nenhuma configuração encontrada",
     "dismiss": "Descartar",
     "setupBannerTitle": "Faltam credenciais na plataforma",
-    "setupBannerBody": "Os clones de preview ficam fora do ar até as chaves do GitHub App e do Cursor entrarem no ambiente compartilhado.",
+    "setupBannerBody": "Adicione as chaves do GitHub App e do Cursor no ambiente compartilhado.",
     "openEnv": "Abrir ambiente",
     "saved": "Salvo",
     "error": "Não foi possível salvar. Tente de novo.",

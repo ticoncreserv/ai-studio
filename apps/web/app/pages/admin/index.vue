@@ -690,7 +690,7 @@ function ruleHint(level: "platform" | "project" | "user") {
                   {{ t("admin.noUsers") }}
                 </div>
                 <div v-else class="cx-panel">
-                  <div v-for="user in users" :key="user.id" class="cx-row">
+                  <div v-for="user in users" :key="user.id" class="cx-row cx-row-wrap">
                     <div class="flex min-w-0 items-center gap-2.5">
                       <UiAvatar :name="user.login" />
                       <div class="min-w-0">
@@ -707,7 +707,7 @@ function ruleHint(level: "platform" | "project" | "user") {
                         </p>
                       </div>
                     </div>
-                    <div class="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    <div class="cx-row-actions flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                       <p v-if="user.repoOwner" class="cx-value text-right">{{ t("admin.ownerLocked") }}</p>
                       <p v-else-if="user.envAdmin" class="cx-value text-right">{{ t("admin.envLocked") }}</p>
                       <UiButton
@@ -749,7 +749,7 @@ function ruleHint(level: "platform" | "project" | "user") {
                   {{ t("admin.noWorkspaces") }}
                 </div>
                 <div v-else class="cx-panel">
-                  <div v-for="workspace in workspaces" :key="workspace.id" class="cx-row cx-row-top">
+                  <div v-for="workspace in workspaces" :key="workspace.id" class="cx-row cx-row-top cx-row-wrap">
                     <div class="min-w-0">
                       <div class="flex flex-wrap items-center gap-1.5">
                         <p class="cx-row-title">{{ workspace.login }}</p>
@@ -777,7 +777,7 @@ function ruleHint(level: "platform" | "project" | "user") {
                       </a>
                       <p v-if="workspace.lastError" class="cx-row-desc cx-tone-warn">{{ workspace.lastError }}</p>
                     </div>
-                    <div class="flex shrink-0 items-center gap-1.5">
+                    <div class="cx-row-actions flex shrink-0 items-center justify-end gap-1.5">
                       <UiButton
                         size="sm"
                         variant="outline"

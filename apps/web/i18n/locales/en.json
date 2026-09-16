@@ -383,7 +383,7 @@
     "noMatches": "No matching settings",
     "dismiss": "Dismiss",
     "setupBannerTitle": "The platform is missing credentials",
-    "setupBannerBody": "Preview clones stay offline until the GitHub App and Cursor keys are in the shared environment.",
+    "setupBannerBody": "Add the GitHub App and Cursor keys to the shared environment.",
     "openEnv": "Open environment",
     "saved": "Saved",
     "error": "Could not save. Try again.",
