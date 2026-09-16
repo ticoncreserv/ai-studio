@@ -1,7 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { mapGitHubPermission } from "@atelier/domain";
 import type { Role } from "@atelier/contracts";
-import { githubOAuthRedirectCandidates } from "./github-app.js";
 
 export interface AuthIdentity {
   login: string;
@@ -32,17 +31,19 @@ export class GitHubAuthProvider implements AuthProvider {
   ) {}
 
   async beginLogin(redirectTo: string, redirectUri?: string): Promise<{ url: string; state: string }> {
-    const state = Buffer.from(JSON.stringify({ redirectTo, n: Date.now() })).toString("base64url");
+    const state = Buffer.from(JSON.stringify({ redirectTo, redirectUri, n: Date.now() })).toString("base64url");
     const url = new URL("https://github.com/login/oauth/authorize");
     url.searchParams.set("client_id", this.clientId);
     url.searchParams.set("state", state);
-    url.searchParams.set("scope", "read:user user:email");
+    // GitHub Apps use permissions, not OAuth scopes. A scope list can make authorize fail.
+    if (!this.clientId.startsWith("Iv1.")) url.searchParams.set("scope", "read:user user:email");
     if (redirectUri) url.searchParams.set("redirect_uri", redirectUri);
     return { url: url.toString(), state };
   }
 
   async completeLogin(input: Record<string, string>): Promise<AuthIdentity> {
-    const token = await this.exchangeCode(input.code ?? "", input.redirectUri);
+    const redirectUri = parseOAuthState(input.state)?.redirectUri || input.redirectUri;
+    const token = await this.exchangeCode(input.code ?? "", redirectUri);
     const user = (await githubJson("https://api.github.com/user", token)) as {
       login: string;
       name: string | null;
@@ -84,29 +85,40 @@ export class GitHubAuthProvider implements AuthProvider {
   }
 
   private async exchangeCode(code: string, redirectUri?: string): Promise<string> {
-    const attempts = [...githubOAuthRedirectCandidates(redirectUri), undefined];
-    const seen = new Set<string>();
-    let lastError = "GitHub token exchange failed";
-    for (const uri of attempts) {
-      const key = uri ?? "";
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const payload: Record<string, string> = {
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        code,
-      };
-      if (uri) payload.redirect_uri = uri;
-      const res = await fetch("https://github.com/login/oauth/access_token", {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = (await res.json()) as { access_token?: string; error?: string; error_description?: string };
-      if (body.access_token) return body.access_token;
-      lastError = body.error_description || body.error || lastError;
-    }
-    throw new Error(lastError);
+    // GitHub authorization codes are single-use. Trying a guessed redirect_uri first
+    // invalidates the code even when a later candidate would have matched authorize.
+    const payload: Record<string, string> = {
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+      code,
+    };
+    if (redirectUri) payload.redirect_uri = redirectUri;
+    const res = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = (await res.json()) as { access_token?: string; error?: string; error_description?: string };
+    if (body.access_token) return body.access_token;
+    throw new Error(body.error_description || body.error || "GitHub token exchange failed");
+  }
+}
+
+export interface OAuthState {
+  redirectTo?: string;
+  redirectUri?: string;
+}
+
+export function parseOAuthState(state?: string): OAuthState | null {
+  if (!state) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as OAuthState;
+    if (!parsed || typeof parsed !== "object") return null;
+    const redirectUri = typeof parsed.redirectUri === "string" ? parsed.redirectUri : undefined;
+    const redirectTo = typeof parsed.redirectTo === "string" ? parsed.redirectTo : undefined;
+    return { redirectTo, redirectUri };
+  } catch {
+    return null;
   }
 }
 
