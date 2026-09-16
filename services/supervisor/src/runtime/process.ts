@@ -1,8 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { Hunk } from "@atelier/contracts";
 import { repoRoot } from "../paths.js";
 import { isolationEnv, PREVIEW_SIDE_EFFECTS, defaultWorkspaceSpec } from "./spec.js";
 import { allocatePort } from "./ports.js";
@@ -389,14 +390,94 @@ export class DockerRuntime extends ProcessRuntime {
   }
 }
 
+function isWithin(root: string, target: string): boolean {
+  const path = relative(root, target);
+  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+}
+
+export function resolveWorktreePath(worktree: string, filePath: string): string {
+  if (!filePath || isAbsolute(filePath)) throw new Error("File path must be relative to the worktree");
+  const root = resolve(worktree);
+  const target = resolve(root, filePath);
+  if (target === root || !isWithin(root, target)) throw new Error("File path escapes the worktree");
+
+  const realRoot = realpathSync(root);
+  let existingAncestor = target;
+  while (!existsSync(existingAncestor)) {
+    const parent = dirname(existingAncestor);
+    if (parent === existingAncestor) throw new Error("File path escapes the worktree");
+    existingAncestor = parent;
+  }
+  if (!isWithin(realRoot, realpathSync(existingAncestor))) {
+    throw new Error("File path escapes the worktree through a symbolic link");
+  }
+  return target;
+}
+
 export function applyHunkToWorktree(worktree: string, filePath: string, contents: string): void {
-  const target = join(worktree, filePath);
+  const target = resolveWorktreePath(worktree, filePath);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, contents);
 }
 
 export function readWorktreeFile(worktree: string, filePath: string): string | null {
-  const target = join(worktree, filePath);
+  const target = resolveWorktreePath(worktree, filePath);
   if (!existsSync(target)) return null;
   return readFileSync(target, "utf8");
+}
+
+function contentLines(contents: string): { lines: string[]; trailingNewline: boolean } {
+  const trailingNewline = contents.endsWith("\n");
+  const body = trailingNewline ? contents.slice(0, -1) : contents;
+  return { lines: body ? body.split("\n") : [], trailingNewline };
+}
+
+function matchingIndex(lines: string[], expected: string[], preferred: number): number {
+  const matchesAt = (index: number) =>
+    index >= 0 &&
+    index + expected.length <= lines.length &&
+    expected.every((line, offset) => lines[index + offset] === line);
+  if (matchesAt(preferred)) return preferred;
+  if (!expected.length) return Math.min(Math.max(preferred, 0), lines.length);
+  const matches = lines.flatMap((_, index) => (matchesAt(index) ? [index] : []));
+  return matches.length === 1 ? matches[0]! : -1;
+}
+
+export function applyPatchHunkToWorktree(
+  worktree: string,
+  hunk: Hunk,
+  direction: "forward" | "reverse",
+): void {
+  const current = readWorktreeFile(worktree, hunk.filePath) ?? "";
+  const parsed = contentLines(current);
+  const sourceText = direction === "forward" ? hunk.oldLines : hunk.newLines;
+  const replacementText = direction === "forward" ? hunk.newLines : hunk.oldLines;
+  const source = contentLines(sourceText).lines;
+  const replacement = contentLines(replacementText).lines;
+  const sourceStart = Math.max(0, (direction === "forward" ? hunk.oldStart : hunk.newStart) - 1);
+  const replacementStart = Math.max(0, (direction === "forward" ? hunk.newStart : hunk.oldStart) - 1);
+
+  let index: number;
+  if (!source.length && replacement.length) {
+    if (matchingIndex(parsed.lines, replacement, replacementStart) >= 0) return;
+    index = Math.min(sourceStart, parsed.lines.length);
+  } else {
+    index = matchingIndex(parsed.lines, source, sourceStart);
+    if (index < 0) {
+      if (!replacement.length || matchingIndex(parsed.lines, replacement, replacementStart) >= 0) return;
+      throw new Error(`Hunk no longer matches ${hunk.filePath}`);
+    }
+  }
+
+  parsed.lines.splice(index, source.length, ...replacement);
+  const trailingNewline =
+    parsed.lines.length > 0 && (parsed.trailingNewline || replacementText.endsWith("\n"));
+  const next = `${parsed.lines.join("\n")}${trailingNewline ? "\n" : ""}`;
+  const target = resolveWorktreePath(worktree, hunk.filePath);
+  if (direction === "reverse" && hunk.oldStart === 0 && !hunk.oldLines && !next) {
+    rmSync(target, { force: true });
+    return;
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, next);
 }

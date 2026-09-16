@@ -28,7 +28,10 @@ export function packPrompt(blocks: PromptBlock[], budget: number): PackedPrompt 
   const omitted: string[] = [];
   let used = 0;
   for (const block of sorted) {
-    if (used + block.tokens <= budget) {
+    // The current user request is the source of truth. Dropping it can make an
+    // agent act on stale rules or mentions, so keep it even when it exceeds the
+    // context budget and discard lower-priority context instead.
+    if (block.kind === "user" || used + block.tokens <= budget) {
       kept.push(block);
       used += block.tokens;
     } else {

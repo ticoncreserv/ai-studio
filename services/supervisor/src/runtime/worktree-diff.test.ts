@@ -14,9 +14,14 @@ afterEach(() => {
 
 describe("worktree diffs", () => {
   it("parses unified diffs into review hunks", () => {
-    const hunks = splitHunks("page.vue", "@@ -1 +1 @@\n-old\n+new\n");
-    expect(hunks[0]?.newLines).toContain("new");
-    expect(hunks[0]?.oldLines).toContain("old");
+    const hunks = splitHunks(
+      "page.vue",
+      "@@ -1,5 +1,5 @@\n same\n-old\n+new\n keep\n-before\n+after\n end\n",
+    );
+    expect(hunks).toMatchObject([
+      { oldStart: 2, newStart: 2, oldLines: "old", newLines: "new" },
+      { oldStart: 4, newStart: 4, oldLines: "before", newLines: "after" },
+    ]);
   });
 
   it("emits hunks from the worktree and restores a rejected file", async () => {
@@ -71,6 +76,19 @@ describe("worktree diffs", () => {
     writeFileSync(join(dir, "var", "rule-provenance.json"), "{}\n");
     expect(await worktreeFingerprint(dir)).toBe(before);
     writeFileSync(join(dir, "keep.txt"), "changed\n");
+    expect(await worktreeFingerprint(dir)).not.toBe(before);
+  });
+
+  it("detects content changes to an existing untracked file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-untracked-fp-"));
+    dirs.push(dir);
+    await git(dir, ["init"]);
+    writeFileSync(join(dir, "keep.txt"), "ok\n");
+    await git(dir, ["add", "-A"], user);
+    await git(dir, ["commit", "-m", "base"], user);
+    writeFileSync(join(dir, "draft.txt"), "first\n");
+    const before = await worktreeFingerprint(dir);
+    writeFileSync(join(dir, "draft.txt"), "second\n");
     expect(await worktreeFingerprint(dir)).not.toBe(before);
   });
 });

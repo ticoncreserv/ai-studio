@@ -26,12 +26,25 @@ export interface PermissionRequest {
   worktree: string;
 }
 
+function canonicalPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const prefix = normalized.startsWith("/") ? "/" : "";
+  const parts: string[] = [];
+  for (const part of normalized.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return `${prefix}${parts.join("/")}`;
+}
+
 export function evaluatePermission(req: PermissionRequest): PermissionDecision {
   if (req.kind === "read" || req.kind === "write") {
     if (!req.path) return "auto-deny";
-    const normalized = req.path.replace(/\\/g, "/");
-    if (normalized.includes(".env")) return "auto-deny";
-    if (normalized.startsWith(req.worktree.replace(/\\/g, "/"))) return "auto-allow";
+    const target = canonicalPath(req.path);
+    const worktree = canonicalPath(req.worktree).replace(/\/$/, "");
+    if (target.split("/").some((part) => part === ".env" || part.startsWith(".env."))) return "auto-deny";
+    if (target === worktree || target.startsWith(`${worktree}/`)) return "auto-allow";
     return "auto-deny";
   }
 
