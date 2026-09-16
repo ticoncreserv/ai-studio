@@ -11,7 +11,7 @@ This repository is the **platform**. The target app stays in its own repo. Until
 - `services/supervisor` — ACP sessions, workspace runtime, reconciler
 - `packages/contracts` — Zod events and commands
 - `packages/domain` — pure reducer, FSM, rules, permissions, schema guard
-- `packages/db` — Drizzle schema (Postgres when `DATABASE_URL` is set; JSON store otherwise)
+- `packages/db` — future Drizzle/Postgres schema. The running studio does not need `DATABASE_URL` or `REDIS_URL`; it persists to `var/platform.json` and runs jobs in-process.
 
 ## Run locally
 
