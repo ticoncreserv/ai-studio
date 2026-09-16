@@ -35,12 +35,30 @@ watch(
   { immediate: true },
 );
 
+const pendingRemove = ref<{ index: number; key: string } | null>(null);
+
+const pendingRemoveTitle = computed(() => {
+  const key = pendingRemove.value?.key.trim();
+  return t("admin.removeKeyTitle", { key: key || t("admin.removeKeyUnnamed") });
+});
+
 function addRow() {
   rows.value.push({ key: "", value: "" });
 }
 
-function removeRow(index: number) {
-  rows.value.splice(index, 1);
+function requestRemove(index: number) {
+  pendingRemove.value = { index, key: rows.value[index]?.key ?? "" };
+}
+
+function cancelRemove() {
+  pendingRemove.value = null;
+}
+
+function confirmRemove() {
+  const pending = pendingRemove.value;
+  if (pending == null) return;
+  rows.value.splice(pending.index, 1);
+  pendingRemove.value = null;
 }
 
 function isSecret(key: string) {
@@ -114,7 +132,7 @@ defineExpose({ submit });
           <UiButton v-if="isSecret(row.key)" size="sm" variant="ghost" @click="reveal(row.key)">
             {{ revealed[row.key] ? t("admin.hide") : t("admin.reveal") }}
           </UiButton>
-          <UiButton size="sm" variant="ghost" @click="removeRow(index)">{{ t("admin.removeKey") }}</UiButton>
+          <UiButton size="sm" variant="ghost" @click="requestRemove(index)">{{ t("admin.removeKey") }}</UiButton>
         </div>
         <UiButton size="sm" variant="ghost" @click="addRow">{{ t("admin.addKey") }}</UiButton>
       </template>
@@ -131,5 +149,16 @@ defineExpose({ submit });
         <slot name="save-label">{{ t("admin.saveEnv") }}</slot>
       </UiButton>
     </div>
+    <UiDialog :open="pendingRemove != null" :title="pendingRemoveTitle" @close="cancelRemove">
+      <p class="text-sm leading-relaxed text-ink-500">{{ t("admin.removeKeyBody") }}</p>
+      <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <UiButton size="sm" variant="outline" data-autofocus @click="cancelRemove">
+          {{ t("admin.removeKeyCancel") }}
+        </UiButton>
+        <UiButton size="sm" variant="danger" @click="confirmRemove">
+          {{ t("admin.removeKeyConfirm") }}
+        </UiButton>
+      </div>
+    </UiDialog>
   </div>
 </template>
