@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { isForeignWorktree, provisionWorktree } from "./clone.js";
+import { isForeignWorktree, neededFetchRefs, provisionWorktree } from "./clone.js";
 import { git } from "./git-ops.js";
 
 const dirs: string[] = [];
@@ -37,6 +37,14 @@ describe("provisionWorktree", () => {
     const branch = await git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"]);
     expect(branch).toBe("user/ada/studio");
     expect(await isForeignWorktree(worktree, "ticoncreserv/app")).toBe(true);
+  });
+
+  it("fetches only the default branch and the user studio branch", () => {
+    expect(neededFetchRefs("main", "user/ada/studio")).toEqual([
+      "+refs/heads/main:refs/heads/main",
+      "+refs/heads/user/ada/studio:refs/heads/user/ada/studio",
+    ]);
+    expect(neededFetchRefs("refs/heads/main", "main")).toEqual(["+refs/heads/main:refs/heads/main"]);
   });
 
   it("refuses to provision without GitHub credentials or a test source", async () => {

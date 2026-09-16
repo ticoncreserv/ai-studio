@@ -174,11 +174,7 @@ export function useStudio() {
   onMounted(async () => {
     await refresh();
     if (data.value && data.value.workspace.status !== "running") {
-      try {
-        await resume();
-      } catch {
-        /* preview error is stored on the workspace */
-      }
+      void resume().catch(() => undefined);
     }
     connectSocket();
     window.addEventListener("keydown", onKey);

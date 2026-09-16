@@ -119,7 +119,7 @@ export function suggestPreviewFixes(message: string, logs = ""): PreviewFixHint[
       action: "resume",
     });
   }
-  if (/did not become healthy|\/up|artisan serve|php 8\.5/i.test(hay)) {
+  if (/did not become healthy|did not listen|\/up|artisan serve|php 8\.5/i.test(hay)) {
     push({
       id: "artisan",
       title: "Laravel /up never answered",
