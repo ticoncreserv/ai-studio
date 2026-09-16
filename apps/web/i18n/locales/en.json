@@ -395,6 +395,8 @@
     "removeKeyUnnamed": "this key",
     "reveal": "Reveal",
     "hide": "Hide",
+    "revealSecrets": "Reveal secrets",
+    "hideSecrets": "Hide secrets",
     "raw": "Raw file",
     "form": "Key list",
     "saveEnv": "Save environment",

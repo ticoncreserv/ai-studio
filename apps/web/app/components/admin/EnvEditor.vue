@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { mergeRawEnvInput, visibleRawEnv } from "~/utils/env-mask";
+
 type EnvRow = { id: number; key: string; value: string };
 
 const props = withDefaults(
@@ -19,7 +21,21 @@ const { t } = useI18n();
 const mode = ref<"form" | "raw">("form");
 const rows = ref<EnvRow[]>([]);
 const raw = ref("");
+const rawSecretsRevealed = ref(false);
 let nextRowId = 1;
+
+const rawDisplay = computed({
+  get() {
+    return visibleRawEnv(raw.value, rawSecretsRevealed.value, props.secrets);
+  },
+  set(text: string) {
+    raw.value = mergeRawEnvInput(text, raw.value, props.secrets);
+  },
+});
+
+function toggleRawSecrets() {
+  rawSecretsRevealed.value = !rawSecretsRevealed.value;
+}
 
 function syncRows(next: Record<string, string>) {
   const byKey = new Map<string, EnvRow>();
@@ -91,23 +107,28 @@ defineExpose({ submit });
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="mb-3 inline-flex shrink-0 self-start rounded-[9px] border border-line bg-black/20 p-0.5">
-      <button
-        type="button"
-        class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
-        :class="mode === 'form' ? 'bg-white/10 text-ink-950' : 'text-ink-400'"
-        @click="mode = 'form'"
-      >
-        {{ t("admin.form") }}
-      </button>
-      <button
-        type="button"
-        class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
-        :class="mode === 'raw' ? 'bg-white/10 text-ink-950' : 'text-ink-400'"
-        @click="mode = 'raw'"
-      >
-        {{ t("admin.raw") }}
-      </button>
+    <div class="mb-3 flex shrink-0 items-center gap-2">
+      <div class="inline-flex self-start rounded-[9px] border border-line bg-black/20 p-0.5">
+        <button
+          type="button"
+          class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
+          :class="mode === 'form' ? 'bg-white/10 text-ink-950' : 'text-ink-400'"
+          @click="mode = 'form'"
+        >
+          {{ t("admin.form") }}
+        </button>
+        <button
+          type="button"
+          class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
+          :class="mode === 'raw' ? 'bg-white/10 text-ink-950' : 'text-ink-400'"
+          @click="mode = 'raw'"
+        >
+          {{ t("admin.raw") }}
+        </button>
+      </div>
+      <UiButton v-if="mode === 'raw'" size="sm" variant="ghost" type="button" @click="toggleRawSecrets">
+        {{ rawSecretsRevealed ? t("admin.hideSecrets") : t("admin.revealSecrets") }}
+      </UiButton>
     </div>
     <div v-if="mode === 'form'" class="thin-scroll min-h-0 flex-1 space-y-2 overflow-y-auto">
       <div v-if="!rows.length" class="flex flex-col items-start gap-3 py-6">
@@ -127,7 +148,7 @@ defineExpose({ submit });
     </div>
     <div v-else class="relative min-h-48 flex-1">
       <textarea
-        v-model="raw"
+        v-model="rawDisplay"
         class="thin-scroll absolute inset-0 h-full w-full resize-none overflow-y-auto rounded-[10px] border border-line bg-black/25 p-3 font-mono text-[12px] outline-none focus:border-coral-500/40"
       />
     </div>

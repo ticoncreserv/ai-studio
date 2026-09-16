@@ -395,6 +395,8 @@
     "removeKeyUnnamed": "esta chave",
     "reveal": "Revelar",
     "hide": "Ocultar",
+    "revealSecrets": "Revelar segredos",
+    "hideSecrets": "Ocultar segredos",
     "raw": "Arquivo bruto",
     "form": "Lista de chaves",
     "saveEnv": "Salvar ambiente",
