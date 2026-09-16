@@ -62,7 +62,7 @@ async function openWorkspace() {
     <div class="login-stage">
       <div class="login-stack">
         <div class="login-rise login-rise-1">
-          <AuthLoginMark :size="76" />
+          <AuthLoginMark :size="84" />
         </div>
 
         <template v-if="!ready">
