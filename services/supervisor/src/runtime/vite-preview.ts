@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const VITE_PREVIEW_SEGMENT = "__vite";
@@ -22,6 +22,17 @@ export function writeViteHotFile(worktree: string, origin: string): void {
   const hot = join(worktree, "public", "hot");
   mkdirSync(dirname(hot), { recursive: true });
   writeFileSync(hot, origin.replace(/\/$/, ""));
+}
+
+export function ensureViteHotFile(worktree: string, origin: string): void {
+  const expected = origin.replace(/\/$/, "");
+  const hot = join(worktree, "public", "hot");
+  try {
+    if (existsSync(hot) && readFileSync(hot, "utf8").trim() === expected) return;
+  } catch {
+    // rewrite
+  }
+  writeViteHotFile(worktree, expected);
 }
 
 export function writeViteAtelierConfig(worktree: string): string {

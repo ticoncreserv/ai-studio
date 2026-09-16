@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { viteDevAssetPath } from "@atelier/supervisor";
+import { ensureViteHotFile, publicViteOrigin, viteDevAssetPath } from "@atelier/supervisor";
 import { platform } from "./platform";
 import { rewriteLocation, rewriteSetCookie } from "./preview-rewrite";
 
@@ -10,6 +10,9 @@ export async function proxyPreview(event: H3Event, token: string, rest = "") {
   if (!ws) throw createError({ statusCode: 404, statusMessage: "preview not found" });
   if (!ws.port || !platform().runtime.isRunning(ws.id)) {
     throw createError({ statusCode: 503, statusMessage: "hibernated" });
+  }
+  if (ws.vitePort) {
+    ensureViteHotFile(ws.worktree, publicViteOrigin(platform().publicPreviewUrl(ws.previewToken)));
   }
 
   const incoming = getRequestURL(event);

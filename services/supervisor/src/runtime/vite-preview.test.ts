@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { publicViteOrigin, viteDevAssetPath, writeViteAtelierConfig, writeViteHotFile } from "./vite-preview.js";
+import { ensureViteHotFile, publicViteOrigin, viteDevAssetPath, writeViteAtelierConfig, writeViteHotFile } from "./vite-preview.js";
 
 const temps: string[] = [];
 
@@ -33,5 +33,8 @@ describe("vite preview urls", () => {
     const config = writeViteAtelierConfig(dir);
     expect(readFileSync(config, "utf8")).toContain("@laravel/vite-plugin-wayfinder");
     expect(readFileSync(config, "utf8")).toContain("ATELIER_VITE_ORIGIN");
+    rmSync(join(dir, "public", "hot"));
+    ensureViteHotFile(dir, "http://127.0.0.1:43123/-/p/tok/__vite");
+    expect(readFileSync(join(dir, "public", "hot"), "utf8")).toBe("http://127.0.0.1:43123/-/p/tok/__vite");
   });
 });
