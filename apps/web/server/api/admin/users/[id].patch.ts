@@ -10,6 +10,7 @@ export default defineEventHandler(async (event) => {
     return { user: platform().setPlatformAdmin(actor, id, body.platformAdmin) };
   } catch (error) {
     const message = error instanceof Error ? error.message : "forbidden";
-    throw createError({ statusCode: message === "User not found" ? 404 : 400, statusMessage: message });
+    const statusCode = message === "User not found" ? 404 : message === "Forbidden" ? 403 : 400;
+    throw createError({ statusCode, statusMessage: message, message, data: { message } });
   }
 });
