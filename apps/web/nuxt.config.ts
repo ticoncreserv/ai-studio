@@ -1,5 +1,19 @@
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
+
+const rootEnv = fileURLToPath(new URL("../../.env", import.meta.url));
+if (existsSync(rootEnv)) {
+  for (const line of readFileSync(rootEnv, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const i = trimmed.indexOf("=");
+    if (i < 1) continue;
+    const key = trimmed.slice(0, i);
+    const value = trimmed.slice(i + 1);
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
 
 export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",

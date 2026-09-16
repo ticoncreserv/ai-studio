@@ -48,6 +48,10 @@
       "cursorHint": "The GitHub App does not authenticate Cursor. Until a Cursor user token works, this studio uses MockProvider.",
       "blocked": "GitHub App setup is disabled in this environment.",
       "error": "GitHub did not return app credentials. Try again.",
+      "pasteHint": "If GitHub opens http://localhost without a port, that is your machine, not this studio. Copy the code query from that URL and paste it here.",
+      "pasteLabel": "Manifest code",
+      "pastePlaceholder": "code from the callback URL",
+      "pasteSubmit": "Save credentials from this code",
       "back": "Back to the studio"
     }
   },

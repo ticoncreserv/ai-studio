@@ -16,11 +16,32 @@ const { data: setup, error: loadError } = await useAsyncData("github-setup", () 
 );
 
 const created = computed(() => route.query.created === "1");
+const redeemCode = ref(String(route.query.code ?? ""));
+const redeeming = ref(false);
+const redeemError = ref("");
 const errorKey = computed(() => {
   const code = String(route.query.error ?? "");
   if (code === "blocked") return "setup.github.blocked";
   if (code === "state" || code === "code" || code === "convert") return "setup.github.error";
   return "";
+});
+
+async function redeem() {
+  redeeming.value = true;
+  redeemError.value = "";
+  try {
+    await $fetch("/api/setup/github/convert", { method: "POST", body: { code: redeemCode.value.trim() } });
+    await navigateTo("/setup/github?created=1");
+    await refreshNuxtData("github-setup");
+  } catch {
+    redeemError.value = t("setup.github.error");
+  } finally {
+    redeeming.value = false;
+  }
+}
+
+onMounted(async () => {
+  if (setup.value?.canCreate && redeemCode.value) await redeem();
 });
 </script>
 
@@ -47,6 +68,18 @@ const errorKey = computed(() => {
             <UiButton type="submit" size="lg" class="w-full">{{ t("setup.github.create") }}</UiButton>
           </form>
           <p v-if="setup.canCreate" class="mt-3 text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.hint") }}</p>
+
+          <form v-if="setup.canCreate" class="mt-6 space-y-3" @submit.prevent="redeem">
+            <p class="text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.pasteHint") }}</p>
+            <label class="block">
+              <span class="mb-1.5 block text-[13px] font-medium text-ink-600">{{ t("setup.github.pasteLabel") }}</span>
+              <UiInput v-model="redeemCode" :placeholder="t('setup.github.pastePlaceholder')" />
+            </label>
+            <p v-if="redeemError" class="text-sm text-red-400">{{ redeemError }}</p>
+            <UiButton type="submit" variant="outline" size="lg" class="w-full" :disabled="redeeming || !redeemCode.trim()">
+              {{ t("setup.github.pasteSubmit") }}
+            </UiButton>
+          </form>
 
           <div v-if="setup.configured" class="mt-6 space-y-3">
             <p class="text-sm text-ink-800">{{ t("setup.github.configured") }}</p>

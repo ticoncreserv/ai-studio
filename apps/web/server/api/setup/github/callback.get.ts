@@ -1,4 +1,10 @@
-import { canSetupGitHubApp, convertGitHubAppManifest, saveGitHubAppCredentials, applyStoredGitHubAppCredentials } from "@atelier/supervisor";
+import {
+  applyStoredGitHubAppCredentials,
+  canSetupGitHubApp,
+  convertGitHubAppManifest,
+  matchGitHubAppSetupState,
+  saveGitHubAppCredentials,
+} from "@atelier/supervisor";
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event);
@@ -7,9 +13,9 @@ export default defineEventHandler(async (event) => {
 
   if (!canSetupGitHubApp()) return redirect("blocked");
 
-  const expected = getCookie(event, "atelier_github_app_state");
   const state = String(query.state ?? "");
-  if (!expected || !state || expected !== state) return redirect("state");
+  const cookie = getCookie(event, "atelier_github_app_state");
+  if (!state || (cookie !== state && !matchGitHubAppSetupState(state))) return redirect("state");
 
   const code = String(query.code ?? "");
   if (!code) return redirect("code");

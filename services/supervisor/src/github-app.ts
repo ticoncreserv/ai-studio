@@ -51,17 +51,88 @@ export function githubAppRepo(): string {
   return process.env.ATELIER_REPO ?? "ticoncreserv/app";
 }
 
-export function atelierPublicUrl(host?: string, proto?: string): string {
-  if (process.env.ATELIER_PUBLIC_URL) return process.env.ATELIER_PUBLIC_URL.replace(/\/$/, "");
-  const hostname = host || "127.0.0.1:43123";
-  const protocol = proto || "http";
-  return `${protocol}://${hostname}`;
+export function atelierListenPort(): number {
+  const n = Number(process.env.NUXT_PORT || process.env.PORT || "43123");
+  return Number.isFinite(n) && n > 0 ? n : 43123;
+}
+
+function splitHost(host: string): { name: string; port: string } {
+  const trimmed = host.trim();
+  if (trimmed.startsWith("[")) {
+    const end = trimmed.indexOf("]");
+    return { name: trimmed.slice(1, end), port: trimmed.slice(end + 1).replace(/^:/, "") };
+  }
+  const i = trimmed.lastIndexOf(":");
+  if (i > 0) return { name: trimmed.slice(0, i), port: trimmed.slice(i + 1) };
+  return { name: trimmed, port: "" };
+}
+
+function isLoopback(name: string): boolean {
+  return name === "localhost" || name === "127.0.0.1" || name === "::1";
+}
+
+function isBrowserDefaultPort(port: string | undefined): boolean {
+  return !port || port === "80" || port === "443";
+}
+
+export function atelierPublicUrl(host?: string, proto?: string, forwardedPort?: string): string {
+  const listen = String(atelierListenPort());
+  const protocol = proto === "https" ? "https" : "http";
+
+  if (host) {
+    const { name, port } = splitHost(host);
+    if (isLoopback(name)) {
+      const next = !isBrowserDefaultPort(port) ? port : !isBrowserDefaultPort(forwardedPort) ? forwardedPort! : listen;
+      return `${protocol}://${name}:${next}`;
+    }
+    if (port) return `${protocol}://${name}:${port}`;
+    if (forwardedPort && !isBrowserDefaultPort(forwardedPort)) return `${protocol}://${name}:${forwardedPort}`;
+    return `${protocol}://${name}`;
+  }
+
+  const envUrl = process.env.ATELIER_PUBLIC_URL?.replace(/\/$/, "");
+  if (envUrl) {
+    try {
+      const url = new URL(envUrl);
+      if (isLoopback(url.hostname) && isBrowserDefaultPort(url.port)) {
+        return `${url.protocol}//${url.hostname}:${listen}`;
+      }
+      return envUrl;
+    } catch {
+      return envUrl;
+    }
+  }
+
+  return `http://127.0.0.1:${listen}`;
 }
 
 export function canSetupGitHubApp(): boolean {
-  if (process.env.ATELIER_ALLOW_GITHUB_APP_SETUP === "0") return false;
-  if (process.env.ATELIER_ALLOW_GITHUB_APP_SETUP === "1") return true;
+  const flag = (process.env.ATELIER_ALLOW_GITHUB_APP_SETUP ?? "").toLowerCase();
+  if (flag === "0" || flag === "false" || flag === "off") return false;
+  if (flag === "1" || flag === "true" || flag === "on") return true;
   return process.env.NODE_ENV !== "production";
+}
+
+export function githubAppSetupStatePath(): string {
+  return join(repoRoot(), "var", "github-app-setup.json");
+}
+
+export function saveGitHubAppSetupState(state: string): void {
+  mkdirSync(dirname(githubAppSetupStatePath()), { recursive: true });
+  writeFileSync(githubAppSetupStatePath(), `${JSON.stringify({ state, at: Date.now() })}\n`, { mode: 0o600 });
+}
+
+export function matchGitHubAppSetupState(state: string): boolean {
+  if (!state) return false;
+  const path = githubAppSetupStatePath();
+  if (!existsSync(path)) return false;
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as { state?: string; at?: number };
+    const fresh = typeof raw.at === "number" && Date.now() - raw.at < 60 * 60 * 1000;
+    return fresh && raw.state === state;
+  } catch {
+    return false;
+  }
 }
 
 export function hasGitHubOAuth(): boolean {

@@ -23,7 +23,9 @@ export {
   githubAppRepo,
   hasGitHubOAuth,
   loadGitHubAppCredentials,
+  matchGitHubAppSetupState,
   saveGitHubAppCredentials,
+  saveGitHubAppSetupState,
 } from "./github-app.js";
 export type { GitHubAppCredentials, GitHubAppManifest } from "./github-app.js";
 export { Reconciler } from "./reconciler.js";

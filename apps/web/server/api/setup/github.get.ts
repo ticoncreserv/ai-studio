@@ -7,6 +7,7 @@ import {
   githubAppRepo,
   hasGitHubOAuth,
   loadGitHubAppCredentials,
+  saveGitHubAppSetupState,
 } from "@atelier/supervisor";
 import { randomBytes } from "node:crypto";
 import { requestPublicUrl } from "../../utils/public-url";
@@ -18,6 +19,7 @@ export default defineEventHandler((event) => {
   const publicUrl = requestPublicUrl(event);
   const state = randomBytes(16).toString("hex");
   if (canCreate) {
+    saveGitHubAppSetupState(state);
     setCookie(event, "atelier_github_app_state", state, {
       httpOnly: true,
       sameSite: "lax",

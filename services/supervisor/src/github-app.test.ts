@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyGitHubAppCredentials,
+  atelierPublicUrl,
   credentialsFromManifestResponse,
   githubAppCreateAction,
   githubAppInstallUrl,
@@ -41,6 +42,13 @@ describe("github app manifest", () => {
     expect(githubAppCreateAction("ticoncreserv", "abc")).toBe(
       "https://github.com/organizations/ticoncreserv/settings/apps/new?state=abc",
     );
+  });
+
+  it("keeps the studio port on loopback hosts", () => {
+    expect(atelierPublicUrl("localhost")).toBe("http://localhost:43123");
+    expect(atelierPublicUrl("localhost:80")).toBe("http://localhost:43123");
+    expect(atelierPublicUrl("127.0.0.1:43123")).toBe("http://127.0.0.1:43123");
+    expect(atelierPublicUrl("preview.example", "https")).toBe("https://preview.example");
   });
 
   it("maps the manifest conversion payload and persists it", () => {
