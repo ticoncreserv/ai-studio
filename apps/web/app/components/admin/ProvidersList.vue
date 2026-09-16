@@ -20,12 +20,24 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const drafts = reactive<Record<string, string>>({});
+
+watch(
+  () => props.keys,
+  (next) => {
+    for (const [id, value] of Object.entries(next)) {
+      if (!value) delete drafts[id];
+    }
+  },
+  { deep: true },
+);
 
 function keyValue(id: string) {
-  return props.keys[id] ?? "";
+  return drafts[id] ?? props.keys[id] ?? "";
 }
 
 function setKey(id: string, value: string) {
+  drafts[id] = value;
   emit("update:keys", { ...props.keys, [id]: value });
 }
 
