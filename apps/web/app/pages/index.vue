@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Github, ArrowRight } from "lucide-vue-next";
+
 const { t, locale, setLocale } = useI18n();
 const login = ref("studio");
 const error = ref("");
@@ -39,41 +41,75 @@ async function openWorkspace() {
 </script>
 
 <template>
-  <main class="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-16">
-    <p class="text-xs uppercase tracking-[0.2em] text-copper-400">{{ t("app.product") }}</p>
-    <h1 class="mt-3 font-semibold text-5xl tracking-tight text-white">{{ t("app.name") }}</h1>
-    <p class="mt-4 max-w-xl text-lg text-ink-500">{{ t("app.tagline") }}</p>
-
-    <div v-if="!me" class="mt-10 max-w-md space-y-4 rounded-xl border border-ink-800 bg-ink-900 p-6">
-      <h2 class="text-xl text-white">{{ t("auth.title") }}</h2>
-      <p class="text-sm text-ink-500">{{ t("auth.subtitle") }}</p>
-      <label class="block text-sm">
-        <span class="mb-1 block text-ink-500">{{ t("auth.loginLabel") }}</span>
-        <UiInput v-model="login" :placeholder="t('auth.loginPlaceholder')" />
-      </label>
-      <label class="block text-sm">
-        <span class="mb-1 block text-ink-500">{{ t("auth.localeLabel") }}</span>
-        <select
-          class="h-9 w-full rounded-md border border-ink-700 bg-ink-900 px-3 text-sm"
-          :value="locale"
-          @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
-        >
-          <option value="en">{{ t("auth.english") }}</option>
-          <option value="pt-BR">{{ t("auth.portuguese") }}</option>
-        </select>
-      </label>
-      <p v-if="error" class="text-sm text-red-400">{{ error }}</p>
-      <div class="flex gap-2">
-        <UiButton :disabled="loading" @click="signIn">{{ t("auth.dev") }}</UiButton>
-        <a href="/api/auth/github">
-          <UiButton variant="outline" type="button">{{ t("auth.github") }}</UiButton>
-        </a>
+  <main class="mesh relative min-h-screen overflow-hidden">
+    <div class="grain pointer-events-none absolute inset-0 opacity-[0.05]" />
+    <header class="relative mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
+      <div class="flex items-center gap-3">
+        <UiLogo :size="36" />
+        <span class="text-[15px] font-semibold tracking-tight">{{ t("app.name") }}</span>
       </div>
-    </div>
+      <select
+        class="h-9 rounded-full border border-line bg-paper/80 px-3 text-xs font-medium text-ink-600 shadow-inset outline-none"
+        :value="locale"
+        @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
+      >
+        <option value="en">{{ t("auth.english") }}</option>
+        <option value="pt-BR">{{ t("auth.portuguese") }}</option>
+      </select>
+    </header>
 
-    <div v-else class="mt-10 space-y-4">
-      <p class="text-ink-500">{{ me.user.login }}</p>
-      <UiButton :disabled="loading" @click="openWorkspace">{{ t("nav.openWorkspace") }}</UiButton>
-    </div>
+    <section class="relative mx-auto grid max-w-6xl items-center gap-12 px-6 pb-20 pt-8 lg:grid-cols-[1.15fr_0.85fr] lg:pt-16">
+      <div>
+        <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-coral-600">{{ t("app.product") }}</p>
+        <h1 class="mt-4 max-w-xl text-5xl font-semibold leading-[1.05] tracking-tight text-ink-950 sm:text-6xl">
+          {{ t("app.name") }}
+        </h1>
+        <p class="mt-5 max-w-lg text-lg leading-relaxed text-ink-500">{{ t("app.tagline") }}</p>
+      </div>
+
+      <div class="rounded-[28px] border border-line bg-paper/90 p-7 shadow-float backdrop-blur">
+        <template v-if="!me">
+          <h2 class="text-2xl font-semibold tracking-tight">{{ t("auth.title") }}</h2>
+          <p class="mt-2 text-sm leading-relaxed text-ink-500">{{ t("auth.subtitle") }}</p>
+          <div class="mt-6 space-y-4">
+            <label class="block">
+              <span class="mb-1.5 block text-[13px] font-medium text-ink-600">{{ t("auth.loginLabel") }}</span>
+              <UiInput v-model="login" :placeholder="t('auth.loginPlaceholder')" />
+            </label>
+            <label class="block">
+              <span class="mb-1.5 block text-[13px] font-medium text-ink-600">{{ t("auth.localeLabel") }}</span>
+              <select
+                class="h-11 w-full rounded-2xl border border-line bg-white/80 px-3.5 text-sm shadow-inset outline-none focus:border-coral-400"
+                :value="locale"
+                @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
+              >
+                <option value="en">{{ t("auth.english") }}</option>
+                <option value="pt-BR">{{ t("auth.portuguese") }}</option>
+              </select>
+            </label>
+            <p v-if="error" class="text-sm text-red-500">{{ error }}</p>
+            <UiButton class="w-full" size="lg" :disabled="loading" @click="signIn">
+              {{ t("auth.dev") }}
+              <ArrowRight class="h-4 w-4" />
+            </UiButton>
+            <a href="/api/auth/github" class="block">
+              <UiButton class="w-full" variant="outline" size="lg" type="button">
+                <Github class="h-4 w-4" />
+                {{ t("auth.github") }}
+              </UiButton>
+            </a>
+          </div>
+        </template>
+        <template v-else>
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-300">{{ t("auth.welcomeBack") }}</p>
+          <h2 class="mt-2 text-2xl font-semibold tracking-tight">{{ me.user.login }}</h2>
+          <p class="mt-2 text-sm text-ink-500">{{ t("workspace.ready") }}</p>
+          <UiButton class="mt-6 w-full" size="lg" :disabled="loading" @click="openWorkspace">
+            {{ t("nav.openWorkspace") }}
+            <ArrowRight class="h-4 w-4" />
+          </UiButton>
+        </template>
+      </div>
+    </section>
   </main>
 </template>

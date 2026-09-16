@@ -14,7 +14,8 @@
     "localeLabel": "Idioma da interface",
     "english": "English",
     "portuguese": "Português (Brasil)",
-    "error": "Falha no acesso. Tente de novo."
+    "error": "Falha no acesso. Tente de novo.",
+    "welcomeBack": "Bem-vindo de volta"
   },
   "nav": {
     "sessions": "Sessões",
@@ -25,7 +26,9 @@
     "rules": "Regras",
     "connections": "Conexões",
     "signOut": "Sair",
-    "openWorkspace": "Abrir workspace"
+    "openWorkspace": "Abrir workspace",
+    "copied": "Link copiado",
+    "more": "Mais"
   },
   "workspace": {
     "warming": "Aquecendo o workspace até ready…",
@@ -44,7 +47,9 @@
     "pendingMigrations": "{count} migrations da sua branch ainda não foram aplicadas.",
     "extraMigrations": "{count} migrations existem no banco e não na sua branch.",
     "diskQuota": "Cota de disco",
-    "presence": "{count} pessoas aqui"
+    "presence": "{count} pessoas aqui",
+    "live": "Ao vivo",
+    "project": "ticoncreserv/app"
   },
   "chat": {
     "empty": "Descreva a tela ou a mudança. Mencione rotas com {'@'} e anexe arquivos ou um print.",
@@ -77,7 +82,8 @@
     "modePlan": "Plano",
     "modeAsk": "Perguntar",
     "attach": "Anexar",
-    "recipe": "Receita"
+    "recipe": "Receita",
+    "build": "Construir"
   },
   "preview": {
     "title": "Preview",
@@ -95,7 +101,12 @@
     "debugQueries": "{count} consultas",
     "debugMemory": "{mb} MB",
     "nPlusOne": "N+1 detectado",
-    "rotate": "Girar"
+    "rotate": "Girar",
+    "refresh": "Atualizar",
+    "home": "Início",
+    "select": "Selecionar",
+    "annotate": "Desenhar",
+    "comment": "Comentar"
   },
   "command": {
     "placeholder": "Digite um comando…",

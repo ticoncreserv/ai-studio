@@ -14,14 +14,17 @@ async function accept() {
 </script>
 
 <template>
-  <main class="mx-auto max-w-lg px-6 py-20">
-    <h1 class="text-3xl text-white">{{ t("invite.title") }}</h1>
-    <p class="mt-3 text-ink-500">{{ t("invite.created") }}</p>
-    <UiButton class="mt-6" @click="accept">{{ t("invite.accept") }}</UiButton>
-    <p v-if="result?.pending" class="mt-4 text-amber-300">{{ t("invite.pending") }}</p>
-    <p v-if="error" class="mt-4 text-red-400">{{ error }}</p>
-    <a class="mt-6 block text-sm text-copper-400" href="https://github.com/ticoncreserv/app/settings/access" target="_blank">
-      {{ t("invite.githubAccess") }}
-    </a>
+  <main class="mesh flex min-h-screen items-center justify-center px-6">
+    <div class="w-full max-w-md rounded-[28px] border border-line bg-paper p-8 shadow-float">
+      <UiLogo />
+      <h1 class="mt-6 text-3xl font-semibold tracking-tight">{{ t("invite.title") }}</h1>
+      <p class="mt-2 text-sm leading-relaxed text-ink-500">{{ t("invite.created") }}</p>
+      <UiButton class="mt-6" size="lg" @click="accept">{{ t("invite.accept") }}</UiButton>
+      <p v-if="result?.pending" class="mt-4 text-sm text-amber-700">{{ t("invite.pending") }}</p>
+      <p v-if="error" class="mt-4 text-sm text-red-500">{{ error }}</p>
+      <a class="mt-6 inline-block text-sm font-medium text-coral-600" href="https://github.com/ticoncreserv/app/settings/access" target="_blank">
+        {{ t("invite.githubAccess") }}
+      </a>
+    </div>
   </main>
 </template>

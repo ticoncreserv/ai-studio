@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-ink-950 text-ink-200">
+  <div class="min-h-screen bg-canvas text-ink-950">
     <slot />
   </div>
 </template>

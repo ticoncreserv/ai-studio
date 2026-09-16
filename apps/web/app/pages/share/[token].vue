@@ -14,12 +14,17 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="flex h-screen flex-col">
-    <header class="border-b border-ink-800 px-4 py-3">
-      <h1 class="text-sm text-white">{{ t("share.title") }}</h1>
-      <p class="text-xs text-ink-500">{{ t("share.hint") }}</p>
+  <main class="flex h-screen flex-col bg-canvas">
+    <header class="flex h-14 items-center gap-3 border-b border-line bg-paper/80 px-5 backdrop-blur-xl">
+      <UiLogo :size="28" />
+      <div>
+        <h1 class="text-sm font-semibold tracking-tight">{{ t("share.title") }}</h1>
+        <p class="text-[12px] text-ink-500">{{ t("share.hint") }}</p>
+      </div>
     </header>
-    <p v-if="expired" class="p-6 text-ink-500">{{ t("share.expired") }}</p>
-    <iframe v-else-if="data" :src="data.previewPath" class="min-h-0 flex-1 bg-white" :title="t('preview.title')" />
+    <p v-if="expired" class="p-8 text-ink-500">{{ t("share.expired") }}</p>
+    <div v-else-if="data" class="preview-dots m-4 min-h-0 flex-1 overflow-hidden rounded-[28px] border border-line bg-[#efe8df] p-3">
+      <iframe :src="data.previewPath" class="h-full w-full rounded-[22px] bg-white shadow-float" :title="t('preview.title')" />
+    </div>
   </main>
 </template>

@@ -14,7 +14,8 @@
     "localeLabel": "Interface language",
     "english": "English",
     "portuguese": "Português (Brasil)",
-    "error": "Sign-in failed. Try again."
+    "error": "Sign-in failed. Try again.",
+    "welcomeBack": "Welcome back"
   },
   "nav": {
     "sessions": "Sessions",
@@ -25,7 +26,9 @@
     "rules": "Rules",
     "connections": "Connections",
     "signOut": "Sign out",
-    "openWorkspace": "Open workspace"
+    "openWorkspace": "Open workspace",
+    "copied": "Link copied",
+    "more": "More"
   },
   "workspace": {
     "warming": "Warming the workspace to ready…",
@@ -44,7 +47,9 @@
     "pendingMigrations": "{count} migrations in your branch are not applied.",
     "extraMigrations": "{count} migrations exist in the database but not in your branch.",
     "diskQuota": "Disk quota",
-    "presence": "{count} people here"
+    "presence": "{count} people here",
+    "live": "Live",
+    "project": "ticoncreserv/app"
   },
   "chat": {
     "empty": "Describe the screen or change you want. Mention routes with {'@'} and attach files or a screenshot.",
@@ -77,7 +82,8 @@
     "modePlan": "Plan",
     "modeAsk": "Ask",
     "attach": "Attach",
-    "recipe": "Recipe"
+    "recipe": "Recipe",
+    "build": "Build"
   },
   "preview": {
     "title": "Preview",
@@ -95,7 +101,12 @@
     "debugQueries": "{count} queries",
     "debugMemory": "{mb} MB",
     "nPlusOne": "N+1 detected",
-    "rotate": "Rotate"
+    "rotate": "Rotate",
+    "refresh": "Refresh",
+    "home": "Home",
+    "select": "Select",
+    "annotate": "Draw",
+    "comment": "Comment"
   },
   "command": {
     "placeholder": "Type a command…",

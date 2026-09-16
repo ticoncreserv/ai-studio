@@ -4,9 +4,14 @@ defineProps<{ error: { statusCode?: number; message?: string } }>();
 </script>
 
 <template>
-  <main class="mx-auto max-w-lg px-6 py-20">
-    <h1 class="text-3xl text-white">{{ t("errors.generic") }}</h1>
-    <p class="mt-3 text-ink-500">{{ error.message }}</p>
-    <NuxtLink to="/" class="mt-6 inline-block text-copper-400">{{ t("app.name") }}</NuxtLink>
+  <main class="mesh flex min-h-screen items-center justify-center px-6">
+    <div class="w-full max-w-md rounded-[28px] border border-line bg-paper p-8 shadow-lift">
+      <UiLogo />
+      <h1 class="mt-6 text-3xl font-semibold tracking-tight">{{ t("errors.generic") }}</h1>
+      <p class="mt-2 text-ink-500">{{ error.message }}</p>
+      <NuxtLink to="/" class="mt-6 inline-flex">
+        <UiButton>{{ t("app.name") }}</UiButton>
+      </NuxtLink>
+    </div>
   </main>
 </template>
