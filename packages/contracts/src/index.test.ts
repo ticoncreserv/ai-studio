@@ -4,6 +4,7 @@ import { ClientCommandSchema, SessionEventSchema } from "./index.js";
 describe("contracts", () => {
   it("parses a prompt command and a diff event", () => {
     const command = ClientCommandSchema.parse({ type: "prompt", text: "Add quotes" });
+    if (command.type !== "prompt") throw new Error("expected prompt");
     expect(command.attachments).toEqual([]);
     const event = SessionEventSchema.parse({
       type: "diff",
@@ -22,6 +23,7 @@ describe("contracts", () => {
         },
       ],
     });
+    if (event.type !== "diff") throw new Error("expected diff");
     expect(event.hunks).toHaveLength(1);
   });
 });

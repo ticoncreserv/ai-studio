@@ -232,17 +232,17 @@ export class Platform {
       return;
     }
     if (input.command.type === "accept_hunk" || input.command.type === "reject_hunk") {
-      this.mutateHunks(session.id, (state) =>
-        applyHunkDecision(state, input.command.type === "accept_hunk" ? input.command.hunkId : input.command.hunkId, input.command.type === "accept_hunk" ? "accepted" : "rejected"),
-      );
-      if (input.command.type === "accept_hunk") this.applyAcceptedHunks(session.id, ws.worktree);
+      const hunkId = input.command.hunkId;
+      const accepted = input.command.type === "accept_hunk";
+      this.mutateHunks(session.id, (state) => applyHunkDecision(state, hunkId, accepted ? "accepted" : "rejected"));
+      if (accepted) this.applyAcceptedHunks(session.id, ws.worktree);
       return;
     }
     if (input.command.type === "accept_file" || input.command.type === "reject_file") {
-      this.mutateHunks(session.id, (state) =>
-        applyFileDecision(state, input.command.filePath, input.command.type === "accept_file" ? "accepted" : "rejected"),
-      );
-      if (input.command.type === "accept_file") this.applyAcceptedHunks(session.id, ws.worktree);
+      const filePath = input.command.filePath;
+      const accepted = input.command.type === "accept_file";
+      this.mutateHunks(session.id, (state) => applyFileDecision(state, filePath, accepted ? "accepted" : "rejected"));
+      if (accepted) this.applyAcceptedHunks(session.id, ws.worktree);
       return;
     }
     if (input.command.type === "sync_base") {
@@ -275,18 +275,20 @@ export class Platform {
       return;
     }
     if (input.command.type === "decide_plan") {
+      const outcome = input.command.outcome;
       this.store.update((d) => {
         const s = d.sessions.find((x) => x.id === session.id);
         if (!s) return;
-        s.events = s.events.map((e) => (e.type === "plan" ? { ...e, outcome: input.command.outcome } : e));
+        s.events = s.events.map((e) => (e.type === "plan" ? { ...e, outcome } : e));
       });
       return;
     }
     if (input.command.type === "decide_permission") {
+      const outcome = input.command.outcome;
       this.store.update((d) => {
         const s = d.sessions.find((x) => x.id === session.id);
         if (!s) return;
-        s.events = s.events.map((e) => (e.type === "permission" ? { ...e, outcome: input.command.outcome } : e));
+        s.events = s.events.map((e) => (e.type === "permission" ? { ...e, outcome } : e));
       });
       return;
     }

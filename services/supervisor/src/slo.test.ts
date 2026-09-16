@@ -30,7 +30,12 @@ describe("preview SLO helpers", () => {
 
   it("validates isolation env and side-effect profile", () => {
     const spec = defaultWorkspaceSpec();
-    const env = { ...PREVIEW_SIDE_EFFECTS, ...isolationEnv("abc", "http://127.0.0.1:1"), APP_KEY: "base64:test", DB_CONNECTION: "mariadb" };
+    const env: Record<string, string> = {
+      ...PREVIEW_SIDE_EFFECTS,
+      ...isolationEnv("abc", "http://127.0.0.1:1"),
+      APP_KEY: "base64:test",
+      DB_CONNECTION: "mariadb",
+    };
     expect(env.MAIL_MAILER).toBe("log");
     expect(env.QUEUE_NAME).toContain("atelier_");
     expect(validateEnvContract(spec, env).missing).toEqual([]);

@@ -7,6 +7,7 @@ This repository is the **platform**. The target app stays in its own repo. Until
 ## Stack
 
 - Node 24 LTS (see `.nvmrc`)
+- TypeScript 7 (`tsc`) with the TypeScript 6 API package for `typescript-eslint` and `vue-tsc` until those tools ship a TypeScript 7 API
 - `apps/web` — Nuxt 4 + Nitro + Vue 3 + Tailwind CSS v4 + i18n (`en`, `pt-BR`)
 - `services/supervisor` — ACP sessions, workspace runtime, reconciler
 - `packages/contracts` — Zod events and commands
