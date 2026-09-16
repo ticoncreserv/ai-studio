@@ -1,6 +1,7 @@
 import { foldEvents } from "@atelier/domain";
 import type { AgentMode, ClientCommand, SessionEvent, Viewport } from "@atelier/contracts";
 import type { PreviewDebug, PreviewTool, StudioAttachment, StudioDialog, StudioPayload, StudioSheet } from "~/types/studio";
+import { nextPreviewEventId, shouldReloadPreviewOnCommand, shouldReloadPreviewOnEvent } from "~/utils/preview-reload";
 
 export function useStudio() {
   const { t, locale, setLocale } = useI18n();
@@ -25,6 +26,7 @@ export function useStudio() {
   const sending = ref(false);
   const previewBusy = ref(false);
   const previewKey = ref(0);
+  const lastPreviewEventId = ref("");
   const toolMode = ref<PreviewTool>("select");
   const mode = ref<AgentMode>("agent");
   const recipeId = ref("");
@@ -81,7 +83,8 @@ export function useStudio() {
         return;
       }
       streamingText.value = "";
-      if (event.type === "diff" || event.type === "checkpoint" || event.type === "runtime_error") {
+      if (shouldReloadPreviewOnEvent(event.type) && event.id !== lastPreviewEventId.value) {
+        lastPreviewEventId.value = event.id;
         previewKey.value += 1;
       }
       void refresh();
@@ -175,10 +178,14 @@ export function useStudio() {
         method: "POST",
         body: { command },
       });
-      if (command.type === "prompt" || command.type === "accept_hunk" || command.type === "reject_hunk" || command.type === "restore_checkpoint" || command.type === "sync_base") {
+      await refresh();
+      const fileEventId = nextPreviewEventId(data.value?.events ?? [], lastPreviewEventId.value);
+      if (fileEventId) {
+        lastPreviewEventId.value = fileEventId;
+        previewKey.value += 1;
+      } else if (shouldReloadPreviewOnCommand(command.type)) {
         previewKey.value += 1;
       }
-      await refresh();
     } catch {
       flash(t("chat.promptFailed"));
     } finally {
@@ -345,6 +352,7 @@ export function useStudio() {
     try {
       await $fetch(`/api/workspace/${workspaceId.value}/resume`, { method: "POST" });
       await refresh();
+      previewKey.value += 1;
     } finally {
       previewBusy.value = false;
     }

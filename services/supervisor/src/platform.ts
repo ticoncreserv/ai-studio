@@ -39,6 +39,7 @@ import { connectionsFromWorktree, defaultConnectionPort, mergeWorktreeEnv, readE
 import { probeConnections } from "./runtime/connection-probe.js";
 import { mentionIndexFromWorktree, worktreeBytes } from "./runtime/worktree-meta.js";
 import { commitWorktree, restoreCheckpoint, restoreFile, syncBaseBranch, worktreeDiffEvents } from "./runtime/worktree-diff.js";
+import { formatAgentError } from "./acp/errors.js";
 import type { AcpPromptBlock } from "./acp/session.js";
 import type { ProviderRun } from "./providers/types.js";
 
@@ -624,32 +625,36 @@ export class Platform {
           streaming: false,
         });
       }
-      for (const event of await worktreeDiffEvents(ws.worktree)) this.append(session.id, event);
-      const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(userText));
-      if (sha) {
-        this.append(session.id, {
-          type: "checkpoint",
-          id: randomUUID(),
-          at: new Date().toISOString(),
-          gitSha: sha,
-          label: titleFromPrompt(userText),
+      try {
+        for (const event of await worktreeDiffEvents(ws.worktree)) this.append(session.id, event);
+        const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(userText));
+        if (sha) {
+          this.append(session.id, {
+            type: "checkpoint",
+            id: randomUUID(),
+            at: new Date().toISOString(),
+            gitSha: sha,
+            label: titleFromPrompt(userText),
+          });
+        }
+        const bytes = await worktreeBytes(ws.worktree);
+        this.store.update((d) => {
+          const row = d.workspaces.find((w) => w.id === ws.id);
+          if (row) row.bytes = bytes;
         });
+      } catch {
+        // The prompt already completed. A worktree scan must not look like an agent failure
+        // or remount the preview when no app files changed.
       }
-      const bytes = await worktreeBytes(ws.worktree);
-      this.store.update((d) => {
-        const row = d.workspaces.find((w) => w.id === ws.id);
-        if (row) row.bytes = bytes;
-      });
     } catch (error) {
       run?.stop();
       this.runs.delete(session.id);
       this.runModes.delete(session.id);
-      const message = error instanceof Error ? error.message : "The Cursor agent failed.";
       this.append(session.id, {
         type: "assistant_message",
         id: randomUUID(),
         at: new Date().toISOString(),
-        text: `The agent could not complete this prompt. ${message}`,
+        text: `The agent could not complete this prompt. ${formatAgentError(error)}`,
         streaming: false,
       });
     } finally {

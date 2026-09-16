@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { foldEvents } from "@atelier/domain";
+import { formatAgentError } from "./acp/errors.js";
 import { Platform } from "./platform.js";
 import { JsonStore } from "./store.js";
 import { listBranchMigrations } from "./migrations.js";
@@ -145,6 +146,16 @@ describe("platform", () => {
     const stored = p.store.read().sessions.find((s) => s.id === session.id);
     const conflict = stored?.events.find((e) => e.type === "conflict");
     expect(conflict && conflict.type === "conflict" ? conflict.message : "").not.toMatch(/fixture workspace/i);
+  });
+
+  it("surfaces JSON-RPC ACP failures instead of 'The Cursor agent failed.'", () => {
+    const message = formatAgentError({
+      code: -32603,
+      message: "Internal error",
+      data: [{ path: ["mcpServers", 0], message: "Invalid input" }],
+    });
+    expect(`The agent could not complete this prompt. ${message}`).toContain("mcpServers");
+    expect(message).not.toBe("The Cursor agent failed.");
   });
 });
 

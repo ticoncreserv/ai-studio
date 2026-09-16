@@ -32,6 +32,8 @@ export interface ProvisionRequest {
   repo?: string;
   token?: string;
   force?: boolean;
+  userId?: string;
+  envRoot?: string;
 }
 
 export interface StartRequest {
@@ -39,6 +41,8 @@ export interface StartRequest {
   worktree: string;
   publicUrl: string;
   hmr?: boolean;
+  userId?: string;
+  envRoot?: string;
 }
 
 export interface WorkspaceRuntime {
@@ -133,10 +137,14 @@ export class ProcessRuntime implements WorkspaceRuntime {
     await provisionWorktree(clone);
     writeGitignore(worktree);
     writeMcpConfig(worktree);
-    mergeWorktreeEnv(worktree, {
-      ...PREVIEW_SIDE_EFFECTS,
-      ...isolationEnv(input.workspaceId, "http://127.0.0.1"),
-    });
+    mergeWorktreeEnv(
+      worktree,
+      {
+        ...PREVIEW_SIDE_EFFECTS,
+        ...isolationEnv(input.workspaceId, "http://127.0.0.1"),
+      },
+      { userId: input.userId, envRoot: input.envRoot },
+    );
     await installDependencies(worktree);
     return { worktree };
   }
@@ -163,12 +171,16 @@ export class ProcessRuntime implements WorkspaceRuntime {
     const port = await allocatePort();
     const wantsVite = existsSync(join(input.worktree, "package.json"));
     const vitePort = wantsVite ? await allocatePort(port + 1) : undefined;
-    const env = mergeWorktreeEnv(input.worktree, {
-      ...PREVIEW_SIDE_EFFECTS,
-      ...isolationEnv(input.workspaceId, input.publicUrl),
-      APP_URL: input.publicUrl,
-      PORT: String(port),
-    });
+    const env = mergeWorktreeEnv(
+      input.worktree,
+      {
+        ...PREVIEW_SIDE_EFFECTS,
+        ...isolationEnv(input.workspaceId, input.publicUrl),
+        APP_URL: input.publicUrl,
+        PORT: String(port),
+      },
+      { userId: input.userId, envRoot: input.envRoot },
+    );
     const childEnv = { ...process.env, ...env, PORT: String(port), APP_URL: input.publicUrl };
     const children: ChildProcess[] = [];
     const artisan = join(input.worktree, "artisan");

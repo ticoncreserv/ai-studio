@@ -6,7 +6,7 @@ const login = ref("studio");
 const error = ref("");
 const loading = ref(false);
 const me = ref<null | {
-  user: { login: string };
+  user: { login: string; platformAdmin?: boolean };
   workspace: { id: string } | null;
   sessions?: Array<{ id: string; title: string }>;
 }>(null);
@@ -140,6 +140,9 @@ const features = computed(() => [
             {{ loading ? t("workspace.loading") : t("nav.openWorkspace") }}
             <ArrowRight v-if="!loading" class="h-4 w-4" />
           </UiButton>
+          <NuxtLink v-if="me.user.platformAdmin" to="/admin" class="mt-3 block text-center text-[13px] font-medium text-coral-400">
+            {{ t("nav.admin") }}
+          </NuxtLink>
           <ul v-if="me.sessions?.length" class="mt-5 space-y-1.5">
             <li v-for="session in me.sessions" :key="session.id" class="rounded-[10px] bg-white/5 px-3 py-2 text-[13px] text-ink-600">
               {{ session.title || t("chat.untitled") }}

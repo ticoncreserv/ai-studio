@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const user = requireUser(event);
   const ws = platform().store.read().workspaces.find((w) => w.userId === user.id && w.status !== "destroyed");
   return {
-    user,
+    user: { ...user, platformAdmin: platform().isPlatformAdmin(user) },
     workspace: ws ?? null,
     sessions: ws ? platform().sessions(ws.id).slice(0, 6) : [],
     flags: platform().flags(),

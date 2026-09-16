@@ -82,20 +82,26 @@ Commits in a workspace set `user.name` / `user.email` and `commit.gpgsign=false`
 
 ## Environment files
 
-There is no in-app `.env` editor. Two files matter:
+Three Laravel layers sit under the platform `.env`:
 
 | File | What it configures |
 | --- | --- |
-| `.env` at the Atelier repo root | Platform: `ATELIER_PUBLIC_URL`, GitHub App/OAuth, `CURSOR_API_KEY`. Restart `pnpm dev` after changes. |
-| `var/workspaces/{workspaceId}/.env` | Cloned `ticoncreserv/app` secrets (MySQL/SQL Server hosts, mail, etc.). Edit on disk, then **Resume preview**. |
+| `.env` at the Atelier repo root | Platform: `ATELIER_PUBLIC_URL`, GitHub App/OAuth, `CURSOR_API_KEY`, optional `ATELIER_ADMIN_LOGINS`. Restart `pnpm dev` after changes. Not merged into clones. |
+| `var/env/global.env` | Shared `ticoncreserv/app` secrets for every clone. Edited in `/admin`. |
+| `var/env/users/{userId}.env` | Per-user overlay. Edited in workspace settings. Overrides the shared file. |
+| `var/workspaces/{workspaceId}/.env` | Generated file Laravel reads. Isolation (`APP_URL`, `SESSION_COOKIE`, prefixes) always wins. |
 
-Workspace settings in the studio lists the worktree path and the isolation overlay. On every preview start the studio overwrites `APP_URL`, `SESSION_COOKIE`, `QUEUE_NAME`, and `CACHE_PREFIX` so workspaces do not collide. Homologation `10.x` hosts stay as they are in the cloned file.
+On every preview start the studio writes the worktree `.env` as `.env.example` → global → user overlay → isolation. Homologation `10.x` hosts stay as they are in those layers. `DATABASE_URL` and `REDIS_URL` in the platform `.env` are unused (JSON store + in-process queue).
 
-`DATABASE_URL` and `REDIS_URL` in the platform `.env` are unused (JSON store + in-process queue).
+## Admin
+
+`/admin` is for platform admins: shared `.env`, providers, users, global rules (`AGENTS.md` prefix), flags, and the workspace fleet.
+
+A user is a platform admin when their login is in `ATELIER_ADMIN_LOGINS`, or `platformAdmin` is set on their record, or **no explicit admin exists yet** and they are a GitHub `owner`. After the first admin is granted in the panel, other owners do not get the panel automatically. The last admin cannot be removed.
 
 ## Preview
 
-`ProcessRuntime` clones `ticoncreserv/app` (cached bare clone in `var/cache`), writes a worktree `.env` from `.env.example` plus isolation, runs `composer install` / `npm install` when needed, then `php artisan serve` on a free loopback port. Vite runs in **dev mode** on a second loopback port (not a production `public/build` manifest). Laravel reads `public/hot` as `/-/p/{token}/__vite` (host-relative, so `localhost` and `127.0.0.1` stay same-origin). The proxy rewrites Vite's root imports (`/node_modules`, `/resources`) onto that prefix so the browser does not hit Nuxt. The Wayfinder plugin is not allowed to block Vite listen — `npm run wayfinder:generate` runs in the background. Health is `GET /up`. `APP_URL` is `{ATELIER_PUBLIC_URL}/-/p/{previewToken}` so CSRF, redirects, and Inertia stay on the studio origin.
+`ProcessRuntime` clones `ticoncreserv/app` (cached bare clone in `var/cache`), writes a worktree `.env` from `.env.example` plus the shared/user layers and isolation, runs `composer install` / `npm install` when needed, then `php artisan serve` on a free loopback port. Vite runs in **dev mode** on a second loopback port (not a production `public/build` manifest). Laravel reads `public/hot` as `/-/p/{token}/__vite` (host-relative, so `localhost` and `127.0.0.1` stay same-origin). The proxy rewrites Vite's root imports (`/node_modules`, `/resources`) onto that prefix so the browser does not hit Nuxt. The Wayfinder plugin is not allowed to block Vite listen — `npm run wayfinder:generate` runs in the background. Health is `GET /up`. `APP_URL` is `{ATELIER_PUBLIC_URL}/-/p/{previewToken}` so CSRF, redirects, and Inertia stay on the studio origin.
 
 `/-/p/{token}` proxies Laravel. `/-/p/{token}/__vite` proxies the Vite dev server (method, query, body, cookies, CSRF). `Set-Cookie` `Path` is rewritten onto the iframe prefix. Hibernate clears both ports. Opening `/w/:id` or a share link wakes the preview. While artisan, Vite, or Inertia is still working, the preview chrome and the Laravel HTML show a spinner, elapsed time, and a short reason — the iframe is not left blank.
 
@@ -107,4 +113,4 @@ Workspace settings in the studio lists the worktree path and the isolation overl
 
 ## Feature flags
 
-`publish`, `multiProvider`, `spectator`, and `recipes` live in the platform store and can be flipped without a deploy.
+`publish`, `multiProvider`, `spectator`, and `recipes` live in the platform store and are flipped in `/admin` without a deploy.

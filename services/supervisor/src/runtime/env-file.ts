@@ -54,10 +54,151 @@ export function artisanOfflineEnv(env: Record<string, string>, worktree: string)
   return out;
 }
 
-export function mergeWorktreeEnv(worktree: string, overlay: Record<string, string>): Record<string, string> {
+export const FORCED_PREVIEW_KEYS = new Set([
+  "APP_URL",
+  "SESSION_COOKIE",
+  "REDIS_PREFIX",
+  "CACHE_PREFIX",
+  "QUEUE_NAME",
+  "TRUSTED_DEVICE_COOKIE_NAME",
+  "PORT",
+  "MAIL_MAILER",
+  "BROADCAST_CONNECTION",
+  "REDIS_CLIENT",
+  "QUEUE_CONNECTION",
+  "CACHE_STORE",
+  "SESSION_DRIVER",
+  "APP_ENV",
+  "APP_DEBUG",
+  "OIDC_ENABLED",
+  "CONSUPPLY_WSSOLICITACAO_ENABLED",
+  "CONSUPPLY_WSAPROVSC_ENABLED",
+  "CONSUPPLY_WSCOTACAO_ENABLED",
+  "CONSUPPLY_RECEITAWS_ENABLED",
+  "MAILERSEND_API_KEY",
+  "BLIP_AUTH_KEY",
+]);
+
+export type EnvKeyOrigin = "example" | "global" | "user" | "isolation";
+
+export type MergeWorktreeEnvLayers = {
+  global?: Record<string, string>;
+  user?: Record<string, string>;
+  userId?: string;
+  envRoot?: string;
+};
+
+export function layeredEnvRoot(envRoot?: string): string {
+  return envRoot ?? join(process.cwd(), "var", "env");
+}
+
+export function globalEnvPath(envRoot?: string): string {
+  return join(layeredEnvRoot(envRoot), "global.env");
+}
+
+export function userEnvPath(userId: string, envRoot?: string): string {
+  return join(layeredEnvRoot(envRoot), "users", `${userId}.env`);
+}
+
+export function providersEnvPath(envRoot?: string): string {
+  return join(layeredEnvRoot(envRoot), "providers.env");
+}
+
+export function writeEnvFile(path: string, env: Record<string, string>): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, serializeEnvFile(env));
+}
+
+export function readGlobalEnv(envRoot?: string): Record<string, string> {
+  return readEnvFile(globalEnvPath(envRoot));
+}
+
+export function writeGlobalEnv(env: Record<string, string>, envRoot?: string): void {
+  writeEnvFile(globalEnvPath(envRoot), env);
+}
+
+export function readUserEnv(userId: string, envRoot?: string): Record<string, string> {
+  return readEnvFile(userEnvPath(userId, envRoot));
+}
+
+export function writeUserEnv(userId: string, env: Record<string, string>, envRoot?: string): void {
+  writeEnvFile(userEnvPath(userId, envRoot), env);
+}
+
+export function readProviderSecrets(envRoot?: string): Record<string, string> {
+  return readEnvFile(providersEnvPath(envRoot));
+}
+
+export function writeProviderSecrets(env: Record<string, string>, envRoot?: string): void {
+  writeEnvFile(providersEnvPath(envRoot), env);
+}
+
+export function isSecretEnvKey(key: string): boolean {
+  return /password|secret|token|key|private/i.test(key) && !key.endsWith("_NAME");
+}
+
+export function restoreRedactedEnv(incoming: Record<string, string>, current: Record<string, string>): Record<string, string> {
+  const out = { ...incoming };
+  for (const [key, value] of Object.entries(out)) {
+    if (value === "••••") out[key] = current[key] ?? "";
+  }
+  return out;
+}
+
+export function envKeyOrigin(
+  key: string,
+  layers: {
+    example: Record<string, string>;
+    global: Record<string, string>;
+    user: Record<string, string>;
+    overlay: Record<string, string>;
+  },
+): EnvKeyOrigin {
+  if (key in layers.overlay || FORCED_PREVIEW_KEYS.has(key)) return "isolation";
+  if (key in layers.user) return "user";
+  if (key in layers.global) return "global";
+  return "example";
+}
+
+export function migrateUserOverlay(
+  worktree: string,
+  userId: string,
+  overlay: Record<string, string>,
+  global: Record<string, string>,
+  envRoot?: string,
+): Record<string, string> {
+  const existing = readUserEnv(userId, envRoot);
+  if (Object.keys(existing).length) return existing;
   const example = readEnvFile(join(worktree, ".env.example"));
   const current = readEnvFile(join(worktree, ".env"));
-  const merged = { ...example, ...current, ...overlay };
+  const extras: Record<string, string> = {};
+  for (const [key, value] of Object.entries(current)) {
+    if (!value || key === "APP_KEY" || FORCED_PREVIEW_KEYS.has(key) || key in overlay) continue;
+    const fromExample = example[key];
+    const fromGlobal = global[key];
+    if (fromGlobal !== undefined && fromGlobal === value) continue;
+    if (fromExample !== undefined && fromExample === value && fromGlobal === undefined) continue;
+    extras[key] = value;
+  }
+  if (Object.keys(extras).length) writeUserEnv(userId, extras, envRoot);
+  return extras;
+}
+
+export function mergeWorktreeEnv(
+  worktree: string,
+  overlay: Record<string, string>,
+  layers: MergeWorktreeEnvLayers = {},
+): Record<string, string> {
+  const example = readEnvFile(join(worktree, ".env.example"));
+  const current = readEnvFile(join(worktree, ".env"));
+  const global = layers.global ?? (layers.envRoot || layers.userId ? readGlobalEnv(layers.envRoot) : {});
+  let user = layers.user ?? (layers.userId ? readUserEnv(layers.userId, layers.envRoot) : {});
+  if (layers.userId && !layers.user && !Object.keys(user).length) {
+    user = migrateUserOverlay(worktree, layers.userId, overlay, global, layers.envRoot);
+  }
+  const merged = { ...example, ...global, ...user };
+  if (current.APP_KEY) merged.APP_KEY = current.APP_KEY;
+  Object.assign(merged, overlay);
   if (!merged.APP_KEY) merged.APP_KEY = `base64:${randomBytes(32).toString("base64")}`;
   writeFileSync(join(worktree, ".env"), serializeEnvFile(merged));
   return merged;

@@ -17,7 +17,7 @@ export interface AgentProvider {
     onEvent: (event: SessionEvent) => void;
     resumeSessionId?: string;
     mode?: "agent" | "plan" | "ask";
-    mcpServers?: Array<{ name: string; command: string; args?: string[] }>;
+    mcpServers?: Array<{ name: string; command: string; args?: string[]; env?: Array<{ name: string; value: string }> }>;
     onPermission?: (event: SessionEvent, rpcId: number) => void;
   }): Promise<ProviderRun>;
 }

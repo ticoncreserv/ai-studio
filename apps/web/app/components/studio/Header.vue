@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, Database, GitBranch, MoreHorizontal, Share2, SlidersHorizontal, UserPlus } from "@lucide/vue";
+import { BookOpen, Database, GitBranch, MoreHorizontal, Settings2, Share2, SlidersHorizontal, UserPlus } from "@lucide/vue";
 
 defineProps<{
   project: string;
@@ -11,6 +11,7 @@ defineProps<{
   presenceCount: number;
   presenceLabel: string;
   publishEnabled: boolean;
+  platformAdmin?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -106,6 +107,14 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onDocumentPoin
             class="glass-window fixed z-[80] w-56 overflow-hidden py-1 shadow-float"
             :style="{ top: `${menuPos.top}px`, right: `${menuPos.right}px` }"
           >
+            <NuxtLink
+              v-if="platformAdmin"
+              to="/admin"
+              class="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-white/5"
+              @click="closeMenu()"
+            >
+              <Settings2 class="h-3.5 w-3.5" /> {{ t("nav.admin") }}
+            </NuxtLink>
             <button class="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] hover:bg-white/5" @click="emit('connections'); closeMenu()">
               <Database class="h-3.5 w-3.5" /> {{ t("nav.connections") }}
             </button>

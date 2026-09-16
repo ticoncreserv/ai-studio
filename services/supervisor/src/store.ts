@@ -11,6 +11,7 @@ export interface UserRecord {
   role: Role;
   githubId?: string;
   accessPending?: boolean;
+  platformAdmin?: boolean;
 }
 
 export interface WorkspaceRecord {
@@ -91,6 +92,7 @@ interface DbShape {
   rules: RuleRecord[];
   members: Array<{ userId: string; projectId: string; role: Role }>;
   flags: Record<string, boolean>;
+  providers: Record<string, { enabled: boolean }>;
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
   runLock: Record<string, { sessionId: string; userId: string } | undefined>;
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;
@@ -153,6 +155,7 @@ const emptyDb = (): DbShape => ({
   ],
   members: [],
   flags: { publish: false, multiProvider: false, spectator: true, recipes: true },
+  providers: { cursor: { enabled: true } },
   presence: [],
   runLock: {},
   migrationLog: [],
@@ -162,6 +165,10 @@ export class JsonStore {
   constructor(private readonly file: string) {
     mkdirSync(dirname(file), { recursive: true });
     if (!existsSync(file)) this.write(emptyDb());
+  }
+
+  get path(): string {
+    return this.file;
   }
 
   read(): DbShape {
@@ -174,6 +181,7 @@ export class JsonStore {
       recipes: mergeById(raw.recipes, base.recipes),
       rules: mergeById(raw.rules, base.rules),
       flags: { ...base.flags, ...raw.flags },
+      providers: { ...base.providers, ...raw.providers },
       users: raw.users ?? [],
       workspaces: raw.workspaces ?? [],
       sessions: raw.sessions ?? [],

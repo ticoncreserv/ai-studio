@@ -32,3 +32,11 @@ export function requireInvite(event: H3Event) {
   }
   return user;
 }
+
+export function requirePlatformAdmin(event: H3Event) {
+  const user = requireUser(event);
+  if (!platform().isPlatformAdmin(user)) {
+    throw createError({ statusCode: 403, statusMessage: "forbidden" });
+  }
+  return user;
+}

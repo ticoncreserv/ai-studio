@@ -10,6 +10,5 @@ export default defineEventHandler(async (event) => {
   if (!body.rules?.length) throw createError({ statusCode: 400 });
   if (body.workspaceId) requireWorkspaceAccess(event, body.workspaceId, "edit");
   const worktree = body.workspaceId ? platform().requireWorkspace(body.workspaceId).worktree : undefined;
-  platform().saveRules(body.rules, user.locale, worktree);
-  return { rules: platform().getRules() };
+  return { rules: platform().saveRulesFromActor(user, body.rules, user.locale, worktree) };
 });

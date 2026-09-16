@@ -46,7 +46,7 @@ const {
   attachFiles,
   toggleSpectator,
   saveRules,
-  patchFlags,
+  saveUserEnv,
   hibernate,
   resume,
   signOut,
@@ -97,6 +97,7 @@ function onFixDebug() {
       :presence-count="data.presence.length"
       :presence-label="t('workspace.presence', { count: data.presence.length })"
       :publish-enabled="!!data?.flags?.publish"
+      :platform-admin="!!data.user.platformAdmin"
       @invite="dialog = 'invite'"
       @share="dialog = 'share'"
       @rules="sheet = 'rules'"
@@ -216,7 +217,7 @@ function onFixDebug() {
       @update:palette-query="paletteQuery = $event"
       @command="onCommand"
       @save-rules="saveRules"
-      @patch-flags="patchFlags"
+      @save-user-env="saveUserEnv"
       @copy-invite="copyLink('invite')"
       @copy-share="copyLink('share')"
       @hibernate="hibernate"

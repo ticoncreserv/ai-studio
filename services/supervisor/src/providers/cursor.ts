@@ -3,20 +3,56 @@ import { join } from "node:path";
 import type { SessionEvent } from "@atelier/contracts";
 import { AcpSession } from "../acp/session.js";
 import { eventsFromAcpUpdate, permissionFromAcp } from "../acp/events.js";
-import { cursorAgentEnv, hasCursorApiKey } from "./env.js";
+import { cursorAgentEnv, hasCursorApiKey, resolveCursorAgentCommand } from "./env.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
 import { PROVIDER_CATALOG } from "./types.js";
 
-function mcpServersFromWorktree(cwd: string): Array<{ name: string; command: string; args?: string[] }> {
+export interface AcpMcpServer {
+  name: string;
+  command: string;
+  args: string[];
+  env: Array<{ name: string; value: string }>;
+}
+
+function envToAcpList(env: unknown): Array<{ name: string; value: string }> {
+  if (Array.isArray(env)) {
+    return env
+      .map((row) => {
+        if (!row || typeof row !== "object") return null;
+        const item = row as { name?: unknown; value?: unknown };
+        if (typeof item.name !== "string" || !item.name) return null;
+        return { name: item.name, value: typeof item.value === "string" ? item.value : String(item.value ?? "") };
+      })
+      .filter((row): row is { name: string; value: string } => Boolean(row));
+  }
+  if (env && typeof env === "object") {
+    return Object.entries(env as Record<string, unknown>).map(([name, value]) => ({
+      name,
+      value: typeof value === "string" ? value : String(value ?? ""),
+    }));
+  }
+  return [];
+}
+
+export function toAcpMcpServers(raw: unknown): AcpMcpServer[] {
+  const servers = (raw as { mcpServers?: Record<string, { command?: string; args?: string[]; env?: unknown }> } | undefined)
+    ?.mcpServers;
+  if (!servers) return [];
+  return Object.entries(servers)
+    .filter(([, value]) => value.command)
+    .map(([name, value]) => ({
+      name,
+      command: value.command!,
+      args: value.args ?? [],
+      env: envToAcpList(value.env),
+    }));
+}
+
+export function mcpServersFromWorktree(cwd: string): AcpMcpServer[] {
   const file = join(cwd, ".cursor", "mcp.json");
   if (!existsSync(file)) return [];
   try {
-    const raw = JSON.parse(readFileSync(file, "utf8")) as {
-      mcpServers?: Record<string, { command?: string; args?: string[] }>;
-    };
-    return Object.entries(raw.mcpServers ?? {})
-      .filter(([, value]) => value.command)
-      .map(([name, value]) => ({ name, command: value.command!, args: value.args ?? [] }));
+    return toAcpMcpServers(JSON.parse(readFileSync(file, "utf8")));
   } catch {
     return [];
   }
@@ -37,13 +73,13 @@ export class CursorProvider implements AgentProvider {
     onEvent: (event: SessionEvent) => void;
     resumeSessionId?: string;
     mode?: "agent" | "plan" | "ask";
-    mcpServers?: Array<{ name: string; command: string; args?: string[] }>;
+    mcpServers?: AcpMcpServer[];
     onPermission?: (event: SessionEvent, rpcId: number) => void;
   }): Promise<ProviderRun> {
     const env = cursorAgentEnv();
     if (!hasCursorApiKey(env)) throw new Error("CURSOR_API_KEY is not set");
     const acp = new AcpSession(
-      this.capability.command,
+      resolveCursorAgentCommand(env),
       cursorArgs(input.mode),
       (msg) => {
         for (const event of eventsFromAcpUpdate(msg)) input.onEvent(event);

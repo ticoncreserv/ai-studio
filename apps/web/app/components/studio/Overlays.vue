@@ -23,7 +23,7 @@ const emit = defineEmits<{
   "update:paletteQuery": [value: string];
   command: [payload: { type: string; [key: string]: unknown }];
   saveRules: [];
-  patchFlags: [flags: Record<string, boolean>];
+  saveUserEnv: [payload: { env?: Record<string, string>; raw?: string }];
   copyInvite: [];
   copyShare: [];
   hibernate: [];
@@ -32,6 +32,23 @@ const emit = defineEmits<{
 }>();
 
 const { t, locale, setLocale } = useI18n();
+
+const isolationEnv = computed(() => {
+  const env = props.data.env?.env ?? {};
+  const origins = props.data.env?.origins ?? {};
+  return Object.fromEntries(Object.entries(env).filter(([key]) => origins[key] === "isolation" || ["APP_URL", "SESSION_COOKIE", "QUEUE_NAME", "CACHE_PREFIX", "REDIS_PREFIX"].includes(key)));
+});
+
+function originLabel(origin: string) {
+  if (origin === "global") return t("settings.originGlobal");
+  if (origin === "user") return t("settings.originUser");
+  if (origin === "isolation") return t("settings.originIsolation");
+  return t("settings.originExample");
+}
+
+function onSaveUserEnv(payload: { env?: Record<string, string>; raw?: string }) {
+  emit("saveUserEnv", payload);
+}
 
 type ProbeState = {
   state: "checking" | "up" | "down";
@@ -152,14 +169,26 @@ function submitQuestion() {
 
   <UiSheet :open="sheet === 'rules'" :title="t('rules.title')" @close="emit('update:sheet', null)">
     <p class="text-sm leading-relaxed text-ink-500">{{ t("rules.hint") }}</p>
+    <p class="mt-3 text-[12px] text-ink-400">{{ t("rules.lockedHint") }}</p>
     <label v-for="layer in data.rules" :key="layer.id" class="mt-4 block">
       <span class="text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{
         layer.level === "platform" ? t("rules.platform") : layer.level === "project" ? t("rules.project") : t("rules.user")
       }}</span>
       <p class="mb-1 text-[12px] text-ink-400">
-        {{ layer.level === "platform" ? t("rules.platformHint") : layer.level === "project" ? t("rules.projectHint") : t("rules.userHint") }}
+        {{
+          layer.level === "platform"
+            ? t("rules.platformHint")
+            : layer.level === "project"
+              ? t("rules.projectHint")
+              : t("rules.userHint")
+        }}
       </p>
-      <textarea v-model="layer.body" class="mt-1 h-28 w-full rounded-[10px] border border-line bg-white/5 p-3 text-sm outline-none focus:border-coral-500/40" />
+      <textarea
+        v-model="layer.body"
+        :readonly="layer.level !== 'user'"
+        :class="layer.level !== 'user' ? 'opacity-70' : ''"
+        class="mt-1 h-28 w-full rounded-[10px] border border-line bg-white/5 p-3 text-sm outline-none focus:border-coral-500/40"
+      />
     </label>
     <template #footer>
       <UiButton class="w-full" @click="emit('saveRules')">{{ t("rules.save") }}</UiButton>
@@ -230,37 +259,30 @@ function submitQuestion() {
         <option value="en">{{ t("auth.english") }}</option>
       </select>
     </div>
-    <p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("flags.title") }}</p>
-    <p class="mt-1 text-[12px] text-ink-500">{{ t("flags.hint") }}</p>
-    <label class="mt-3 flex items-center justify-between">
-      <span class="text-sm">{{ t("flags.publish") }}</span>
-      <UiSwitch :model-value="!!data.flags?.publish" :label="t('flags.publish')" @update:model-value="emit('patchFlags', { publish: $event })" />
-    </label>
-    <label class="mt-3 flex items-center justify-between">
-      <span class="text-sm">{{ t("flags.multiProvider") }}</span>
-      <UiSwitch :model-value="!!data.flags?.multiProvider" :label="t('flags.multiProvider')" @update:model-value="emit('patchFlags', { multiProvider: $event })" />
-    </label>
-    <label class="mt-3 flex items-center justify-between">
-      <span class="text-sm">{{ t("flags.spectator") }}</span>
-      <UiSwitch :model-value="!!data.flags?.spectator" :label="t('flags.spectator')" @update:model-value="emit('patchFlags', { spectator: $event })" />
-    </label>
-    <label class="mt-3 flex items-center justify-between">
-      <span class="text-sm">{{ t("flags.recipes") }}</span>
-      <UiSwitch :model-value="!!data.flags?.recipes" :label="t('flags.recipes')" @update:model-value="emit('patchFlags', { recipes: $event })" />
-    </label>
     <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("workspace.diskQuota") }}</p>
     <p class="mt-1 text-sm text-ink-600">{{ t("workspace.quotaUsed", { used: data.quota.usedMb, limit: data.quota.limitMb }) }}</p>
     <div class="mt-2 h-2 overflow-hidden rounded-full bg-ink-100">
       <div class="h-full bg-coral-500" :style="{ width: `${Math.min(100, (data.quota.usedMb / data.quota.limitMb) * 100)}%` }" />
     </div>
     <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("settings.envFileTitle") }}</p>
-    <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.envFileHint", { path: data.worktreeEnvPath }) }}</p>
-    <p class="mt-1 font-mono text-[11px] text-ink-700">{{ data.worktreeEnvPath }}</p>
+    <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.envFileHint") }}</p>
     <p class="mt-2 text-[12px] text-ink-500">{{ t("settings.platformEnvHint") }}</p>
+    <AdminEnvEditor
+      class="mt-3"
+      :env="data.userEnv?.env ?? {}"
+      :raw="data.userEnv?.raw ?? ''"
+      reveal-url="/api/me/env"
+      @save="onSaveUserEnv"
+    >
+      <template #save-label>{{ t("settings.overlaySave") }}</template>
+    </AdminEnvEditor>
     <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("workspace.envIsolation") }}</p>
     <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.isolationHint") }}</p>
     <ul class="mt-2 space-y-1 font-mono text-[11px] text-ink-600">
-      <li v-for="(value, key) in data.env.env" :key="key">{{ key }}={{ value }}</li>
+      <li v-for="(value, key) in isolationEnv" :key="key">
+        {{ key }}={{ value }}
+        <span v-if="data.env.origins?.[key]" class="text-ink-300"> · {{ originLabel(data.env.origins[key]) }}</span>
+      </li>
     </ul>
     <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("workspace.migrationJournal") }}</p>
     <p v-if="!data.migrationLog.length" class="mt-1 text-sm text-ink-400">{{ t("workspace.noMigrations") }}</p>

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { cursorAgentEnv, hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./env.js";
 
 describe("cursor agent env", () => {
@@ -27,6 +29,24 @@ describe("cursor agent env", () => {
     expect(env.CURSOR_API_KEY).toBe("crsr_test");
     expect(env.CURSOR_AUTH_TOKEN).toBeUndefined();
     expect(env.CURSOR_AGENT).toBeUndefined();
-    expect(env.PATH?.startsWith(`${process.env.HOME}/.local/bin`)).toBe(true);
+    const nvm = join(homedir(), ".nvm", "versions", "node", "v24.21.0", "bin");
+    const local = join(homedir(), ".local", "bin");
+    const parts = env.PATH?.split(":") ?? [];
+    expect(parts[0]).toBe(nvm);
+    expect(parts[1]).toBe(local);
+    expect(parts).toContain("/usr/bin");
+    expect(env.HOME).toContain("cursor-home");
+  });
+
+  it("moves nvm and local bin to the front even when they already appear on PATH", () => {
+    const nvm = join(homedir(), ".nvm", "versions", "node", "v24.21.0", "bin");
+    const local = join(homedir(), ".local", "bin");
+    const env = cursorAgentEnv({
+      CURSOR_API_KEY: "crsr_test",
+      PATH: `/workspace/node_modules/.bin:${nvm}:${local}:/usr/bin`,
+    });
+    const parts = env.PATH?.split(":") ?? [];
+    expect(parts.slice(0, 3)).toEqual([nvm, local, "/workspace/node_modules/.bin"]);
+    expect(parts.filter((dir) => dir === nvm)).toHaveLength(1);
   });
 });

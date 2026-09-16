@@ -2,7 +2,17 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { artisanOfflineEnv, connectionsFromEnv, mergeWorktreeEnv, parseEnvFile, redactEnv } from "./env-file.js";
+import {
+  artisanOfflineEnv,
+  connectionsFromEnv,
+  mergeWorktreeEnv,
+  parseEnvFile,
+  readEnvFile,
+  readUserEnv,
+  redactEnv,
+  writeGlobalEnv,
+  writeUserEnv,
+} from "./env-file.js";
 
 const dirs: string[] = [];
 
@@ -65,5 +75,42 @@ describe("env-file", () => {
     expect(offline.DB_HOST_BETON).toBe("127.0.0.1");
     expect(offline.DB_PORT).toBe("1");
     expect(offline.DB_DATABASE).toContain("atelier-offline.sqlite");
+  });
+
+  it("merges global then user then isolation, and keeps APP_KEY", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-layers-"));
+    const envRoot = join(dir, "env");
+    dirs.push(dir);
+    writeFileSync(join(dir, ".env.example"), "APP_KEY=\nDB_HOST=127.0.0.1\nDB_DATABASE=portal\nCACHE_STORE=redis\n");
+    writeGlobalEnv({ DB_HOST: "10.0.0.1", DB_PASSWORD: "shared", CACHE_STORE: "redis" }, envRoot);
+    writeUserEnv("u1", { DB_HOST: "10.0.0.9", EXTRA: "mine" }, envRoot);
+    const first = mergeWorktreeEnv(dir, { APP_URL: "http://studio/-/p/a", CACHE_STORE: "file" }, { userId: "u1", envRoot });
+    expect(first.DB_HOST).toBe("10.0.0.9");
+    expect(first.DB_PASSWORD).toBe("shared");
+    expect(first.EXTRA).toBe("mine");
+    expect(first.CACHE_STORE).toBe("file");
+    expect(first.APP_URL).toBe("http://studio/-/p/a");
+    const key = first.APP_KEY;
+    writeGlobalEnv({ DB_HOST: "10.0.0.1", DB_PASSWORD: "shared-2" }, envRoot);
+    const second = mergeWorktreeEnv(dir, { APP_URL: "http://studio/-/p/a", CACHE_STORE: "file" }, { userId: "u1", envRoot });
+    expect(second.DB_PASSWORD).toBe("shared-2");
+    expect(second.APP_KEY).toBe(key);
+    expect(second.EXTRA).toBe("mine");
+  });
+
+  it("migrates existing worktree extras into an empty user overlay once", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-mig-"));
+    const envRoot = join(dir, "env");
+    dirs.push(dir);
+    writeFileSync(join(dir, ".env.example"), "APP_KEY=\nDB_HOST=127.0.0.1\n");
+    writeFileSync(join(dir, ".env"), "APP_KEY=base64:keep\nDB_HOST=10.1.1.1\nCUSTOM=yes\n");
+    mergeWorktreeEnv(dir, { APP_URL: "http://x" }, { userId: "u2", envRoot });
+    expect(readUserEnv("u2", envRoot)).toMatchObject({ DB_HOST: "10.1.1.1", CUSTOM: "yes" });
+    writeGlobalEnv({ DB_HOST: "10.0.0.1" }, envRoot);
+    writeUserEnv("u2", { CUSTOM: "yes" }, envRoot);
+    const merged = mergeWorktreeEnv(dir, { APP_URL: "http://x" }, { userId: "u2", envRoot });
+    expect(merged.DB_HOST).toBe("10.0.0.1");
+    expect(merged.CUSTOM).toBe("yes");
+    expect(readEnvFile(join(dir, ".env")).APP_KEY).toBe("base64:keep");
   });
 });

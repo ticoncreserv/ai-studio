@@ -13,7 +13,13 @@ export { publicViteOrigin, viteDevAssetPath, ensureViteHotFile, VITE_PREVIEW_SEG
 export { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
 export { probeConnections, probeTcp } from "./runtime/connection-probe.js";
 export type { ConnectionProbeResult } from "./runtime/connection-probe.js";
-export { connectionsFromEnv, defaultConnectionPort } from "./runtime/env-file.js";
+export {
+  connectionsFromEnv,
+  defaultConnectionPort,
+  mergeWorktreeEnv,
+  readGlobalEnv,
+  readUserEnv,
+} from "./runtime/env-file.js";
 export { LocalAuthProvider, GitHubAuthProvider, createAuthProvider, signState, verifyState } from "./auth.js";
 export type { AuthProvider, AuthIdentity } from "./auth.js";
 export {

@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const mentions = await platform().mentionIndex(id);
   const canEditWorkspace = platform().canAccessWorkspace(user, workspace, "edit");
   return {
-    user,
+    user: { ...user, platformAdmin: platform().isPlatformAdmin(user) },
     workspace,
     sessions,
     session,
@@ -29,6 +29,7 @@ export default defineEventHandler(async (event) => {
     presence: db.presence.filter((p) => p.workspaceId === id),
     lock: db.runLock[id] ?? null,
     env: platform().envPreview(id),
+    userEnv: platform().getUserEnv(user.id),
     worktreeEnvPath: `var/workspaces/${id}/.env`,
     divergence: platform().workspaceDivergence(id),
     quota,

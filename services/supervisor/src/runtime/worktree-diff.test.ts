@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -44,5 +44,18 @@ describe("worktree diffs", () => {
     expect(after.some((event) => event.type === "diff" && event.filePath === "page.vue")).toBe(true);
     const sync = await syncBaseBranch(dir, user);
     expect(sync.message).toMatch(/No origin remote/);
+  });
+
+  it("skips untracked directories instead of throwing EISDIR", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-diff-dir-"));
+    dirs.push(dir);
+    await git(dir, ["init"]);
+    writeFileSync(join(dir, "keep.txt"), "ok\n");
+    await git(dir, ["add", "-A"], user);
+    await git(dir, ["commit", "-m", "base"], user);
+    mkdirSync(join(dir, "var"), { recursive: true });
+    writeFileSync(join(dir, "var", "rule-provenance.json"), "{}\n");
+    mkdirSync(join(dir, "scratch"), { recursive: true });
+    await expect(worktreeDiffEvents(dir)).resolves.toEqual([]);
   });
 });

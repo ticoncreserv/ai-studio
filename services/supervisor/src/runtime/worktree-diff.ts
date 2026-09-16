@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { SessionEvent } from "@atelier/contracts";
@@ -14,10 +14,16 @@ export async function worktreeDiffEvents(worktree: string): Promise<SessionEvent
       .replace(/^"|"$/g, "")
       .split(" -> ")
       .pop();
-    if (!path || path.startsWith(".cursor/") || path === ".env") continue;
-    const diff =
-      (await git(worktree, ["diff", "HEAD", "--", path]).catch(() => "")) ||
-      (existsSync(join(worktree, path)) ? readFileSync(join(worktree, path), "utf8") : "");
+    if (!path || path.startsWith(".cursor/") || path.startsWith("var/") || path === ".env" || path === "var") continue;
+    const target = join(worktree, path);
+    if (existsSync(target) && statSync(target).isDirectory()) continue;
+    let contents = "";
+    try {
+      contents = existsSync(target) ? readFileSync(target, "utf8") : "";
+    } catch {
+      contents = "";
+    }
+    const diff = (await git(worktree, ["diff", "HEAD", "--", path]).catch(() => "")) || contents;
     const hunks = splitHunks(path, diff);
     events.push({
       type: "diff",

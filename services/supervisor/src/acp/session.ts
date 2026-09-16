@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
+import { toAgentError } from "./errors.js";
 
 export interface AcpPromptBlock {
   type: "text" | "image";
@@ -14,6 +15,7 @@ export class AcpSession {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
+  private stderr = "";
   sessionId: string | null = null;
   readonly inbound: Array<Record<string, unknown>> = [];
 
@@ -26,10 +28,17 @@ export class AcpSession {
 
   start(env: NodeJS.ProcessEnv = process.env, cwd?: string): void {
     this.proc = spawn(this.command, this.args, { stdio: ["pipe", "pipe", "pipe"], env, cwd });
+    this.proc.on("error", (error) => {
+      this.rejectAll(new Error(`ACP process failed to start: ${error.message}`));
+    });
+    this.proc.stderr.on("data", (chunk) => {
+      this.stderr += String(chunk);
+      if (this.stderr.length > 8000) this.stderr = this.stderr.slice(-8000);
+    });
     this.proc.on("exit", (code) => {
-      const err = new Error(`ACP process exited (${code ?? "null"})`);
-      for (const waiter of this.pending.values()) waiter.reject(err);
-      this.pending.clear();
+      const tail = this.stderr.trim();
+      const detail = tail ? `: ${tail.slice(-400)}` : "";
+      this.rejectAll(new Error(`ACP process exited (${code ?? "null"})${detail}`));
     });
     const rl = createInterface({ input: this.proc.stdout });
     rl.on("line", (line) => {
@@ -40,10 +49,10 @@ export class AcpSession {
         return;
       }
       this.inbound.push(msg);
-      if (typeof msg.id === "number" && (msg.result || msg.error) && this.pending.has(msg.id)) {
+      if (typeof msg.id === "number" && this.pending.has(msg.id) && ("error" in msg || "result" in msg)) {
         const waiter = this.pending.get(msg.id)!;
         this.pending.delete(msg.id);
-        msg.error ? waiter.reject(msg.error) : waiter.resolve(msg.result);
+        msg.error ? waiter.reject(toAgentError(msg.error)) : waiter.resolve(msg.result);
         return;
       }
       if (msg.method === "session/update") {
@@ -80,7 +89,8 @@ export class AcpSession {
   }
 
   async newSession(cwd: string, mcpServers: unknown[] = []): Promise<string> {
-    const result = (await this.send("session/new", { cwd, mcpServers })) as { sessionId: string };
+    const result = (await this.send("session/new", { cwd, mcpServers })) as { sessionId?: string };
+    if (!result?.sessionId) throw new Error("ACP session/new did not return a sessionId");
     this.sessionId = result.sessionId;
     return result.sessionId;
   }
@@ -104,5 +114,10 @@ export class AcpSession {
     this.proc?.stdin.end();
     this.proc?.kill();
     this.proc = null;
+  }
+
+  private rejectAll(error: Error): void {
+    for (const waiter of this.pending.values()) waiter.reject(error);
+    this.pending.clear();
   }
 }

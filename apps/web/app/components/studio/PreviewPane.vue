@@ -121,7 +121,7 @@ function startWaitClock() {
 }
 
 watch(
-  () => [props.src, props.previewKey, props.status, props.resuming] as const,
+  () => [props.src, props.previewKey] as const,
   () => {
     resetDocument();
     if (waiting.value || props.resuming || props.status === "running") startWaitClock();
