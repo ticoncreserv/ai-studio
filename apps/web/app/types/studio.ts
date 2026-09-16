@@ -48,7 +48,7 @@ export interface StudioPayload {
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
   lock: { sessionId: string; userId: string } | null;
   env: { env: Record<string, string>; origins?: Record<string, string> };
-  userEnv: { env: Record<string, string>; raw: string };
+  userEnv: { env: Record<string, string>; raw: string; secrets?: Record<string, string> };
   worktreeEnvPath: string;
   divergence: { pendingInBranch: string[]; extraInDatabase: string[] };
   quota: { usedMb: number; limitMb: number };

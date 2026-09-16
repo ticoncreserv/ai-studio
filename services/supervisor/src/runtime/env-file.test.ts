@@ -9,6 +9,7 @@ import {
   parseEnvFile,
   readEnvFile,
   readUserEnv,
+  pickSecretEnv,
   redactEnv,
   seedGlobalEnvDraft,
   writeGlobalEnv,
@@ -26,6 +27,8 @@ describe("env-file", () => {
     const parsed = parseEnvFile("APP_NAME=Portal\n# comment\nDB_PASSWORD=secret\n");
     expect(parsed.APP_NAME).toBe("Portal");
     expect(redactEnv(parsed).DB_PASSWORD).toBe("••••");
+    expect(pickSecretEnv(parsed).DB_PASSWORD).toBe("secret");
+    expect(pickSecretEnv(parsed).APP_NAME).toBeUndefined();
     const dir = mkdtempSync(join(tmpdir(), "atelier-env-"));
     dirs.push(dir);
     writeFileSync(join(dir, ".env.example"), "APP_KEY=\nDB_HOST=127.0.0.1\nDB_DATABASE=portal\n");

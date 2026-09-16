@@ -32,7 +32,7 @@ const overview = ref<{
   lastPreviewError: string | null;
   flags: Record<string, boolean>;
 } | null>(null);
-const env = ref<{ env: Record<string, string>; raw: string }>({ env: {}, raw: "" });
+const env = ref<{ env: Record<string, string>; raw: string; secrets?: Record<string, string> }>({ env: {}, raw: "" });
 const providers = ref<
   Array<{ id: string; label: string; enabled: boolean; implemented: boolean; hasKey: boolean }>
 >([]);
@@ -433,8 +433,8 @@ function statusTone(status: string | null) {
                   class="min-h-0 flex-1"
                   :env="env.env"
                   :raw="env.raw"
+                  :secrets="env.secrets"
                   :show-footer="false"
-                  reveal-url="/api/admin/env"
                   @save="saveEnv"
                 />
               </div>

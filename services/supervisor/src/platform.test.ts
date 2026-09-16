@@ -195,6 +195,7 @@ describe("platform", () => {
     expect(preview.env.SESSION_COOKIE).toBeUndefined();
     expect(preview.env.PORT).toBeUndefined();
     expect(preview.env.APP_KEY).toBe("••••");
+    expect(preview.secrets.APP_KEY).toBe("base64:fixture-key");
     expect(p.revealGlobalEnvKey("APP_KEY")).toBe("base64:fixture-key");
     expect(existsSync(join(p.envRoot(), "global.env"))).toBe(false);
     p.saveGlobalEnv({ env: preview.env });

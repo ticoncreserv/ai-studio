@@ -271,7 +271,7 @@ function submitQuestion() {
       class="mt-3"
       :env="data.userEnv?.env ?? {}"
       :raw="data.userEnv?.raw ?? ''"
-      reveal-url="/api/me/env"
+      :secrets="data.userEnv?.secrets"
       @save="onSaveUserEnv"
     >
       <template #save-label>{{ t("settings.overlaySave") }}</template>

@@ -31,10 +31,20 @@ export function serializeEnvFile(env: Record<string, string>): string {
     .concat("\n");
 }
 
+export const REDACTED_ENV_VALUE = "••••";
+
 export function redactEnv(env: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
-    out[key] = /password|secret|token|key|private/i.test(key) && !key.endsWith("_NAME") ? "••••" : value;
+    out[key] = isSecretEnvKey(key) ? REDACTED_ENV_VALUE : value;
+  }
+  return out;
+}
+
+export function pickSecretEnv(env: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (isSecretEnvKey(key)) out[key] = value;
   }
   return out;
 }
@@ -174,7 +184,7 @@ export function isSecretEnvKey(key: string): boolean {
 export function restoreRedactedEnv(incoming: Record<string, string>, current: Record<string, string>): Record<string, string> {
   const out = { ...incoming };
   for (const [key, value] of Object.entries(out)) {
-    if (value === "••••") out[key] = current[key] ?? "";
+    if (value === REDACTED_ENV_VALUE) out[key] = current[key] ?? "";
   }
   return out;
 }

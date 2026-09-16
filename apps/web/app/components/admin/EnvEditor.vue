@@ -1,9 +1,11 @@
 <script setup lang="ts">
+type EnvRow = { id: number; key: string; value: string };
+
 const props = withDefaults(
   defineProps<{
     env: Record<string, string>;
     raw: string;
-    revealUrl: string;
+    secrets?: Record<string, string>;
     showFooter?: boolean;
   }>(),
   { showFooter: true },
@@ -15,17 +17,26 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const mode = ref<"form" | "raw">("form");
-const rows = ref<Array<{ key: string; value: string }>>([]);
+const rows = ref<EnvRow[]>([]);
 const raw = ref("");
-const revealed = ref<Record<string, boolean>>({});
+let nextRowId = 1;
 
-watch(
-  () => props.env,
-  (next) => {
-    rows.value = Object.entries(next ?? {}).map(([key, value]) => ({ key, value }));
-  },
-  { immediate: true, deep: true },
-);
+function syncRows(next: Record<string, string>) {
+  const byKey = new Map<string, EnvRow>();
+  for (const row of rows.value) {
+    if (row.key) byKey.set(row.key, row);
+  }
+  rows.value = Object.entries(next ?? {}).map(([key, value]) => {
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.value = value;
+      return existing;
+    }
+    return { id: nextRowId++, key, value };
+  });
+}
+
+watch(() => props.env, syncRows, { immediate: true });
 
 watch(
   () => props.raw,
@@ -43,11 +54,13 @@ const pendingRemoveTitle = computed(() => {
 });
 
 function addRow() {
-  rows.value.push({ key: "", value: "" });
+  rows.value.push({ id: nextRowId++, key: "", value: "" });
 }
 
-function requestRemove(index: number) {
-  pendingRemove.value = { index, key: rows.value[index]?.key ?? "" };
+function requestRemove(row: EnvRow) {
+  const index = rows.value.indexOf(row);
+  if (index < 0) return;
+  pendingRemove.value = { index, key: row.key };
 }
 
 function cancelRemove() {
@@ -59,21 +72,6 @@ function confirmRemove() {
   if (pending == null) return;
   rows.value.splice(pending.index, 1);
   pendingRemove.value = null;
-}
-
-function isSecret(key: string) {
-  return /password|secret|token|key|private/i.test(key) && !key.endsWith("_NAME");
-}
-
-async function reveal(key: string) {
-  if (revealed.value[key]) {
-    revealed.value[key] = false;
-    return;
-  }
-  const res = await $fetch<{ key: string; value: string }>(props.revealUrl, { query: { reveal: key } });
-  const row = rows.value.find((item) => item.key === key);
-  if (row) row.value = res.value;
-  revealed.value[key] = true;
 }
 
 function submit() {
@@ -117,23 +115,13 @@ defineExpose({ submit });
         <UiButton size="sm" variant="outline" @click="addRow">{{ t("admin.addKey") }}</UiButton>
       </div>
       <template v-else>
-        <div v-for="(row, index) in rows" :key="index" class="flex items-center gap-2">
-          <input
-            v-model="row.key"
-            class="h-9 w-[38%] rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
-            :placeholder="t('admin.envKey')"
-          />
-          <input
-            v-model="row.value"
-            :type="isSecret(row.key) && !revealed[row.key] ? 'password' : 'text'"
-            class="h-9 min-w-0 flex-1 rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
-            :placeholder="t('admin.envValue')"
-          />
-          <UiButton v-if="isSecret(row.key)" size="sm" variant="ghost" @click="reveal(row.key)">
-            {{ revealed[row.key] ? t("admin.hide") : t("admin.reveal") }}
-          </UiButton>
-          <UiButton size="sm" variant="ghost" @click="requestRemove(index)">{{ t("admin.removeKey") }}</UiButton>
-        </div>
+        <AdminEnvEditorRow
+          v-for="row in rows"
+          :key="row.id"
+          :row="row"
+          :secret="secrets?.[row.key]"
+          @remove="requestRemove(row)"
+        />
         <UiButton size="sm" variant="ghost" @click="addRow">{{ t("admin.addKey") }}</UiButton>
       </template>
     </div>

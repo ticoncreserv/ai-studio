@@ -57,6 +57,7 @@ import {
   readGlobalEnv,
   readProviderSecrets,
   readUserEnv,
+  pickSecretEnv,
   redactEnv,
   restoreRedactedEnv,
   seedGlobalEnvDraft,
@@ -956,7 +957,7 @@ export class Platform {
     return {
       env: redactEnv(env),
       raw: serializeEnvFile(redactEnv(env)),
-      secrets: Object.keys(env).filter((key) => /password|secret|token|key|private/i.test(key) && !key.endsWith("_NAME")),
+      secrets: pickSecretEnv(env),
     };
   }
 
@@ -973,7 +974,7 @@ export class Platform {
 
   getUserEnv(userId: string) {
     const env = readUserEnv(userId, this.envRoot());
-    return { env: redactEnv(env), raw: serializeEnvFile(redactEnv(env)) };
+    return { env: redactEnv(env), raw: serializeEnvFile(redactEnv(env)), secrets: pickSecretEnv(env) };
   }
 
   revealUserEnvKey(userId: string, key: string): string {
