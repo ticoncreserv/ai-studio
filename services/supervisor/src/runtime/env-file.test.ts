@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { connectionsFromEnv, mergeWorktreeEnv, parseEnvFile, redactEnv } from "./env-file.js";
+import { artisanOfflineEnv, connectionsFromEnv, mergeWorktreeEnv, parseEnvFile, redactEnv } from "./env-file.js";
 
 const dirs: string[] = [];
 
@@ -22,5 +22,19 @@ describe("env-file", () => {
     expect(merged.APP_URL).toBe("http://studio/-/p/abc");
     expect(merged.APP_KEY?.startsWith("base64:")).toBe(true);
     expect(connectionsFromEnv(merged)[0]?.database).toBe("portal");
+  });
+
+  it("points artisan CLI at sqlite so 10.x hosts cannot block Wayfinder", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-off-"));
+    dirs.push(dir);
+    const offline = artisanOfflineEnv(
+      { DB_CONNECTION: "mysql", DB_HOST: "10.0.128.112", DB_HOST_BETON: "10.10.0.211", DB_PORT: "3306" },
+      dir,
+    );
+    expect(offline.DB_CONNECTION).toBe("sqlite");
+    expect(offline.DB_HOST).toBe("127.0.0.1");
+    expect(offline.DB_HOST_BETON).toBe("127.0.0.1");
+    expect(offline.DB_PORT).toBe("1");
+    expect(offline.DB_DATABASE).toContain("atelier-offline.sqlite");
   });
 });

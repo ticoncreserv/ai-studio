@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { repoRoot } from "../paths.js";
 import { isolationEnv, PREVIEW_SIDE_EFFECTS, defaultWorkspaceSpec } from "./spec.js";
 import { allocatePort } from "./ports.js";
-import { mergeWorktreeEnv } from "./env-file.js";
+import { artisanOfflineEnv, mergeWorktreeEnv } from "./env-file.js";
 import { provisionWorktree, type CloneInput } from "./clone.js";
 import { waitForHealth } from "./health.js";
 import { publicViteOrigin, writeViteAtelierConfig, writeViteHotFile } from "./vite-preview.js";
@@ -221,9 +221,9 @@ export class ProcessRuntime implements WorkspaceRuntime {
       children.push(vite);
       if (existsSync(join(input.worktree, "package.json"))) {
         children.push(
-          spawn("npm", ["run", "wayfinder:generate"], {
+          spawn("php", ["artisan", "wayfinder:generate", "--no-interaction"], {
             cwd: input.worktree,
-            env: childEnv,
+            env: artisanOfflineEnv(childEnv, input.worktree),
             stdio: "ignore",
           }),
         );

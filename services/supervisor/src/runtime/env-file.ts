@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export function parseEnvFile(text: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -35,6 +35,22 @@ export function redactEnv(env: Record<string, string>): Record<string, string> {
   for (const [key, value] of Object.entries(env)) {
     out[key] = /password|secret|token|key|private/i.test(key) && !key.endsWith("_NAME") ? "••••" : value;
   }
+  return out;
+}
+
+/** Env for artisan CLI that must not block on unreachable 10.x homologation hosts. */
+export function artisanOfflineEnv(env: Record<string, string>, worktree: string): Record<string, string> {
+  const sqlite = join(worktree, "database", "atelier-offline.sqlite");
+  mkdirSync(dirname(sqlite), { recursive: true });
+  if (!existsSync(sqlite)) writeFileSync(sqlite, "");
+  const out: Record<string, string> = { ...env };
+  for (const key of Object.keys(out)) {
+    if (key === "DB_HOST" || key.startsWith("DB_HOST_") || key.endsWith("_DB_HOST")) out[key] = "127.0.0.1";
+    if (key === "DB_PORT" || key.startsWith("DB_PORT_") || key.endsWith("_DB_PORT")) out[key] = "1";
+  }
+  out.DB_CONNECTION = "sqlite";
+  out.DB_DATABASE = sqlite;
+  out.MYSQL_ATTR_CONNECT_TIMEOUT = "1";
   return out;
 }
 
