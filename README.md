@@ -54,7 +54,8 @@ Manual path: GitHub → Organization settings → Developer settings → GitHub 
 | Callback URL | `{origin}/api/auth/github/callback` |
 | Setup URL | `{origin}/setup/github` |
 | Permissions | `contents` read/write, `metadata` read, `pull requests` read/write, `email addresses` read |
-| Webhook | optional until the studio has a public URL |
+| Webhook URL | `{origin}/api/webhooks/github` (inactive until the URL is public) |
+| Webhook secret | `GITHUB_WEBHOOK_SECRET` — HMAC for `X-Hub-Signature-256`. Empty after the first create because the manifest had no hook; the studio now generates one and verifies deliveries. |
 | Where can this GitHub App be installed | Only on this account |
 
 A GitHub OAuth App also covers login. Same callback URL; only `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are required.

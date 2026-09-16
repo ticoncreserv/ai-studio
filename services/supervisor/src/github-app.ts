@@ -1,3 +1,4 @@
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { repoRoot } from "./paths.js";
@@ -19,6 +20,7 @@ export interface GitHubAppManifest {
   redirect_url: string;
   callback_urls: string[];
   setup_url: string;
+  hook_attributes: { url: string; active: false };
   public: false;
   request_oauth_on_install: true;
   default_permissions: {
@@ -149,6 +151,7 @@ export function githubAppManifest(publicUrl: string): GitHubAppManifest {
     redirect_url: `${origin}/api/setup/github/callback`,
     callback_urls: [`${origin}/api/auth/github/callback`],
     setup_url: `${origin}/setup/github`,
+    hook_attributes: { url: `${origin}/api/webhooks/github`, active: false },
     public: false,
     request_oauth_on_install: true,
     default_permissions: {
@@ -163,6 +166,43 @@ export function githubAppManifest(publicUrl: string): GitHubAppManifest {
 export function githubAppCreateAction(org: string, state: string): string {
   const encoded = encodeURIComponent(state);
   return `https://github.com/organizations/${org}/settings/apps/new?state=${encoded}`;
+}
+
+export function githubAppWebhookSettingsUrl(creds?: Pick<GitHubAppCredentials, "slug"> | null): string {
+  const slug = creds?.slug;
+  if (slug) return `https://github.com/organizations/${githubAppOrg()}/settings/apps/${slug}`;
+  return `https://github.com/organizations/${githubAppOrg()}/settings/apps`;
+}
+
+export function verifyGitHubWebhookSignature(
+  payload: string | Buffer,
+  secret: string,
+  signature: string | undefined,
+): boolean {
+  if (!secret || !signature) return false;
+  const expected = `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`;
+  const left = Buffer.from(signature);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+export function ensureGitHubWebhookSecret(path = githubAppStorePath()): string {
+  const fromEnv = process.env.GITHUB_WEBHOOK_SECRET ?? "";
+  const creds = loadGitHubAppCredentials(path);
+  if (fromEnv) {
+    if (creds && creds.webhookSecret !== fromEnv) {
+      saveGitHubAppCredentials({ ...creds, webhookSecret: fromEnv }, path);
+    }
+    return fromEnv;
+  }
+  if (creds?.webhookSecret) {
+    process.env.GITHUB_WEBHOOK_SECRET = creds.webhookSecret;
+    return creds.webhookSecret;
+  }
+  const secret = randomBytes(32).toString("hex");
+  process.env.GITHUB_WEBHOOK_SECRET = secret;
+  if (creds) saveGitHubAppCredentials({ ...creds, webhookSecret: secret }, path);
+  return secret;
 }
 
 export function githubAppInstallUrl(creds: GitHubAppCredentials): string {
@@ -213,7 +253,8 @@ export function applyGitHubAppCredentials(creds: GitHubAppCredentials): void {
 export function applyStoredGitHubAppCredentials(): GitHubAppCredentials | null {
   const creds = loadGitHubAppCredentials();
   if (creds) applyGitHubAppCredentials(creds);
-  return creds;
+  ensureGitHubWebhookSecret();
+  return loadGitHubAppCredentials();
 }
 
 export function credentialsFromManifestResponse(body: Record<string, unknown>): GitHubAppCredentials {
@@ -241,7 +282,8 @@ export async function redeemGitHubAppCode(
     const creds = await convertGitHubAppManifest(code, fetchImpl);
     saveGitHubAppCredentials(creds, storePath);
     applyGitHubAppCredentials(creds);
-    return { creds, reused: false };
+    ensureGitHubWebhookSecret(storePath);
+    return { creds: loadGitHubAppCredentials(storePath) ?? creds, reused: false };
   } catch (error) {
     if (existing) {
       applyGitHubAppCredentials(existing);

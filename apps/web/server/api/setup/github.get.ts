@@ -1,10 +1,12 @@
 import {
   canSetupGitHubApp,
   githubAppCreateAction,
+  ensureGitHubWebhookSecret,
   githubAppInstallUrl,
   githubAppManifest,
   githubAppOrg,
   githubAppRepo,
+  githubAppWebhookSettingsUrl,
   hasGitHubOAuth,
   loadGitHubAppCredentials,
   saveGitHubAppSetupState,
@@ -17,6 +19,7 @@ export default defineEventHandler((event) => {
   const canCreate = canSetupGitHubApp() && !configured;
   const creds = loadGitHubAppCredentials();
   const publicUrl = requestPublicUrl(event);
+  const webhookSecret = configured ? ensureGitHubWebhookSecret() : "";
   const state = randomBytes(16).toString("hex");
   if (canCreate) {
     saveGitHubAppSetupState(state);
@@ -36,5 +39,11 @@ export default defineEventHandler((event) => {
     manifest: canCreate ? githubAppManifest(publicUrl) : null,
     installUrl: creds ? githubAppInstallUrl(creds) : `https://github.com/${githubAppRepo()}/settings/installations`,
     storePath: "var/github-app.json",
+    webhook: {
+      url: `${publicUrl}/api/webhooks/github`,
+      settingsUrl: githubAppWebhookSettingsUrl(creds),
+      hasSecret: Boolean(webhookSecret),
+      secret: canSetupGitHubApp() && webhookSecret ? webhookSecret : null,
+    },
   };
 });

@@ -12,6 +12,7 @@ const { data: setup, error: loadError } = await useAsyncData("github-setup", () 
     manifest: Record<string, unknown> | null;
     installUrl: string;
     storePath: string;
+    webhook?: { url: string; settingsUrl: string; hasSecret: boolean; secret: string | null };
   }>("/api/setup/github"),
 );
 
@@ -94,6 +95,15 @@ onMounted(async () => {
             </a>
             <p class="text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.installHint") }}</p>
             <p class="text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.envHint", { path: setup.storePath }) }}</p>
+            <div v-if="setup.webhook" class="rounded-[10px] border border-line bg-white/5 p-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("setup.github.webhookTitle") }}</p>
+              <p class="mt-2 text-[12px] leading-relaxed text-ink-300">{{ t("setup.github.webhookHint") }}</p>
+              <p class="mt-2 font-mono text-[11px] text-ink-800">{{ setup.webhook.url }}</p>
+              <p v-if="setup.webhook.secret" class="mt-2 break-all font-mono text-[11px] text-ink-800">{{ setup.webhook.secret }}</p>
+              <a :href="setup.webhook.settingsUrl" target="_blank" rel="noreferrer" class="mt-3 inline-block text-[13px] font-medium text-coral-400">
+                {{ t("setup.github.webhookSettings") }}
+              </a>
+            </div>
             <a href="/api/auth/github" class="block">
               <UiButton class="w-full" size="lg" type="button">{{ t("auth.github") }}</UiButton>
             </a>

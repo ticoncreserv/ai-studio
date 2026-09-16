@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,8 +9,10 @@ import {
   credentialsFromManifestResponse,
   githubAppCreateAction,
   githubAppInstallUrl,
+  ensureGitHubWebhookSecret,
   githubAppManifest,
   redeemGitHubAppCode,
+  verifyGitHubWebhookSignature,
   saveGitHubAppCredentials,
   loadGitHubAppCredentials,
 } from "./github-app.js";
@@ -40,9 +43,36 @@ describe("github app manifest", () => {
       emails: "read",
     });
     expect(JSON.stringify(manifest)).not.toContain("administration");
+    expect(manifest.hook_attributes).toEqual({
+      url: "http://127.0.0.1:43123/api/webhooks/github",
+      active: false,
+    });
     expect(githubAppCreateAction("ticoncreserv", "abc")).toBe(
       "https://github.com/organizations/ticoncreserv/settings/apps/new?state=abc",
     );
+  });
+
+  it("creates and verifies a webhook secret", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-gh-"));
+    const path = join(dir, "github-app.json");
+    saveGitHubAppCredentials(
+      {
+        appId: "1",
+        clientId: "Iv1.keep",
+        clientSecret: "keep",
+        privateKey: "pem",
+        webhookSecret: "",
+        slug: "atelier-keep",
+      },
+      path,
+    );
+    const secret = ensureGitHubWebhookSecret(path);
+    expect(secret).toHaveLength(64);
+    expect(loadGitHubAppCredentials(path)?.webhookSecret).toBe(secret);
+    const body = '{"ok":true}';
+    const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+    expect(verifyGitHubWebhookSignature(body, secret, signature)).toBe(true);
+    expect(verifyGitHubWebhookSignature(body, secret, "sha256=deadbeef")).toBe(false);
   });
 
   it("keeps the studio port on loopback hosts", () => {
