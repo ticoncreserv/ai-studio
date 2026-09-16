@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import type { SessionEvent } from "@atelier/contracts";
+import type { Hunk, SessionEvent } from "@atelier/contracts";
 import { git } from "./git-ops.js";
 
 function porcelainPath(line: string): string | undefined {
@@ -82,7 +82,7 @@ export function splitHunks(filePath: string, diff: string) {
       },
     ];
   }
-  const hunks = [];
+  const hunks: Hunk[] = [];
   const blocks = diff.split(/^@@/m).slice(1);
   for (const block of blocks) {
     const header = block.split("\n")[0] ?? "";

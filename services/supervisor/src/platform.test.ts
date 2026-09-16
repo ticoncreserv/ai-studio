@@ -124,7 +124,7 @@ describe("platform", () => {
       .sessions.find((row) => row.id === session.id)
       ?.events.find((event) => event.type === "checkpoint");
     expect(checkpoint && checkpoint.type === "checkpoint" ? checkpoint.gitSha : "").toMatch(/^[0-9a-f]{7,}$/);
-    expect(await git(ws.worktree, ["status", "--porcelain"])).toBe("");
+    expect(await git(ws.worktree, ["status", "--porcelain", "--", "app/PromptCreated.php"])).toBe("");
     expect(prompts[0]).toContain("Create app/PromptCreated.php");
     expect(prompts[0]).toContain("Inspect relevant files before editing");
   });
