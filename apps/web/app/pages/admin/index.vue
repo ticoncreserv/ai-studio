@@ -8,16 +8,19 @@ import {
   LayoutGrid,
   LogOut,
   MonitorSmartphone,
+  Plug,
   Search,
   Sparkles,
   TriangleAlert,
   Users,
+  Wand2,
 } from "@lucide/vue";
+import { serializeMcpConfig, type McpEntry, type McpPolicy, type SkillDefinition } from "@atelier/domain";
 
 const { t } = useI18n();
 const relativeTime = useRelativeTime();
 
-type Section = "overview" | "errors" | "env" | "providers" | "users" | "rules" | "flags" | "workspaces";
+type Section = "overview" | "errors" | "env" | "providers" | "users" | "rules" | "skills" | "mcp" | "flags" | "workspaces";
 
 type ErrorHint = { id: string; title: string; detail: string; action?: string };
 type AdminError = {
@@ -82,6 +85,16 @@ const users = ref<
   }>
 >([]);
 const rules = ref<Array<{ id: string; level: "platform" | "project" | "user"; title: string; body: string }>>([]);
+const globalSkills = ref<Array<{ name: string; description: string; paths: string; manualOnly: boolean; body: string }>>([]);
+const skillDraft = ref({ name: "", description: "", paths: "", manualOnly: true, body: "" });
+const pendingSkillDelete = ref<string | null>(null);
+const globalMcp = ref<McpEntry[]>([]);
+const mcpMode = ref<"form" | "raw">("form");
+const mcpRaw = ref("");
+const mcpPolicy = ref<McpPolicy>({ allowUserServers: true, allowedCommands: [], allowedUrlPatterns: [] });
+const mcpCommandsText = ref("");
+const mcpUrlsText = ref("");
+const mcpNew = ref({ name: "", transport: "stdio" as "stdio" | "http" | "sse", command: "php", args: "artisan boost:mcp", url: "" });
 const workspaces = ref<
   Array<{
     id: string;
@@ -125,12 +138,14 @@ const navGroups: NavItem[][] = [
   ],
   [
     { id: "rules", label: "admin.rules", icon: BookOpen },
+    { id: "skills", label: "admin.skills", icon: Wand2 },
+    { id: "mcp", label: "admin.mcp", icon: Plug },
     { id: "flags", label: "admin.flags", icon: Flag },
   ],
 ];
 
 const sections = navGroups.flat();
-const flagList = ["publish", "multiProvider", "spectator", "recipes"] as const;
+const flagList = ["publish", "multiProvider", "spectator", "recipes", "skills", "mcp"] as const;
 
 function fold(text: string) {
   return text
@@ -201,12 +216,14 @@ const filteredErrors = computed(() => {
 const envEditor = ref<{ submit: () => void } | null>(null);
 
 async function refreshData() {
-  const [over, envRes, providerRes, userRes, ruleRes, workspaceRes, errorRes] = await Promise.all([
+  const [over, envRes, providerRes, userRes, ruleRes, skillRes, mcpRes, workspaceRes, errorRes] = await Promise.all([
     $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
     $fetch<{ env: Record<string, string>; raw: string }>("/api/admin/env"),
     $fetch<{ providers: typeof providers.value }>("/api/admin/providers"),
     $fetch<{ users: typeof users.value }>("/api/admin/users"),
     $fetch<{ rules: typeof rules.value }>("/api/admin/rules"),
+    $fetch<{ skills: SkillDefinition[] }>("/api/admin/skills"),
+    $fetch<{ servers: McpEntry[]; policy: McpPolicy }>("/api/admin/mcp"),
     $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
     $fetch<{ errors: AdminError[] }>("/api/admin/errors"),
   ]);
@@ -215,8 +232,28 @@ async function refreshData() {
   providers.value = providerRes.providers;
   users.value = userRes.users;
   rules.value = ruleRes.rules;
+  hydrateSkills(skillRes.skills);
+  hydrateMcp(mcpRes.servers, mcpRes.policy);
   workspaces.value = workspaceRes.workspaces;
   errors.value = errorRes.errors;
+}
+
+function hydrateSkills(skills: SkillDefinition[]) {
+  globalSkills.value = skills.map((skill) => ({
+    name: skill.name,
+    description: skill.description,
+    paths: skill.paths.join(", "),
+    manualOnly: skill.manualOnly,
+    body: skill.body,
+  }));
+}
+
+function hydrateMcp(servers: McpEntry[], policy: McpPolicy) {
+  globalMcp.value = servers;
+  mcpRaw.value = JSON.stringify(serializeMcpConfig(servers), null, 2);
+  mcpPolicy.value = policy;
+  mcpCommandsText.value = policy.allowedCommands.join("\n");
+  mcpUrlsText.value = policy.allowedUrlPatterns.join("\n");
 }
 
 async function load() {
@@ -363,6 +400,122 @@ async function saveRules() {
   await wrap(async () => {
     const res = await $fetch<{ rules: typeof rules.value }>("/api/admin/rules", { method: "PUT", body: { rules: rules.value } });
     rules.value = res.rules.filter((row) => row.level !== "user");
+  });
+}
+
+function skillPayload(skill: { name: string; description: string; paths: string; manualOnly: boolean; body: string }) {
+  return {
+    name: skill.name.trim(),
+    description: skill.description,
+    body: skill.body,
+    paths: skill.paths.split(",").map((item) => item.trim()).filter(Boolean),
+    manualOnly: skill.manualOnly,
+  };
+}
+
+async function saveSkill(skill: (typeof globalSkills.value)[number]) {
+  await wrap(async () => {
+    const res = await $fetch<{ skills: SkillDefinition[] }>("/api/admin/skills", { method: "PUT", body: skillPayload(skill) });
+    hydrateSkills(res.skills);
+  });
+}
+
+async function createSkill() {
+  await wrap(async () => {
+    const res = await $fetch<{ skills: SkillDefinition[] }>("/api/admin/skills", { method: "PUT", body: skillPayload(skillDraft.value) });
+    hydrateSkills(res.skills);
+    skillDraft.value = { name: "", description: "", paths: "", manualOnly: true, body: "" };
+  });
+}
+
+async function confirmDeleteSkill() {
+  const name = pendingSkillDelete.value;
+  if (!name) return;
+  await wrap(async () => {
+    const res = await $fetch<{ skills: SkillDefinition[] }>(`/api/admin/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
+    hydrateSkills(res.skills);
+    pendingSkillDelete.value = null;
+  });
+}
+
+async function applySkills() {
+  await wrap(async () => {
+    await $fetch("/api/admin/skills/apply", { method: "POST" });
+    flash(t("admin.toolsApplied"));
+  });
+}
+
+function mcpServersFromForm() {
+  const mcpServers: Record<string, unknown> = {};
+  for (const entry of globalMcp.value) {
+    if (entry.config.transport === "stdio") {
+      mcpServers[entry.name] = {
+        command: entry.config.command,
+        args: entry.config.args,
+        env: entry.config.env,
+      };
+    } else {
+      mcpServers[entry.name] = { type: entry.config.transport, url: entry.config.url, headers: entry.config.headers };
+    }
+  }
+  return { mcpServers };
+}
+
+async function saveMcp() {
+  await wrap(async () => {
+    const body = mcpMode.value === "raw" ? JSON.parse(mcpRaw.value) : mcpServersFromForm();
+    const res = await $fetch<{ servers: McpEntry[]; policy: McpPolicy }>("/api/admin/mcp", { method: "PUT", body });
+    hydrateMcp(res.servers, res.policy);
+  });
+}
+
+async function addMcpServer() {
+  const name = mcpNew.value.name.trim();
+  if (!name) return;
+  globalMcp.value = [
+    ...globalMcp.value.filter((row) => row.name !== name),
+    {
+      name,
+      source: "platform",
+      enabled: true,
+      config:
+        mcpNew.value.transport === "stdio"
+          ? { transport: "stdio", command: mcpNew.value.command, args: mcpNew.value.args.split(/\s+/).filter(Boolean), env: {} }
+          : { transport: mcpNew.value.transport, url: mcpNew.value.url, headers: {} },
+      extra: {},
+      issues: [],
+    },
+  ];
+  mcpNew.value = { name: "", transport: "stdio", command: "php", args: "artisan boost:mcp", url: "" };
+  mcpMode.value = "form";
+  void saveMcp();
+}
+
+function removeMcpServer(name: string) {
+  globalMcp.value = globalMcp.value.filter((row) => row.name !== name);
+  void saveMcp();
+}
+
+async function saveMcpPolicy() {
+  await wrap(async () => {
+    const res = await $fetch<{ policy: McpPolicy }>("/api/admin/mcp/policy", {
+      method: "PUT",
+      body: {
+        allowUserServers: mcpPolicy.value.allowUserServers,
+        allowedCommands: mcpCommandsText.value.split(/[\n,]+/).map((item) => item.trim()).filter(Boolean),
+        allowedUrlPatterns: mcpUrlsText.value.split(/[\n,]+/).map((item) => item.trim()).filter(Boolean),
+      },
+    });
+    mcpPolicy.value = res.policy;
+    mcpCommandsText.value = res.policy.allowedCommands.join("\n");
+    mcpUrlsText.value = res.policy.allowedUrlPatterns.join("\n");
+  });
+}
+
+async function applyMcp() {
+  await wrap(async () => {
+    await $fetch("/api/admin/mcp/apply", { method: "POST" });
+    flash(t("admin.toolsApplied"));
   });
 }
 
@@ -1115,6 +1268,139 @@ function ruleHint(level: "platform" | "project" | "user") {
                 </div>
               </section>
 
+              <section v-else-if="section === 'skills'" class="cx-section">
+                <p class="cx-section-label">{{ t("admin.skillsSection") }}</p>
+                <p class="cx-section-note">{{ t("admin.skillsHint") }}</p>
+                <div class="cx-panel">
+                  <div v-for="skill in globalSkills" :key="skill.name" class="cx-row cx-row-stack">
+                    <div class="flex items-center justify-between gap-2">
+                      <p class="cx-row-title font-mono">/{{ skill.name }}</p>
+                      <UiButton size="sm" variant="ghost" :disabled="busy" @click="pendingSkillDelete = skill.name">
+                        {{ t("admin.deleteSkill") }}
+                      </UiButton>
+                    </div>
+                    <label class="block text-[12px] text-ink-400">
+                      {{ t("skills.description") }}
+                      <input v-model="skill.description" class="cx-textarea cx-row-control mt-1 h-8" />
+                    </label>
+                    <label class="block text-[12px] text-ink-400">
+                      {{ t("skills.paths") }}
+                      <input v-model="skill.paths" class="cx-textarea cx-row-control mt-1 h-8" />
+                    </label>
+                    <label class="flex items-center justify-between text-[12px] text-ink-400">
+                      {{ t("skills.manualOnly") }}
+                      <UiSwitch :model-value="skill.manualOnly" :label="t('skills.manualOnly')" @update:model-value="skill.manualOnly = $event" />
+                    </label>
+                    <textarea v-model="skill.body" class="cx-textarea cx-row-control h-28" :aria-label="skill.name" />
+                    <div class="admin-action-bar">
+                      <UiButton size="sm" variant="outline" :disabled="busy" @click="saveSkill(skill)">
+                        {{ t("admin.saveSkill") }}
+                      </UiButton>
+                    </div>
+                  </div>
+                  <div class="cx-row cx-row-stack">
+                    <p class="cx-row-title">{{ t("admin.newSkill") }}</p>
+                    <input v-model="skillDraft.name" class="cx-textarea cx-row-control h-8" :placeholder="t('skills.name')" />
+                    <input v-model="skillDraft.description" class="cx-textarea cx-row-control h-8" :placeholder="t('skills.description')" />
+                    <textarea v-model="skillDraft.body" class="cx-textarea cx-row-control h-28" :placeholder="t('skills.body')" />
+                    <div class="admin-action-bar">
+                      <UiButton size="sm" variant="outline" :disabled="busy" @click="createSkill">
+                        {{ t("admin.saveSkill") }}
+                      </UiButton>
+                      <UiButton size="sm" :disabled="busy" @click="applySkills">
+                        {{ t("admin.applySkills") }}
+                      </UiButton>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section v-else-if="section === 'mcp'" class="cx-section">
+                <p class="cx-section-label">{{ t("admin.mcpSection") }}</p>
+                <p class="cx-section-note">{{ t("admin.mcpHint") }}</p>
+                <div class="mb-2 flex gap-1.5">
+                  <UiButton size="sm" :variant="mcpMode === 'form' ? 'primary' : 'outline'" @click="mcpMode = 'form'">{{ t("admin.form") }}</UiButton>
+                  <UiButton size="sm" :variant="mcpMode === 'raw' ? 'primary' : 'outline'" @click="mcpMode = 'raw'">{{ t("admin.mcpRaw") }}</UiButton>
+                </div>
+                <div v-if="mcpMode === 'form'" class="cx-panel">
+                  <div v-for="server in globalMcp" :key="server.name" class="cx-row cx-row-stack">
+                    <div class="flex items-center justify-between gap-2">
+                      <p class="cx-row-title">{{ server.name }}</p>
+                      <UiButton size="sm" variant="ghost" :disabled="busy" @click="removeMcpServer(server.name)">
+                        {{ t("admin.mcpDeleteServer") }}
+                      </UiButton>
+                    </div>
+                    <p class="cx-row-desc font-mono">
+                      {{ server.config.transport === "stdio" ? [server.config.command, ...server.config.args].join(" ") : server.config.url }}
+                    </p>
+                    <p class="cx-row-desc uppercase">{{ server.config.transport }}</p>
+                  </div>
+                  <div class="cx-row cx-row-stack">
+                    <p class="cx-row-title">{{ t("admin.mcpAddServer") }}</p>
+                    <input v-model="mcpNew.name" class="cx-textarea cx-row-control h-8" :placeholder="t('mcp.name')" />
+                    <select v-model="mcpNew.transport" class="cx-textarea cx-row-control h-8">
+                      <option value="stdio">stdio</option>
+                      <option value="http">http</option>
+                      <option value="sse">sse</option>
+                    </select>
+                    <input
+                      v-if="mcpNew.transport === 'stdio'"
+                      v-model="mcpNew.command"
+                      class="cx-textarea cx-row-control h-8"
+                      :placeholder="t('mcp.name')"
+                    />
+                    <input
+                      v-if="mcpNew.transport === 'stdio'"
+                      v-model="mcpNew.args"
+                      class="cx-textarea cx-row-control h-8"
+                    />
+                    <input
+                      v-else
+                      v-model="mcpNew.url"
+                      class="cx-textarea cx-row-control h-8"
+                      :placeholder="t('mcp.url')"
+                    />
+                    <div class="admin-action-bar">
+                      <UiButton size="sm" variant="outline" :disabled="busy" @click="addMcpServer">
+                        {{ t("admin.mcpAddServer") }}
+                      </UiButton>
+                      <UiButton size="sm" :disabled="busy" @click="saveMcp">{{ t("admin.saveMcp") }}</UiButton>
+                      <UiButton size="sm" :disabled="busy" @click="applyMcp">{{ t("admin.applyMcp") }}</UiButton>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="cx-panel">
+                  <textarea v-model="mcpRaw" class="cx-textarea h-64 font-mono text-[12px]" />
+                  <div class="admin-action-bar">
+                    <UiButton size="sm" variant="outline" :disabled="busy" @click="saveMcp">{{ t("admin.saveMcp") }}</UiButton>
+                    <UiButton size="sm" :disabled="busy" @click="applyMcp">{{ t("admin.applyMcp") }}</UiButton>
+                  </div>
+                </div>
+                <p class="cx-section-label mt-6">{{ t("admin.mcpPolicy") }}</p>
+                <p class="cx-section-note">{{ t("admin.mcpPolicyHint") }}</p>
+                <div class="cx-panel">
+                  <div class="cx-row">
+                    <p class="cx-row-title">{{ t("admin.mcpAllowUser") }}</p>
+                    <UiSwitch
+                      :model-value="mcpPolicy.allowUserServers"
+                      :label="t('admin.mcpAllowUser')"
+                      @update:model-value="mcpPolicy.allowUserServers = $event"
+                    />
+                  </div>
+                  <label class="cx-row cx-row-stack">
+                    <p class="cx-row-title">{{ t("admin.mcpAllowedCommands") }}</p>
+                    <textarea v-model="mcpCommandsText" class="cx-textarea cx-row-control h-24 font-mono" />
+                  </label>
+                  <label class="cx-row cx-row-stack">
+                    <p class="cx-row-title">{{ t("admin.mcpAllowedUrls") }}</p>
+                    <textarea v-model="mcpUrlsText" class="cx-textarea cx-row-control h-24 font-mono" />
+                  </label>
+                  <div class="admin-action-bar">
+                    <UiButton size="sm" variant="outline" :disabled="busy" @click="saveMcpPolicy">{{ t("admin.saveMcp") }}</UiButton>
+                  </div>
+                </div>
+              </section>
+
               <section v-else-if="section === 'flags' && overview" class="cx-section">
                 <p class="cx-section-label">{{ t("flags.title") }}</p>
                 <p class="cx-section-note">{{ t("admin.flagsHint") }}</p>
@@ -1173,6 +1459,21 @@ function ruleHint(level: "platform" | "project" | "user") {
       </UiButton>
       <UiButton size="sm" variant="danger" :disabled="busy" @click="confirmDisable">
         {{ t("admin.deactivate") }}
+      </UiButton>
+    </div>
+  </UiDialog>
+  <UiDialog
+    :open="pendingSkillDelete != null"
+    :title="t('admin.deleteSkillTitle', { name: pendingSkillDelete ?? '' })"
+    @close="pendingSkillDelete = null"
+  >
+    <p class="text-[13px] leading-relaxed text-ink-500">{{ t("admin.deleteSkillBody") }}</p>
+    <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <UiButton size="sm" variant="outline" @click="pendingSkillDelete = null">
+        {{ t("admin.removeKeyCancel") }}
+      </UiButton>
+      <UiButton size="sm" variant="danger" :disabled="busy" @click="confirmDeleteSkill">
+        {{ t("admin.deleteSkill") }}
       </UiButton>
     </div>
   </UiDialog>

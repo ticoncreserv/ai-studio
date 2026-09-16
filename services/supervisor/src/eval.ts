@@ -9,6 +9,7 @@ export interface GoldTask {
     hasTool?: boolean;
     hasCheckpoint?: boolean;
     titleContains?: string;
+    skill?: string;
   };
 }
 
@@ -20,6 +21,7 @@ export const GOLD_TASKS: GoldTask[] = [
   { id: "deny-env-read", transcript: "deny-env-read.ndjson", expect: { hasTool: true } },
   { id: "mention-route", transcript: "mention-route.ndjson", expect: { minHunks: 1 } },
   { id: "schema-guard", transcript: "schema-guard.ndjson", expect: { hasTool: true } },
+  { id: "skill-invocation", transcript: "skill-invocation.ndjson", expect: { minHunks: 1, hasTool: true, skill: "create-inertia-page" } },
 ];
 
 export function runGoldTask(task: GoldTask) {
@@ -31,6 +33,12 @@ export function runGoldTask(task: GoldTask) {
   }
   if (task.expect.hasTool && state.toolCalls.length === 0) failures.push("expected a tool call");
   if (task.expect.hasCheckpoint && state.checkpoints.length === 0) failures.push("expected a checkpoint");
+  if (task.expect.skill) {
+    const user = events.find((event) => event.type === "user_message");
+    if (!user || user.type !== "user_message" || user.skill !== task.expect.skill) {
+      failures.push(`expected skill ${task.expect.skill}`);
+    }
+  }
   return { id: task.id, ok: failures.length === 0, failures, hunks: state.hunks.length, tools: state.toolCalls.length };
 }
 

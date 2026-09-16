@@ -1,0 +1,4 @@
+{"type":"user_message","id":"u1","at":"t","text":"/create-inertia-page quotes","attachments":[],"mentions":[],"skill":"create-inertia-page"}
+{"type":"assistant_message","id":"a1","at":"t","text":"Creating the Inertia quotes page from the skill.","streaming":false}
+{"type":"tool_call","id":"t1","at":"t","toolCallId":"mcp_fixture-docs_search","name":"mcp_fixture-docs_search","status":"completed","output":"Applied create-inertia-page"}
+{"type":"diff","id":"d1","at":"t","filePath":"resources/js/Pages/Quotes/Index.vue","hunks":[{"id":"h1","filePath":"resources/js/Pages/Quotes/Index.vue","oldStart":0,"newStart":1,"oldLines":"","newLines":"<template>\n  <h1>Quotes</h1>\n</template>\n","status":"pending"}]}

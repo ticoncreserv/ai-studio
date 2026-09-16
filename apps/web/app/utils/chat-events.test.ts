@@ -72,5 +72,13 @@ describe("chat events", () => {
     expect(userMessageCount([user("a", "x"), user("b", "y")])).toBe(2);
     expect(upsertSessionEvent(once, done)).toEqual([done]);
     expect(upsertSessionEvent(once, running)).toEqual(once);
+    expect(
+      upsertSessionEvent(once, {
+        type: "available_skills",
+        id: "s1",
+        at: "t",
+        commands: [{ name: "create-skill", description: "Create a skill" }],
+      }),
+    ).toEqual(once);
   });
 });

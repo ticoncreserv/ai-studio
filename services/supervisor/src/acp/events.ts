@@ -11,6 +11,7 @@ interface AcpUpdate {
   plan?: string;
   overview?: string;
   entries?: Array<{ content?: string; status?: string }>;
+  availableCommands?: Array<{ name?: string; description?: string; input?: { hint?: string } }>;
 }
 
 export function eventsFromAcpUpdate(msg: Record<string, unknown>): SessionEvent[] {
@@ -86,7 +87,21 @@ export function eventsFromAcpUpdate(msg: Record<string, unknown>): SessionEvent[
       },
     ];
   }
-  if (update.sessionUpdate === "available_commands_update" || update.sessionUpdate === "session_info_update") {
+  if (update.sessionUpdate === "available_commands_update") {
+    return [
+      {
+        type: "available_skills",
+        id,
+        at,
+        commands: (update.availableCommands ?? []).map((command) => ({
+          name: command.name ?? "",
+          description: command.description ?? "",
+          hint: command.input?.hint,
+        })).filter((command) => command.name),
+      },
+    ];
+  }
+  if (update.sessionUpdate === "session_info_update") {
     return [];
   }
   return [];

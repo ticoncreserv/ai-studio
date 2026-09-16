@@ -98,6 +98,8 @@ interface DbShape {
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
   runLock: Record<string, { sessionId: string; userId: string } | undefined>;
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;
+  skillPrefs: Array<{ userId: string; name: string; enabled: boolean }>;
+  mcpPrefs: Array<{ userId: string; name: string; enabled: boolean }>;
 }
 
 function mergeById<T extends { id: string }>(current: T[] | undefined, defaults: T[]): T[] {
@@ -156,11 +158,13 @@ const emptyDb = (): DbShape => ({
     },
   ],
   members: [],
-  flags: { publish: false, multiProvider: false, spectator: true, recipes: true },
+  flags: { publish: false, multiProvider: false, spectator: true, recipes: true, skills: true, mcp: true },
   providers: { cursor: { enabled: true } },
   presence: [],
   runLock: {},
   migrationLog: [],
+  skillPrefs: [],
+  mcpPrefs: [],
 });
 
 export class JsonStore {
@@ -193,6 +197,8 @@ export class JsonStore {
       presence: raw.presence ?? [],
       runLock: raw.runLock ?? {},
       migrationLog: raw.migrationLog ?? [],
+      skillPrefs: raw.skillPrefs ?? [],
+      mcpPrefs: raw.mcpPrefs ?? [],
     };
   }
 

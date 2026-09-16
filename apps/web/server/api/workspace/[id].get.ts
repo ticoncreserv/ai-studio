@@ -37,5 +37,7 @@ export default defineEventHandler(async (event) => {
     previewPath: `/-/p/${workspace.previewToken}/`,
     canEdit: canEditWorkspace,
     agent: platform().agentStatus(),
+    skills: platform().skillCatalog(id, user).skills,
+    mcp: platform().mcpCatalog(id, user),
   };
 });

@@ -18,6 +18,7 @@ import {
 } from "@lucide/vue";
 import { visiblePromptText } from "@atelier/domain";
 import { renderMarkdown, splitDiffLines } from "~/utils/markdown";
+import { mcpServerFromToolName, slashInvocation } from "~/utils/slash";
 
 const props = defineProps<{ event: SessionEvent; enter?: boolean; failed?: boolean }>();
 const emit = defineEmits<{
@@ -47,6 +48,13 @@ const clampPrompt = computed(() => {
 const toolName = computed(() =>
   props.event.type === "tool_call" ? props.event.name.replaceAll("`", "") : "",
 );
+
+const mcpServer = computed(() => (props.event.type === "tool_call" ? mcpServerFromToolName(props.event.name) : null));
+
+const invokedSkill = computed(() => {
+  if (props.event.type !== "user_message") return null;
+  return props.event.skill || slashInvocation(props.event.text);
+});
 
 /* The feedback row uses the compact age Cursor shows ("1h ago"), not a phrase. */
 function ago(at: string) {
@@ -122,6 +130,9 @@ function isImage(path: string) {
           <FileText v-else class="h-4 w-4" />
         </span>
       </div>
+      <span v-if="invokedSkill" class="cx-pill mb-1.5">
+        /{{ invokedSkill }}
+      </span>
       <p class="whitespace-pre-wrap pr-5" :class="clampPrompt && 'cx-turn-clamp'">{{ visiblePromptText(event.text) }}</p>
       <button
         v-if="clampPrompt || promptOpen"
@@ -190,6 +201,7 @@ function isImage(path: string) {
         <span class="min-w-0 truncate">
           {{ event.status === "running" ? t("chat.toolRunning", { name: toolName }) : t("chat.toolDone", { name: toolName }) }}
         </span>
+        <span v-if="mcpServer" class="cx-pill shrink-0">{{ mcpServer }}</span>
         <ChevronDown v-if="event.output" class="h-3 w-3 shrink-0 transition-transform" :class="open && 'rotate-180'" />
       </button>
       <pre

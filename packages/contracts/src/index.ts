@@ -30,6 +30,8 @@ export const FeatureFlagSchema = z.enum([
   "multiProvider",
   "spectator",
   "recipes",
+  "skills",
+  "mcp",
 ]);
 export type FeatureFlag = z.infer<typeof FeatureFlagSchema>;
 
@@ -59,6 +61,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     text: z.string(),
     attachments: z.array(z.string()).default([]),
     mentions: z.array(z.string()).default([]),
+    skill: z.string().optional(),
   }),
   z.object({
     type: z.literal("assistant_message"),
@@ -175,6 +178,18 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     at: z.string(),
     omitted: z.array(z.string()),
   }),
+  z.object({
+    type: z.literal("available_skills"),
+    id: z.string(),
+    at: z.string(),
+    commands: z.array(
+      z.object({
+        name: z.string(),
+        description: z.string().default(""),
+        hint: z.string().optional(),
+      }),
+    ),
+  }),
 ]);
 export type SessionEvent = z.infer<typeof SessionEventSchema>;
 
@@ -185,6 +200,7 @@ export const ClientCommandSchema = z.discriminatedUnion("type", [
     attachments: z.array(z.string()).default([]),
     mentions: z.array(z.string()).default([]),
     recipeId: z.string().optional(),
+    skill: z.string().optional(),
     mode: AgentModeSchema.optional(),
   }),
   z.object({ type: z.literal("cancel") }),
@@ -244,6 +260,48 @@ export const WorkspaceSpecSchema = z.object({
   forbiddenExtensions: z.array(z.string()).default(["pdo_sqlsrv", "redis"]),
 });
 export type WorkspaceSpec = z.infer<typeof WorkspaceSpecSchema>;
+
+export const SkillSourceSchema = z.enum(["repo", "platform", "user"]);
+export type SkillSource = z.infer<typeof SkillSourceSchema>;
+
+export const SkillDescriptorSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  source: SkillSourceSchema,
+  dir: z.string(),
+  paths: z.array(z.string()).default([]),
+  manualOnly: z.boolean().default(false),
+  icon: z.string().optional(),
+  color: z.string().optional(),
+  scope: z.string().optional(),
+  enabled: z.boolean().default(true),
+  shadowed: z.boolean().default(false),
+  issues: z.array(z.string()).default([]),
+  editable: z.boolean().default(false),
+});
+export type SkillDescriptor = z.infer<typeof SkillDescriptorSchema>;
+
+export const McpTransportSchema = z.enum(["stdio", "http", "sse"]);
+export type McpTransport = z.infer<typeof McpTransportSchema>;
+
+export const McpDescriptorSchema = z.object({
+  name: z.string(),
+  transport: McpTransportSchema,
+  source: SkillSourceSchema,
+  enabled: z.boolean(),
+  target: z.string(),
+  secrets: z.boolean().default(false),
+  editable: z.boolean().default(false),
+  issues: z.array(z.string()).default([]),
+});
+export type McpDescriptor = z.infer<typeof McpDescriptorSchema>;
+
+export const AvailableCommandSchema = z.object({
+  name: z.string(),
+  description: z.string().default(""),
+  hint: z.string().optional(),
+});
+export type AvailableCommand = z.infer<typeof AvailableCommandSchema>;
 
 export const PermissionDecisionSchema = z.enum([
   "allow-once",

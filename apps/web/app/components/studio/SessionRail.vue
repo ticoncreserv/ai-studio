@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, MessageSquarePlus, Search, Settings, SlidersHorizontal } from "@lucide/vue";
+import { BookOpen, MessageSquarePlus, Plug, Search, Settings, SlidersHorizontal, Sparkles } from "@lucide/vue";
 import type { StudioSession } from "~/types/studio";
 
 const props = defineProps<{
@@ -15,6 +15,8 @@ const emit = defineEmits<{
   create: [];
   search: [];
   rules: [];
+  skills: [];
+  mcp: [];
   settings: [];
 }>();
 
@@ -66,6 +68,14 @@ function age(at: string) {
       <button type="button" class="cx-nav-item" @click="emit('rules')">
         <BookOpen class="h-3.5 w-3.5" />
         {{ t("nav.rules") }}
+      </button>
+      <button type="button" class="cx-nav-item" @click="emit('skills')">
+        <Sparkles class="h-3.5 w-3.5" />
+        {{ t("nav.skills") }}
+      </button>
+      <button type="button" class="cx-nav-item" @click="emit('mcp')">
+        <Plug class="h-3.5 w-3.5" />
+        {{ t("nav.mcp") }}
       </button>
       <button type="button" class="cx-nav-item" @click="emit('settings')">
         <SlidersHorizontal class="h-3.5 w-3.5" />

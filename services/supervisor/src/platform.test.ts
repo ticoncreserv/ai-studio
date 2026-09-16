@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -377,6 +377,29 @@ describe("platform", () => {
     expect(p.listAdminErrors().find((row) => row.id === ws.id)).toBeUndefined();
     expect(p.requireWorkspace(ws.id).status).toBe("hibernated");
     expect(p.isPlatformAdmin(owner)).toBe(true);
+  });
+
+  it("discovers repository skills and merges MCP without clobbering repo servers", async () => {
+    const p = platform();
+    const user = await p.loginDev("gina");
+    const ws = await p.ensureWorkspace(user);
+    mkdirSync(join(ws.worktree, ".agents", "skills", "land-it"), { recursive: true });
+    writeFileSync(
+      join(ws.worktree, ".agents", "skills", "land-it", "SKILL.md"),
+      "---\nname: land-it\ndescription: Lands a pull request.\n---\n\nLand it.\n",
+    );
+    const skills = p.skillCatalog(ws.id, p.store.read().users.find((row) => row.id === user.id)!);
+    expect(skills.skills.some((row) => row.name === "land-it" && row.source === "repo")).toBe(true);
+    expect(skills.skills.some((row) => row.name === "inertia-crud")).toBe(true);
+    p.saveUserSkill(user, { name: "my-review", description: "Reviews the diff.", body: "Review it.", manualOnly: true });
+    expect(existsSync(join(ws.worktree, ".cursor", "skills", "my-review", "SKILL.md"))).toBe(true);
+    p.setSkillEnabled(user, ws.id, "my-review", false);
+    expect(existsSync(join(ws.worktree, ".cursor", "skills", "my-review", "SKILL.md"))).toBe(false);
+    const mcpFile = join(ws.worktree, ".cursor", "mcp.json");
+    expect(JSON.parse(readFileSync(mcpFile, "utf8")).mcpServers["laravel-boost"]).toBeTruthy();
+    expect(() => p.saveUserMcp(user, { mcpServers: { evil: { command: "rm" } } })).toThrow(/not allowed/);
+    p.saveUserMcp(user, { mcpServers: { notes: { url: "https://notes.example/mcp" } } });
+    expect(p.mcpCatalog(ws.id, user).servers.some((row) => row.name === "notes" && row.source === "user")).toBe(true);
   });
 });
 

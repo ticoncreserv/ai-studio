@@ -23,10 +23,13 @@ describe("ACP event mapping", () => {
         params: { update: { sessionUpdate: "todos", entries: [{ content: "Write page", status: "pending" }] } },
       })[0],
     ).toMatchObject({ type: "todos" });
-    expect(permissionFromAcp({ toolCall: { title: "shell", toolCallId: "c1" } }, 9)).toMatchObject({
-      type: "permission",
-      title: "shell",
-      outcome: "pending",
-    });
+    expect(eventsFromAcpUpdate({
+      params: {
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [{ name: "create-skill", description: "Create a skill", input: { hint: "name" } }],
+        },
+      },
+    })[0]).toMatchObject({ type: "available_skills", commands: [{ name: "create-skill", hint: "name" }] });
   });
 });

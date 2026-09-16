@@ -95,7 +95,7 @@ On every preview start the studio writes the worktree `.env` as `.env.example` �
 
 ## Admin
 
-`/admin` is for platform admins: shared `.env`, providers, users, global rules (`AGENTS.md` prefix), flags, and the workspace fleet.
+`/admin` is for platform admins: shared `.env`, providers, users, global rules (`AGENTS.md` prefix), global skills, MCP servers and policy, flags, and the workspace fleet.
 
 A user is a platform admin when their login is in `ATELIER_ADMIN_LOGINS`, or `platformAdmin` is set on their record, or **no explicit admin exists yet** and they are a GitHub `owner`. After the first admin is granted in the panel, other owners do not get the panel automatically. The last admin cannot be removed.
 
@@ -107,10 +107,16 @@ A user is a platform admin when their login is in `ATELIER_ADMIN_LOGINS`, or `pl
 
 `DockerRuntime` (`ATELIER_RUNTIME=docker`) uses `infra/workspace-php85.Dockerfile` when the daemon exists. Database hosts from the cloned `.env` are used as-is; unreachable `10.x` homologation hosts surface as Laravel errors, not a fake portal.
 
+## Skills and MCP
+
+The cloned repository is the source of truth. Atelier discovers `SKILL.md` folders under `.agents/skills`, `.cursor/skills`, `.claude/skills`, and `.codex/skills`, plus `.cursor/mcp.json`. It never rewrites repository files it did not create.
+
+Platform (`/admin`) and user (workspace sheets) layers live under `var/skills` and `var/mcp`. On provision they are materialized into the gitignored worktree `.cursor/skills` and merged into `.cursor/mcp.json` (repository keys win; disabled servers are omitted). Type `/` in the composer to invoke a skill. The Tools submenu toggles MCP servers. `laravel-boost` is a seeded global default so Boost still reaches `session/new` without clobbering a repo-provided config.
+
 ## ACP
 
-`agent acp --trust` is the only production provider. The process stays up across prompts (`session/load` + stored `acpSessionId`). Mode is `--mode plan|ask`. Worktree `.cursor/mcp.json` (Laravel Boost) is passed to `session/new`. Permissions are shown in the UI before `acp.respond`. After each run the studio reads `git status` / diff from the worktree — Cursor writes files directly.
+`agent acp --trust` is the only production provider. The process stays up across prompts (`session/load` + stored `acpSessionId`). Mode is `--mode plan|ask`. Merged MCP servers from the worktree are passed to `session/new` (stdio always; `http`/`sse` when the agent advertises those capabilities). Slash commands advertised by the agent (`available_commands_update`) appear in the `/` menu. Permissions are shown in the UI before `acp.respond`. After each run the studio reads `git status` / diff from the worktree — Cursor writes files directly.
 
 ## Feature flags
 
-`publish`, `multiProvider`, `spectator`, and `recipes` live in the platform store and are flipped in `/admin` without a deploy.
+`publish`, `multiProvider`, `spectator`, `recipes`, `skills`, and `mcp` live in the platform store and are flipped in `/admin` without a deploy.

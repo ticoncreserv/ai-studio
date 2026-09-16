@@ -11,12 +11,18 @@ export interface AcpPromptBlock {
 
 type Pending = { resolve: (value: unknown) => void; reject: (err: unknown) => void };
 
+export interface AcpAgentCapabilities {
+  loadSession?: boolean;
+  mcpCapabilities?: { http?: boolean; sse?: boolean };
+}
+
 export class AcpSession {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private stderr = "";
   sessionId: string | null = null;
+  capabilities: AcpAgentCapabilities | null = null;
   readonly inbound: Array<Record<string, unknown>> = [];
 
   constructor(
@@ -77,11 +83,13 @@ export class AcpSession {
   }
 
   async initialize(): Promise<unknown> {
-    return this.send("initialize", {
+    const result = (await this.send("initialize", {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
       clientInfo: { name: "atelier", version: "0.1.0" },
-    });
+    })) as { agentCapabilities?: AcpAgentCapabilities };
+    this.capabilities = result?.agentCapabilities ?? {};
+    return result;
   }
 
   async authenticate(): Promise<unknown> {
@@ -95,8 +103,8 @@ export class AcpSession {
     return result.sessionId;
   }
 
-  async loadSession(sessionId: string, cwd: string): Promise<void> {
-    await this.send("session/load", { sessionId, cwd });
+  async loadSession(sessionId: string, cwd: string, mcpServers: unknown[] = []): Promise<void> {
+    await this.send("session/load", { sessionId, cwd, mcpServers });
     this.sessionId = sessionId;
   }
 

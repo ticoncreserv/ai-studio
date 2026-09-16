@@ -43,4 +43,13 @@ describe("ACP MCP servers", () => {
     );
     expect(mcpServersFromWorktree(dir)[0]).toMatchObject({ name: "laravel-boost", env: [] });
   });
+
+  it("maps http servers only when the agent advertises the capability", () => {
+    const servers = toAcpMcpServers(
+      { mcpServers: { linear: { url: "https://mcp.linear.app/mcp" }, boost: { command: "php" } } },
+      { http: true },
+    );
+    expect(servers.some((row) => row.type === "http" && row.name === "linear")).toBe(true);
+    expect(toAcpMcpServers({ mcpServers: { linear: { url: "https://mcp.linear.app/mcp" } } }, {}).length).toBe(0);
+  });
 });

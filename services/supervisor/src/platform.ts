@@ -29,6 +29,16 @@ import {
   shouldHibernate,
   titleFromPrompt,
   transition,
+  slashInvocation,
+  mcpFingerprint,
+  parseMcpConfig,
+  serializeMcpConfig,
+  mcpPolicyDecision,
+  restoreRedactedMcp,
+  redactMcpEntry,
+  isSkillName,
+  isSecretMcpKey,
+  type McpEntry,
 } from "@atelier/domain";
 import { bus } from "./bus.js";
 import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
@@ -81,12 +91,33 @@ import {
 import { formatAgentError } from "./acp/errors.js";
 import type { AcpPromptBlock } from "./acp/session.js";
 import type { ProviderRun } from "./providers/types.js";
+import {
+  collectSkills,
+  deleteSkillFile,
+  globalSkillsDir,
+  materializeSkills,
+  seedGlobalSkills,
+  userSkillsDir,
+  writeSkillFile,
+} from "./skills/layers.js";
+import {
+  acpServersForWorktree,
+  collectMcp,
+  mergeWorktreeMcp,
+  readMcpPolicy,
+  readPlatformMcp,
+  readUserMcp,
+  writeMcpPolicy,
+  writePlatformMcp,
+  writeUserMcp,
+} from "./mcp/layers.js";
 
 export class Platform {
   readonly store: JsonStore;
   readonly runtime: WorkspaceRuntime;
   private readonly runs = new Map<string, ProviderRun>();
   private readonly runModes = new Map<string, "agent" | "plan" | "ask">();
+  private readonly runFingerprints = new Map<string, string>();
   private readonly pendingPermissions = new Map<string, { rpcId: number; respond: ProviderRun["respondPermission"] }>();
 
   constructor(store = new JsonStore(join(repoRoot(), "var", "platform.json"))) {
@@ -100,6 +131,10 @@ export class Platform {
 
   envRoot(): string {
     return join(dirname(this.store.path), "env");
+  }
+
+  storeDir(): string {
+    return dirname(this.store.path);
   }
 
   hasExplicitAdmin(): boolean {
@@ -237,6 +272,7 @@ export class Platform {
     });
     this.hydrateProjectRules(worktree);
     this.materializeRules(worktree, user.locale, this.getRules());
+    this.materializeWorkspaceTools(worktree, user.id);
     const bytes = await worktreeBytes(worktree);
     ws = {
       id,
@@ -425,7 +461,7 @@ export class Platform {
     const db = this.store.read();
     const session = db.sessions.find((s) => s.id === sessionId);
     if (!session) return;
-    if (event.type === "assistant_delta") {
+    if (event.type === "assistant_delta" || event.type === "available_skills") {
       bus.publish({ ...event, sessionId, workspaceId: session.workspaceId });
       return;
     }
@@ -626,6 +662,7 @@ export class Platform {
       text: filled,
       attachments: command.attachments,
       mentions: command.mentions,
+      skill: command.skill ?? slashInvocation(filled) ?? undefined,
     });
 
     const rules = compileRules(this.getRules(), user.locale);
@@ -657,12 +694,14 @@ export class Platform {
     const providerId = resolveSessionProvider(session.provider);
     if (providerId !== session.provider) this.setSessionProvider(session.id, providerId);
     const mode = command.mode ?? "agent";
+    const fingerprint = this.workspaceToolsFingerprint(ws);
     let streamed = "";
     let run = this.runs.get(session.id);
-    if (run && this.runModes.get(session.id) !== mode) {
+    if (run && (this.runModes.get(session.id) !== mode || this.runFingerprints.get(session.id) !== fingerprint)) {
       run.stop();
       this.runs.delete(session.id);
       this.runModes.delete(session.id);
+      this.runFingerprints.delete(session.id);
       run = undefined;
     }
     try {
@@ -672,6 +711,12 @@ export class Platform {
           cwd: ws.worktree,
           resumeSessionId: session.acpSessionId,
           mode,
+          mcpServers: acpServersForWorktree({
+            worktree: ws.worktree,
+            storeDir: this.storeDir(),
+            userId: ws.userId,
+            prefs: this.store.read().mcpPrefs,
+          }),
           onEvent: (event) => {
             if (event.type === "assistant_delta") streamed += event.text;
             usage.toolCalls += event.type === "tool_call" ? 1 : 0;
@@ -699,6 +744,7 @@ export class Platform {
         });
         this.runs.set(session.id, run);
         this.runModes.set(session.id, mode);
+        this.runFingerprints.set(session.id, fingerprint);
         if (run.acpSessionId) {
           this.store.update((d) => {
             const row = d.sessions.find((s) => s.id === session.id);
@@ -744,6 +790,7 @@ export class Platform {
       run?.stop();
       this.runs.delete(session.id);
       this.runModes.delete(session.id);
+      this.runFingerprints.delete(session.id);
       this.append(session.id, {
         type: "assistant_message",
         id: randomUUID(),
@@ -1263,6 +1310,291 @@ export class Platform {
     };
   }
 
+  skillCatalog(workspaceId: string, actor: UserRecord) {
+    const ws = this.assertWorkspaceAccess(actor, workspaceId, "view");
+    const { skills, shadowed } = collectSkills({ worktree: ws.worktree, storeDir: this.storeDir(), userId: ws.userId });
+    const prefs = this.store.read().skillPrefs;
+    const admin = this.isPlatformAdmin(actor);
+    const owner = actor.id === ws.userId || admin;
+    const toView = (skill: (typeof skills)[number], isShadowed: boolean) => ({
+      name: skill.name,
+      description: skill.description,
+      source: skill.source,
+      dir: skill.dir,
+      paths: skill.paths,
+      manualOnly: skill.manualOnly,
+      icon: skill.icon,
+      color: skill.color,
+      scope: skill.scope,
+      enabled: isShadowed ? false : prefs.find((row) => row.userId === ws.userId && row.name === skill.name)?.enabled !== false,
+      shadowed: isShadowed,
+      issues: skill.issues.map((issue) => issue.message),
+      editable: !isShadowed && ((skill.source === "user" && owner) || (skill.source === "platform" && admin)),
+      body: !isShadowed && ((skill.source === "user" && owner) || (skill.source === "platform" && admin)) ? skill.body : undefined,
+    });
+    return {
+      skills: [...skills.map((skill) => toView(skill, false)), ...shadowed.map((skill) => toView(skill, true))],
+    };
+  }
+
+  mcpCatalog(workspaceId: string, actor: UserRecord) {
+    const ws = this.assertWorkspaceAccess(actor, workspaceId, "view");
+    const { entries, shadowed } = collectMcp({
+      worktree: ws.worktree,
+      storeDir: this.storeDir(),
+      userId: ws.userId,
+      prefs: this.store.read().mcpPrefs,
+    });
+    const admin = this.isPlatformAdmin(actor);
+    const owner = actor.id === ws.userId || admin;
+    const toView = (entry: (typeof entries)[number], isShadowed: boolean) => {
+      const redacted = redactMcpEntry(entry);
+      const config = redacted.config;
+      const target = config.transport === "stdio" ? [config.command, ...config.args].join(" ").trim() : config.url;
+      const secrets =
+        config.transport === "stdio"
+          ? Object.keys(config.env).some((key) => isSecretMcpKey(key))
+          : Object.keys(config.headers).some((key) => isSecretMcpKey(key));
+      return {
+        name: entry.name,
+        transport: config.transport,
+        source: entry.source,
+        enabled: isShadowed ? false : entry.enabled,
+        target,
+        secrets: Boolean(secrets),
+        editable: !isShadowed && ((entry.source === "user" && owner) || (entry.source === "platform" && admin)),
+        shadowed: isShadowed,
+        issues: entry.issues,
+        command: config.transport === "stdio" ? config.command : undefined,
+        args: config.transport === "stdio" ? config.args : undefined,
+        env: config.transport === "stdio" ? config.env : undefined,
+        url: config.transport !== "stdio" ? config.url : undefined,
+        headers: config.transport !== "stdio" ? config.headers : undefined,
+      };
+    };
+    return {
+      servers: [...entries.map((entry) => toView(entry, false)), ...shadowed.map((entry) => toView(entry, true))],
+      policy: readMcpPolicy(this.storeDir()),
+    };
+  }
+
+  setSkillEnabled(actor: UserRecord, workspaceId: string, name: string, enabled: boolean) {
+    const ws = this.assertWorkspaceAccess(actor, workspaceId, "edit");
+    this.setPref("skillPrefs", ws.userId, name, enabled);
+    this.materializeWorkspaceTools(ws.worktree, ws.userId);
+    this.invalidateWorkspaceRuns(ws.id);
+    return this.skillCatalog(workspaceId, actor);
+  }
+
+  setMcpEnabled(actor: UserRecord, workspaceId: string, name: string, enabled: boolean) {
+    const ws = this.assertWorkspaceAccess(actor, workspaceId, "edit");
+    this.setPref("mcpPrefs", ws.userId, name, enabled);
+    this.materializeWorkspaceTools(ws.worktree, ws.userId);
+    this.invalidateWorkspaceRuns(ws.id);
+    return this.mcpCatalog(workspaceId, actor);
+  }
+
+  saveUserSkill(
+    actor: UserRecord,
+    input: { name: string; description: string; body: string; paths?: string[]; manualOnly?: boolean },
+  ) {
+    if (!isSkillName(input.name)) throw new Error("Invalid skill name");
+    writeSkillFile(userSkillsDir(this.storeDir(), actor.id), input);
+    this.materializeForUser(actor.id);
+    return this.listUserSkills(actor.id);
+  }
+
+  deleteUserSkill(actor: UserRecord, name: string) {
+    deleteSkillFile(userSkillsDir(this.storeDir(), actor.id), name);
+    this.materializeForUser(actor.id);
+    return this.listUserSkills(actor.id);
+  }
+
+  listUserSkills(userId: string) {
+    seedGlobalSkills(this.storeDir());
+    return collectSkills({
+      worktree: this.store.read().workspaces.find((row) => row.userId === userId && row.status !== "destroyed")?.worktree ?? "",
+      storeDir: this.storeDir(),
+      userId,
+    }).skills.filter((skill) => skill.source === "user");
+  }
+
+  listGlobalSkills() {
+    return seedGlobalSkills(this.storeDir());
+  }
+
+  listGlobalMcp() {
+    return readPlatformMcp(this.storeDir()).map((entry) => redactMcpEntry(entry));
+  }
+
+  saveGlobalSkill(
+    actor: UserRecord,
+    input: { name: string; description: string; body: string; paths?: string[]; manualOnly?: boolean },
+  ) {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    if (!isSkillName(input.name)) throw new Error("Invalid skill name");
+    writeSkillFile(globalSkillsDir(this.storeDir()), input);
+    this.materializeToolsEverywhere();
+    return this.listGlobalSkills();
+  }
+
+  deleteGlobalSkill(actor: UserRecord, name: string) {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    deleteSkillFile(globalSkillsDir(this.storeDir()), name);
+    this.materializeToolsEverywhere();
+    return this.listGlobalSkills();
+  }
+
+  saveUserMcp(actor: UserRecord, raw: unknown) {
+    const policy = readMcpPolicy(this.storeDir());
+    const incoming = parseMcpConfig(raw, "user");
+    for (const entry of incoming) {
+      if (mcpPolicyDecision(entry, policy, { admin: this.isPlatformAdmin(actor) }) === "deny") {
+        throw new Error("MCP server is not allowed by policy");
+      }
+    }
+    const current = readUserMcp(this.storeDir(), actor.id);
+    const restored = incoming.map((entry) => restoreMcpSecrets(entry, current.find((row) => row.name === entry.name)));
+    writeUserMcp(this.storeDir(), actor.id, serializeMcpConfig(restored));
+    this.materializeForUser(actor.id);
+    return readUserMcp(this.storeDir(), actor.id).map((entry) => redactMcpEntry(entry));
+  }
+
+  upsertUserMcp(actor: UserRecord, name: string, config: unknown) {
+    const current = readUserMcp(this.storeDir(), actor.id);
+    const merged = serializeMcpConfig([...current.filter((row) => row.name !== name), ...parseMcpConfig({ mcpServers: { [name]: config } }, "user")]);
+    return this.saveUserMcp(actor, merged);
+  }
+
+  deleteUserMcp(actor: UserRecord, name: string) {
+    const next = readUserMcp(this.storeDir(), actor.id).filter((entry) => entry.name !== name);
+    writeUserMcp(this.storeDir(), actor.id, serializeMcpConfig(next));
+    this.materializeForUser(actor.id);
+    return next.map((entry) => redactMcpEntry(entry));
+  }
+
+  saveGlobalMcp(actor: UserRecord, raw: unknown) {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const current = readPlatformMcp(this.storeDir());
+    const incoming = parseMcpConfig(raw, "platform");
+    const restored = incoming.map((entry) => restoreMcpSecrets(entry, current.find((row) => row.name === entry.name)));
+    writePlatformMcp(this.storeDir(), serializeMcpConfig(restored));
+    this.materializeToolsEverywhere();
+    return readPlatformMcp(this.storeDir()).map((entry) => redactMcpEntry(entry));
+  }
+
+  getMcpPolicy() {
+    return readMcpPolicy(this.storeDir());
+  }
+
+  saveMcpPolicy(actor: UserRecord, policy: { allowUserServers?: boolean; allowedCommands?: string[]; allowedUrlPatterns?: string[] }) {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const current = readMcpPolicy(this.storeDir());
+    return writeMcpPolicy(this.storeDir(), {
+      allowUserServers: policy.allowUserServers ?? current.allowUserServers,
+      allowedCommands: policy.allowedCommands ?? current.allowedCommands,
+      allowedUrlPatterns: policy.allowedUrlPatterns ?? current.allowedUrlPatterns,
+    });
+  }
+
+  applySkillsAndMcp(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    this.materializeWorkspaceTools(ws.worktree, ws.userId);
+    this.invalidateWorkspaceRuns(ws.id);
+    return { id: workspaceId };
+  }
+
+  applySkillsAndMcpEverywhere() {
+    this.materializeToolsEverywhere();
+    return this.store.read().workspaces.filter((row) => row.status !== "destroyed").map((row) => ({ id: row.id }));
+  }
+
+  async probeMcp(actor: UserRecord, workspaceId: string, name: string) {
+    const catalog = this.mcpCatalog(workspaceId, actor);
+    const server = catalog.servers.find((row) => row.name === name);
+    if (!server) throw new Error("MCP server not found");
+    if (server.transport === "stdio") {
+      const command = server.command ?? "";
+      const ok = commandOnPath(command);
+      return { name, ok, error: ok ? undefined : "command-missing" };
+    }
+    const url = server.url ?? "";
+    if (!url) return { name, ok: false, error: "missing-url" };
+    const started = Date.now();
+    try {
+      const response = await fetch(url, { method: "GET", signal: AbortSignal.timeout(4000) });
+      return { name, ok: response.ok || response.status < 500, ms: Date.now() - started, error: response.ok ? undefined : `http-${response.status}` };
+    } catch (error) {
+      return { name, ok: false, ms: Date.now() - started, error: error instanceof Error ? error.message : "unreachable" };
+    }
+  }
+
+  private setPref(kind: "skillPrefs" | "mcpPrefs", userId: string, name: string, enabled: boolean) {
+    this.store.update((d) => {
+      const list = d[kind];
+      const row = list.find((item) => item.userId === userId && item.name === name);
+      if (row) row.enabled = enabled;
+      else list.push({ userId, name, enabled });
+    });
+  }
+
+  private materializeWorkspaceTools(worktree: string, userId: string) {
+    if (!worktree || !existsSync(worktree)) return;
+    materializeSkills({
+      worktree,
+      storeDir: this.storeDir(),
+      userId,
+      prefs: this.store.read().skillPrefs,
+    });
+    mergeWorktreeMcp({
+      worktree,
+      storeDir: this.storeDir(),
+      userId,
+      prefs: this.store.read().mcpPrefs,
+    });
+  }
+
+  private materializeForUser(userId: string) {
+    const ws = this.store.read().workspaces.find((row) => row.userId === userId && row.status !== "destroyed");
+    if (!ws) return;
+    this.materializeWorkspaceTools(ws.worktree, userId);
+    this.invalidateWorkspaceRuns(ws.id);
+  }
+
+  private materializeToolsEverywhere() {
+    for (const ws of this.store.read().workspaces) {
+      if (ws.status === "destroyed") continue;
+      this.materializeWorkspaceTools(ws.worktree, ws.userId);
+      this.invalidateWorkspaceRuns(ws.id);
+    }
+  }
+
+  private invalidateWorkspaceRuns(workspaceId: string) {
+    for (const session of this.sessions(workspaceId)) {
+      this.runs.get(session.id)?.stop();
+      this.runs.delete(session.id);
+      this.runModes.delete(session.id);
+      this.runFingerprints.delete(session.id);
+    }
+  }
+
+  private workspaceToolsFingerprint(ws: WorkspaceRecord): string {
+    const mcp = collectMcp({
+      worktree: ws.worktree,
+      storeDir: this.storeDir(),
+      userId: ws.userId,
+      prefs: this.store.read().mcpPrefs,
+    });
+    const skills = collectSkills({ worktree: ws.worktree, storeDir: this.storeDir(), userId: ws.userId });
+    const prefs = this.store.read().skillPrefs;
+    return JSON.stringify({
+      mcp: mcpFingerprint(mcp.entries),
+      skills: skills.skills
+        .filter((skill) => prefs.find((row) => row.userId === ws.userId && row.name === skill.name)?.enabled !== false)
+        .map((skill) => `${skill.source}:${skill.name}`),
+    });
+  }
+
   assertWorkspaceAccess(user: UserRecord, workspaceId: string, mode: "view" | "edit"): WorkspaceRecord {
     const ws = this.requireWorkspace(workspaceId);
     if (!this.canAccessWorkspace(user, ws, mode)) throw new Error("Forbidden");
@@ -1350,6 +1682,29 @@ export class Platform {
   }
 }
 
+function restoreMcpSecrets(incoming: McpEntry, current?: McpEntry): McpEntry {
+  if (!current) return incoming;
+  if (incoming.config.transport === "stdio" && current.config.transport === "stdio") {
+    return {
+      ...incoming,
+      config: { ...incoming.config, env: restoreRedactedMcp(incoming.config.env, current.config.env) },
+    };
+  }
+  if (incoming.config.transport !== "stdio" && current.config.transport !== "stdio") {
+    return {
+      ...incoming,
+      config: { ...incoming.config, headers: restoreRedactedMcp(incoming.config.headers, current.config.headers) },
+    };
+  }
+  return incoming;
+}
+
+function commandOnPath(command: string): boolean {
+  if (!command) return false;
+  if (command.includes("/") || command.includes("\\")) return existsSync(command);
+  return (process.env.PATH ?? "").split(":").some((dir) => existsSync(join(dir, command)));
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var __atelierPlatform: Platform | undefined;
@@ -1365,7 +1720,8 @@ export function getPlatform(): Platform {
     typeof current.getWorkspaceLogs !== "function" ||
     typeof current.setUserDisabled !== "function" ||
     typeof current.isPlatformAdmin !== "function" ||
-    typeof current.repoOwnerLogin !== "function"
+    typeof current.skillCatalog !== "function" ||
+    typeof current.mcpCatalog !== "function"
   ) {
     globalThis.__atelierPlatform = new Platform();
   }
