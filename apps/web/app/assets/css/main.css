@@ -1005,6 +1005,30 @@ option {
   outline: none;
   resize: vertical;
   transition: border-color 120ms ease;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.12) transparent;
+}
+
+.cx-textarea::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.cx-textarea::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.11);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+.cx-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.18);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.cx-textarea::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .cx-textarea:focus {
