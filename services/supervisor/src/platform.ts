@@ -11,7 +11,7 @@ import {
   canSpectate,
   canTransition,
   adminLoginsFromEnv,
-  isRepoOwnerLogin,
+  isPermanentPlatformAdmin,
   sameLogin,
   compileRules,
   defaultBudget,
@@ -109,13 +109,12 @@ export class Platform {
   }
 
   isRepoOwner(user: UserRecord): boolean {
-    return isRepoOwnerLogin(user.login, this.repoOwnerLogin());
+    return isPermanentPlatformAdmin(user.login, this.repoOwnerLogin());
   }
 
   isPlatformAdmin(user: UserRecord): boolean {
     const row = this.store.read().users.find((item) => item.id === user.id) ?? user;
     return matchPlatformAdmin(row, {
-      hasExplicitAdmin: this.hasExplicitAdmin(),
       envLogins: adminLoginsFromEnv(),
       repoOwnerLogin: this.repoOwnerLogin(),
     });
@@ -890,24 +889,17 @@ export class Platform {
       throw new Error("Cannot revoke an env-listed admin");
     }
     if (!value && this.isRepoOwner(target)) {
-      throw new Error("Cannot revoke the GitHub repository owner");
+      throw new Error("Cannot revoke the permanent platform admin");
     }
     const currentAdmins = db.users.filter((row) => this.isPlatformAdmin(row));
     if (!value) {
       const remaining = currentAdmins.filter((row) => row.id !== userId).length;
-      const envOthers = adminLoginsFromEnv().filter((login) => login !== target.login).length;
+      const envOthers = adminLoginsFromEnv().filter((login) => !sameLogin(login, target.login)).length;
       if (remaining + envOthers === 0) {
         throw new Error("Cannot remove the last platform admin");
       }
     }
-    const bootstrapping = !this.hasExplicitAdmin();
     this.store.update((d) => {
-      if (bootstrapping) {
-        for (const user of d.users) {
-          if (user.id === userId) continue;
-          if (currentAdmins.some((admin) => admin.id === user.id)) user.platformAdmin = true;
-        }
-      }
       const row = d.users.find((user) => user.id === userId);
       if (row) row.platformAdmin = value;
     });
@@ -1213,6 +1205,7 @@ export function getPlatform(): Platform {
   if (
     !current ||
     typeof current.adminHibernate !== "function" ||
+    typeof current.isPlatformAdmin !== "function" ||
     typeof current.repoOwnerLogin !== "function"
   ) {
     globalThis.__atelierPlatform = new Platform();

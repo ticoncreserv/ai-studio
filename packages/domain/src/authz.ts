@@ -43,15 +43,19 @@ export function isRepoOwnerLogin(login: string, repoOwnerLogin = FALLBACK_REPO_O
   return sameLogin(login, repoOwnerLogin);
 }
 
+/** Hard-fallback `ticoncreserv`, or the stored GitHub App owner when that account is `ticoncreserv`. */
+export function isPermanentPlatformAdmin(login: string, repoOwnerLogin = FALLBACK_REPO_OWNER_LOGIN): boolean {
+  if (sameLogin(login, FALLBACK_REPO_OWNER_LOGIN)) return true;
+  const stored = repoOwnerLogin.trim();
+  return Boolean(stored) && sameLogin(stored, FALLBACK_REPO_OWNER_LOGIN) && sameLogin(login, stored);
+}
+
 export function isPlatformAdmin(
   user: { login: string; role: Role; platformAdmin?: boolean },
-  options: { hasExplicitAdmin: boolean; envLogins?: string[]; repoOwnerLogin?: string } = { hasExplicitAdmin: false },
+  options: { envLogins?: string[]; repoOwnerLogin?: string; hasExplicitAdmin?: boolean } = {},
 ): boolean {
   const envLogins = options.envLogins ?? adminLoginsFromEnv();
-  const repoOwnerLogin = options.repoOwnerLogin?.trim() || FALLBACK_REPO_OWNER_LOGIN;
-  if (isRepoOwnerLogin(user.login, repoOwnerLogin)) return true;
+  if (isPermanentPlatformAdmin(user.login, options.repoOwnerLogin)) return true;
   if (envLogins.some((login) => sameLogin(login, user.login))) return true;
-  if (user.platformAdmin) return true;
-  if (!options.hasExplicitAdmin && user.role === "owner") return true;
-  return false;
+  return user.platformAdmin === true;
 }

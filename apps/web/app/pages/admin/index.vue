@@ -128,7 +128,7 @@ function apiErrorMessage(err: unknown): string {
   if (typeof message === "string" && /last platform admin/i.test(message)) {
     return t("admin.lastAdmin");
   }
-  if (typeof message === "string" && /github repository owner/i.test(message)) {
+  if (typeof message === "string" && /permanent platform admin|github repository owner/i.test(message)) {
     return t("admin.cannotRevokeOwner");
   }
   if (typeof message === "string" && /already hibernat/i.test(message)) {

@@ -203,45 +203,58 @@ describe("platform", () => {
     expect(p.getGlobalEnv().env.APP_NAME).toBe("AtelierFixture");
   });
 
-  it("revoking during bootstrap ends owner auto-admin and keeps the other admin", () => {
+  it("treats regular users as not admin, including GitHub owners who are not ticoncreserv", () => {
     const p = platform();
-    const ana = addUser(p, "ana");
-    const bob = addUser(p, "bob");
-    expect(p.hasExplicitAdmin()).toBe(false);
-    expect(p.isPlatformAdmin(ana)).toBe(true);
-    expect(p.isPlatformAdmin(bob)).toBe(true);
-
-    const updated = p.setPlatformAdmin(ana, bob.id, false);
-    expect(updated?.platformAdmin).toBe(false);
-    expect(p.hasExplicitAdmin()).toBe(true);
+    const ana = addUser(p, "ana", "owner");
+    const bob = addUser(p, "bob", "editor");
+    expect(p.isPlatformAdmin(ana)).toBe(false);
     expect(p.isPlatformAdmin(bob)).toBe(false);
-    expect(p.isPlatformAdmin(ana)).toBe(true);
-    expect(p.listUsers().find((row) => row.id === bob.id)?.platformAdmin).toBe(false);
-    expect(p.listUsers().find((row) => row.id === ana.id)?.platformAdmin).toBe(true);
+    expect(p.listUsers().find((row) => row.id === ana.id)).toMatchObject({
+      platformAdmin: false,
+      repoOwner: false,
+    });
+  });
 
-    const cara = addUser(p, "cara");
-    expect(p.isPlatformAdmin(cara)).toBe(false);
+  it("grants and revokes platformAdmin for other users via setPlatformAdmin", () => {
+    const p = platform();
+    const seed = addUser(p, "ticoncreserv", "viewer");
+    const bob = addUser(p, "bob", "owner");
+    expect(p.isPlatformAdmin(bob)).toBe(false);
+
+    const granted = p.setPlatformAdmin(seed, bob.id, true);
+    expect(granted?.platformAdmin).toBe(true);
+    expect(p.isPlatformAdmin(bob)).toBe(true);
+    expect(p.store.read().users.find((row) => row.id === bob.id)?.platformAdmin).toBe(true);
+
+    const revoked = p.setPlatformAdmin(seed, bob.id, false);
+    expect(revoked?.platformAdmin).toBe(false);
+    expect(p.isPlatformAdmin(bob)).toBe(false);
+    expect(p.store.read().users.find((row) => row.id === bob.id)?.platformAdmin).toBe(false);
   });
 
   it("cannot remove the last platform admin, including env-listed logins", () => {
     const p = platform();
-    const ana = addUser(p, "ana");
+    const ana = addUser(p, "ana", "editor");
+    p.store.update((db) => {
+      const row = db.users.find((user) => user.id === ana.id);
+      if (row) row.platformAdmin = true;
+    });
     expect(() => p.setPlatformAdmin(ana, ana.id, false)).toThrow(/last platform admin/i);
     expect(p.isPlatformAdmin(ana)).toBe(true);
-    expect(p.hasExplicitAdmin()).toBe(false);
 
-    const bob = addUser(p, "bob");
-    p.setPlatformAdmin(ana, bob.id, false);
-    expect(() => p.setPlatformAdmin(ana, ana.id, false)).toThrow(/last platform admin/i);
-    expect(p.isPlatformAdmin(ana)).toBe(true);
-    expect(p.isPlatformAdmin(bob)).toBe(false);
+    const bob = addUser(p, "bob", "editor");
+    p.setPlatformAdmin(ana, bob.id, true);
+    p.setPlatformAdmin(ana, ana.id, false);
+    expect(p.isPlatformAdmin(ana)).toBe(false);
+    expect(p.isPlatformAdmin(bob)).toBe(true);
+    expect(() => p.setPlatformAdmin(bob, bob.id, false)).toThrow(/last platform admin/i);
 
     const previous = process.env.ATELIER_ADMIN_LOGINS;
     process.env.ATELIER_ADMIN_LOGINS = "carol";
     try {
       const q = platform();
       const carol = addUser(q, "carol", "viewer");
-      const dave = addUser(q, "dave");
+      const dave = addUser(q, "dave", "owner");
       expect(q.isPlatformAdmin(carol)).toBe(true);
       expect(q.isPlatformAdmin(dave)).toBe(false);
       expect(() => q.setPlatformAdmin(carol, carol.id, false)).toThrow(/env-listed admin|last platform admin/i);
@@ -255,11 +268,10 @@ describe("platform", () => {
     }
   });
 
-  it("always treats the GitHub repository owner as admin and rejects revoke", () => {
+  it("treats ticoncreserv as a permanent admin and rejects revoke", () => {
     const p = platform();
-    const ownerLogin = p.repoOwnerLogin();
-    const owner = addUser(p, ownerLogin, "viewer");
-    const bob = addUser(p, "bob");
+    const owner = addUser(p, "ticoncreserv", "viewer");
+    const bob = addUser(p, "bob", "owner");
     p.store.update((db) => {
       const row = db.users.find((user) => user.id === owner.id);
       if (row) row.platformAdmin = false;
@@ -269,16 +281,16 @@ describe("platform", () => {
       platformAdmin: true,
       repoOwner: true,
     });
+    expect(p.isPlatformAdmin(bob)).toBe(false);
 
     p.setPlatformAdmin(owner, bob.id, true);
-    expect(() => p.setPlatformAdmin(bob, owner.id, false)).toThrow(/repository owner/i);
+    expect(() => p.setPlatformAdmin(bob, owner.id, false)).toThrow(/permanent platform admin|repository owner/i);
     expect(p.isPlatformAdmin(owner)).toBe(true);
     expect(p.store.read().users.find((row) => row.id === owner.id)?.platformAdmin).toBe(false);
 
     p.setPlatformAdmin(owner, bob.id, false);
     expect(p.isPlatformAdmin(bob)).toBe(false);
     expect(p.isPlatformAdmin(owner)).toBe(true);
-    expect(() => p.setPlatformAdmin(owner, bob.id, false)).not.toThrow();
   });
 });
 

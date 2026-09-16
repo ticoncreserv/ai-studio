@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { adminLoginsFromEnv, FALLBACK_REPO_OWNER_LOGIN, isPlatformAdmin, mapGitHubPermission } from "./authz.js";
+import {
+  adminLoginsFromEnv,
+  FALLBACK_REPO_OWNER_LOGIN,
+  isPermanentPlatformAdmin,
+  isPlatformAdmin,
+  mapGitHubPermission,
+} from "./authz.js";
 
 describe("github permission mapping", () => {
   it("maps admin to owner and push to editor", () => {
@@ -15,39 +21,39 @@ describe("platform admin", () => {
     expect(adminLoginsFromEnv({ ATELIER_ADMIN_LOGINS: " tic, ana , " })).toEqual(["tic", "ana"]);
   });
 
-  it("bootstraps GitHub role owners until an explicit admin exists", () => {
-    const owner = { login: "ana", role: "owner" as const };
-    const editor = { login: "bob", role: "editor" as const };
-    expect(isPlatformAdmin(owner, { hasExplicitAdmin: false })).toBe(true);
-    expect(isPlatformAdmin(editor, { hasExplicitAdmin: false })).toBe(false);
-    expect(isPlatformAdmin(owner, { hasExplicitAdmin: true })).toBe(false);
+  it("treats a regular signed-in user as not admin", () => {
+    expect(isPlatformAdmin({ login: "bob", role: "editor" })).toBe(false);
+    expect(isPlatformAdmin({ login: "ana", role: "owner" })).toBe(false);
+    expect(isPlatformAdmin({ login: "ana", role: "owner", platformAdmin: false }, { hasExplicitAdmin: false })).toBe(
+      false,
+    );
   });
 
-  it("always treats the GitHub repository owner as admin", () => {
+  it("treats ticoncreserv as admin even if platformAdmin is false or undefined", () => {
     const owner = { login: FALLBACK_REPO_OWNER_LOGIN, role: "viewer" as const, platformAdmin: false };
-    expect(isPlatformAdmin(owner, { hasExplicitAdmin: true })).toBe(true);
-    expect(isPlatformAdmin(owner, { hasExplicitAdmin: false })).toBe(true);
+    expect(isPlatformAdmin(owner)).toBe(true);
+    expect(isPlatformAdmin({ login: "ticoncreserv", role: "editor" })).toBe(true);
     expect(
       isPlatformAdmin(
         { login: "TiconCreserv", role: "editor", platformAdmin: false },
-        { hasExplicitAdmin: true, repoOwnerLogin: "ticoncreserv" },
+        { repoOwnerLogin: "ticoncreserv" },
       ),
     ).toBe(true);
+    expect(isPermanentPlatformAdmin("ticoncreserv")).toBe(true);
+    expect(isPermanentPlatformAdmin("TiconCreserv", "ticoncreserv")).toBe(true);
+  });
+
+  it("does not treat another GitHub owner as admin without an explicit flag", () => {
+    expect(isPlatformAdmin({ login: "ana", role: "owner" }, { repoOwnerLogin: "ticoncreserv" })).toBe(false);
     expect(
-      isPlatformAdmin({ login: "ana", role: "owner" }, { hasExplicitAdmin: true, repoOwnerLogin: "ticoncreserv" }),
+      isPlatformAdmin({ login: "ada", role: "owner", platformAdmin: false }, { repoOwnerLogin: "ada" }),
     ).toBe(false);
-    expect(
-      isPlatformAdmin(
-        { login: "ada", role: "viewer", platformAdmin: false },
-        { hasExplicitAdmin: true, repoOwnerLogin: "ada" },
-      ),
-    ).toBe(true);
+    expect(isPermanentPlatformAdmin("ada", "ada")).toBe(false);
+    expect(isPlatformAdmin({ login: "ada", role: "owner", platformAdmin: true }, { repoOwnerLogin: "ada" })).toBe(true);
   });
 
   it("honors the platformAdmin bit and env allow-list", () => {
-    expect(isPlatformAdmin({ login: "bob", role: "editor", platformAdmin: true }, { hasExplicitAdmin: true })).toBe(true);
-    expect(
-      isPlatformAdmin({ login: "tic", role: "viewer" }, { hasExplicitAdmin: true, envLogins: ["tic"] }),
-    ).toBe(true);
+    expect(isPlatformAdmin({ login: "bob", role: "editor", platformAdmin: true })).toBe(true);
+    expect(isPlatformAdmin({ login: "tic", role: "viewer" }, { envLogins: ["tic"] })).toBe(true);
   });
 });
