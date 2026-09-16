@@ -8,6 +8,7 @@ import { Platform } from "./platform.js";
 import { JsonStore, type UserRecord } from "./store.js";
 import { listBranchMigrations } from "./migrations.js";
 import { userEnvPath, writeUserEnv } from "./runtime/env-file.js";
+import { writePreviewLogs } from "./runtime/preview-logs.js";
 
 const dirs: string[] = [];
 
@@ -352,6 +353,30 @@ describe("platform", () => {
     expect(p.store.read().users.find((row) => row.id === carol.id)?.disabled).toBe(true);
     expect(p.store.read().workspaces.find((row) => row.id === cws.id)?.status).toBe("destroyed");
     expect(existsSync(cws.worktree)).toBe(false);
+  });
+
+  it("lists workspace errors with log-backed hints and clears them", async () => {
+    const p = platform();
+    const owner = addUser(p, "ticoncreserv");
+    const user = await p.loginDev("erro-user");
+    const ws = await p.ensureWorkspace(user);
+    p.store.update((db) => {
+      const row = db.workspaces.find((item) => item.id === ws.id)!;
+      row.status = "error";
+      row.lastError = "Vite did not start in dev mode for workspace x";
+      row.errorAt = new Date().toISOString();
+    });
+    writePreviewLogs(ws.id, { artisan: "boot ok", vite: "ENOSPC watch", error: "Vite did not start" }, p.envRoot());
+    const listed = p.listAdminErrors();
+    expect(listed.some((row) => row.id === ws.id)).toBe(true);
+    const entry = listed.find((row) => row.id === ws.id)!;
+    expect(entry.hints.some((hint) => hint.id === "vite" || hint.id === "enospc")).toBe(true);
+    const logs = p.getWorkspaceLogs(ws.id);
+    expect(logs.vite).toContain("ENOSPC");
+    p.clearWorkspaceError(ws.id);
+    expect(p.listAdminErrors().find((row) => row.id === ws.id)).toBeUndefined();
+    expect(p.requireWorkspace(ws.id).status).toBe("hibernated");
+    expect(p.isPlatformAdmin(owner)).toBe(true);
   });
 });
 

@@ -11,6 +11,7 @@ import { provisionWorktree, type CloneInput } from "./clone.js";
 import { waitForHealth } from "./health.js";
 import { publicViteOrigin, writeViteAtelierConfig, writeViteHotFile } from "./vite-preview.js";
 import { ensureWayfinderFormMethods } from "./wayfinder-forms.js";
+import { appendPreviewLog, readPreviewLogs, writePreviewLogs } from "./preview-logs.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -52,6 +53,7 @@ export interface WorkspaceRuntime {
   destroy(workspaceId: string): Promise<void>;
   previewUrl(workspaceId: string): string | undefined;
   isRunning(workspaceId: string): boolean;
+  readLogs?(workspaceId: string): { artisan: string; vite: string };
 }
 
 type GlobalRuntime = typeof globalThis & { __atelierRuntimeHandles?: Map<string, RuntimeHandle> };
@@ -238,21 +240,25 @@ export class ProcessRuntime implements WorkspaceRuntime {
     const artisan = join(input.worktree, "artisan");
     let artisanLog = "";
     let viteLog = "";
+    const pushArtisan = (chunk: string) => {
+      artisanLog += chunk;
+      if (artisanLog.length > 64_000) artisanLog = artisanLog.slice(-64_000);
+      appendPreviewLog(input.workspaceId, "artisan", chunk);
+    };
+    const pushVite = (chunk: string) => {
+      viteLog += chunk;
+      if (viteLog.length > 64_000) viteLog = viteLog.slice(-64_000);
+      appendPreviewLog(input.workspaceId, "vite", chunk);
+    };
     if (existsSync(artisan)) {
       const php = spawn("php", ["artisan", "serve", "--host", "127.0.0.1", "--port", String(port)], {
         cwd: input.worktree,
         env: childEnv,
         stdio: "pipe",
       });
-      php.stderr?.on("data", (chunk) => {
-        artisanLog += String(chunk);
-      });
-      php.stdout?.on("data", (chunk) => {
-        artisanLog += String(chunk);
-      });
-      php.on("error", (error) => {
-        artisanLog += error.message;
-      });
+      php.stderr?.on("data", (chunk) => pushArtisan(String(chunk)));
+      php.stdout?.on("data", (chunk) => pushArtisan(String(chunk)));
+      php.on("error", (error) => pushArtisan(error.message));
       children.push(php);
     } else {
       throw new Error("This workspace is not a Laravel app (artisan missing). Reprovision from ticoncreserv/app.");
@@ -273,15 +279,9 @@ export class ProcessRuntime implements WorkspaceRuntime {
         env: viteEnv,
         stdio: "pipe",
       });
-      vite.stderr?.on("data", (chunk) => {
-        viteLog += String(chunk);
-      });
-      vite.stdout?.on("data", (chunk) => {
-        viteLog += String(chunk);
-      });
-      vite.on("error", (error) => {
-        viteLog += error.message;
-      });
+      vite.stderr?.on("data", (chunk) => pushVite(String(chunk)));
+      vite.stdout?.on("data", (chunk) => pushVite(String(chunk)));
+      vite.on("error", (error) => pushVite(error.message));
       children.push(vite);
       if (existsSync(join(input.worktree, "package.json"))) {
         children.push(
@@ -327,21 +327,22 @@ export class ProcessRuntime implements WorkspaceRuntime {
     if (!healthy) {
       await handle.stop();
       const detail = artisanLog.trim().slice(-400);
-      throw new Error(
-        `Preview did not become healthy on /up for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check that PHP 8.5 can boot artisan serve."}`,
-      );
+      const message = `Preview did not become healthy on /up for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check that PHP 8.5 can boot artisan serve."}`;
+      writePreviewLogs(input.workspaceId, { artisan: artisanLog, vite: viteLog, error: message });
+      throw new Error(message);
     }
     if (vitePort) {
       const viteReady = await waitForHealth(`http://127.0.0.1:${vitePort}/@vite/client`, 30_000);
       if (!viteReady) {
         await handle.stop();
         const detail = viteLog.trim().slice(-400);
-        throw new Error(
-          `Vite did not start in dev mode for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check node_modules/.bin/vite and that PORT is not shared with artisan."}`,
-        );
+        const message = `Vite did not start in dev mode for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check node_modules/.bin/vite and that PORT is not shared with artisan."}`;
+        writePreviewLogs(input.workspaceId, { artisan: artisanLog, vite: viteLog, error: message });
+        throw new Error(message);
       }
       writeViteHotFile(input.worktree, viteOrigin);
     }
+    writePreviewLogs(input.workspaceId, { artisan: artisanLog, vite: viteLog });
     return handle;
   }
 
@@ -367,6 +368,11 @@ export class ProcessRuntime implements WorkspaceRuntime {
 
   isRunning(workspaceId: string): boolean {
     return handles.has(workspaceId);
+  }
+
+  readLogs(workspaceId: string): { artisan: string; vite: string } {
+    const logs = readPreviewLogs(workspaceId);
+    return { artisan: logs.artisan, vite: logs.vite };
   }
 }
 

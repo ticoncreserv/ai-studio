@@ -10,13 +10,30 @@ import {
   MonitorSmartphone,
   Search,
   Sparkles,
+  TriangleAlert,
   Users,
 } from "@lucide/vue";
 
 const { t } = useI18n();
 const relativeTime = useRelativeTime();
 
-type Section = "overview" | "env" | "providers" | "users" | "rules" | "flags" | "workspaces";
+type Section = "overview" | "errors" | "env" | "providers" | "users" | "rules" | "flags" | "workspaces";
+
+type ErrorHint = { id: string; title: string; detail: string; action?: string };
+type AdminError = {
+  id: string;
+  userId: string;
+  login: string;
+  branch: string;
+  status: string;
+  lastError: string | null;
+  errorAt: string | null;
+  lastActiveAt: string;
+  previewPath: string | null;
+  hasArtisanLog: boolean;
+  hasViteLog: boolean;
+  hints: ErrorHint[];
+};
 
 const section = ref<Section>("overview");
 const loading = ref(true);
@@ -36,6 +53,9 @@ const overview = ref<{
   hibernated: number;
   error: number;
   lastPreviewError: string | null;
+  lastPreviewErrorLogin: string | null;
+  lastPreviewErrorAt: string | null;
+  lastPreviewErrorWorkspaceId: string | null;
   flags: Record<string, boolean>;
 } | null>(null);
 const env = ref<{ env: Record<string, string>; raw: string; secrets?: Record<string, string> }>({ env: {}, raw: "" });
@@ -85,12 +105,17 @@ const pendingDisable = ref<{ id: string; login: string; hasWorkspace: boolean } 
 const alsoDeactivate = ref(false);
 const alsoDestroy = ref(false);
 const listQuery = ref("");
+const errors = ref<AdminError[]>([]);
+const expandedErrorId = ref<string | null>(null);
+const errorLogs = ref<{ artisan: string; vite: string } | null>(null);
+const logBusy = ref(false);
 
 type NavItem = { id: Section; label: string; icon: typeof LayoutGrid };
 
 const navGroups: NavItem[][] = [
   [
     { id: "overview", label: "admin.overview", icon: LayoutGrid },
+    { id: "errors", label: "admin.errors", icon: TriangleAlert },
     { id: "env", label: "admin.env", icon: KeyRound },
     { id: "providers", label: "admin.providers", icon: Sparkles },
   ],
@@ -162,16 +187,28 @@ const filteredWorkspaces = computed(() => {
   });
 });
 
+const filteredErrors = computed(() => {
+  const needle = fold(listQuery.value.trim());
+  if (!needle) return errors.value;
+  return errors.value.filter((row) => {
+    const haystack = [row.login, row.branch, row.status, row.lastError ?? ""]
+      .map((part) => fold(String(part)))
+      .join(" ");
+    return haystack.includes(needle);
+  });
+});
+
 const envEditor = ref<{ submit: () => void } | null>(null);
 
 async function refreshData() {
-  const [over, envRes, providerRes, userRes, ruleRes, workspaceRes] = await Promise.all([
+  const [over, envRes, providerRes, userRes, ruleRes, workspaceRes, errorRes] = await Promise.all([
     $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
     $fetch<{ env: Record<string, string>; raw: string }>("/api/admin/env"),
     $fetch<{ providers: typeof providers.value }>("/api/admin/providers"),
     $fetch<{ users: typeof users.value }>("/api/admin/users"),
     $fetch<{ rules: typeof rules.value }>("/api/admin/rules"),
     $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
+    $fetch<{ errors: AdminError[] }>("/api/admin/errors"),
   ]);
   overview.value = over;
   env.value = envRes;
@@ -179,6 +216,7 @@ async function refreshData() {
   users.value = userRes.users;
   rules.value = ruleRes.rules;
   workspaces.value = workspaceRes.workspaces;
+  errors.value = errorRes.errors;
 }
 
 async function load() {
@@ -346,12 +384,86 @@ async function applyHibernatedRow(
 }
 
 async function refreshWorkspaces() {
-  const [over, workspaceRes] = await Promise.all([
+  const [over, workspaceRes, errorRes] = await Promise.all([
     $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
     $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
+    $fetch<{ errors: AdminError[] }>("/api/admin/errors"),
   ]);
   overview.value = over;
   workspaces.value = workspaceRes.workspaces;
+  errors.value = errorRes.errors;
+}
+
+async function toggleErrorDetails(row: AdminError) {
+  if (expandedErrorId.value === row.id) {
+    expandedErrorId.value = null;
+    errorLogs.value = null;
+    return;
+  }
+  expandedErrorId.value = row.id;
+  errorLogs.value = null;
+  if (!row.hasArtisanLog && !row.hasViteLog) return;
+  logBusy.value = true;
+  try {
+    const logs = await $fetch<{ artisan: string; vite: string }>(`/api/admin/workspaces/${row.id}/logs`);
+    errorLogs.value = { artisan: logs.artisan, vite: logs.vite };
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    logBusy.value = false;
+  }
+}
+
+async function resumeWorkspace(id: string) {
+  busy.value = true;
+  error.value = "";
+  try {
+    await $fetch(`/api/admin/workspaces/${id}/resume`, { method: "POST" });
+    await refreshData();
+    flash(t("admin.resumedOk"));
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+    await refreshData().catch(() => undefined);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function clearError(id: string) {
+  busy.value = true;
+  error.value = "";
+  try {
+    await $fetch(`/api/admin/workspaces/${id}/clear-error`, { method: "POST" });
+    if (expandedErrorId.value === id) {
+      expandedErrorId.value = null;
+      errorLogs.value = null;
+    }
+    await refreshData();
+    flash(t("admin.clearedOk"));
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    flash(t("admin.copied"));
+  } catch {
+    error.value = t("admin.error");
+  }
+}
+
+function runHintAction(row: AdminError, hint: ErrorHint) {
+  if (hint.action === "resume") void resumeWorkspace(row.id);
+  else if (hint.action === "hibernate") void hibernateWorkspace(row.id);
+  else if (hint.action === "destroy") {
+    alsoDeactivate.value = false;
+    pendingDestroy.value = { id: row.id, login: row.login, canDeactivate: true };
+  } else if (hint.action === "openEnv") section.value = "env";
+  else if (hint.action === "openWorkspace") void navigateTo(`/w/${row.id}`);
 }
 
 async function hibernateWorkspace(id: string) {
@@ -675,10 +787,128 @@ function ruleHint(level: "platform" | "project" | "user") {
                       <div class="min-w-0">
                         <p class="cx-row-title">{{ t("admin.lastError") }}</p>
                         <p class="cx-row-desc" :class="overview.lastPreviewError ? 'cx-tone-warn' : ''">
-                          {{ overview.lastPreviewError || t("admin.noError") }}
+                          <template v-if="overview.lastPreviewError">
+                            <span v-if="overview.lastPreviewErrorLogin">{{ overview.lastPreviewErrorLogin }} · </span>
+                            {{ overview.lastPreviewError }}
+                          </template>
+                          <template v-else>{{ t("admin.noError") }}</template>
+                        </p>
+                        <p v-if="overview.lastPreviewErrorAt" class="cx-row-desc">
+                          {{ relativeTime(overview.lastPreviewErrorAt) }}
                         </p>
                       </div>
-                      <UiBadge v-if="overview.lastPreviewError" tone="warn">{{ t("admin.statusError") }}</UiBadge>
+                      <div class="flex shrink-0 flex-col items-end gap-1.5">
+                        <UiBadge v-if="overview.lastPreviewError" tone="warn">{{ t("admin.statusError") }}</UiBadge>
+                        <UiButton
+                          v-if="overview.lastPreviewError"
+                          size="sm"
+                          variant="outline"
+                          @click="section = 'errors'"
+                        >
+                          {{ t("admin.openErrors") }}
+                        </UiButton>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </template>
+
+              <template v-else-if="section === 'errors'">
+                <section class="cx-section">
+                  <p class="cx-section-label">{{ t("admin.errorsSection") }}</p>
+                  <p class="cx-section-note">{{ t("admin.errorsHint") }}</p>
+                  <div class="cx-search mb-2">
+                    <Search class="h-3 w-3 shrink-0 text-ink-400" />
+                    <input
+                      v-model="listQuery"
+                      type="text"
+                      autocomplete="off"
+                      :placeholder="t('admin.searchErrors')"
+                      :aria-label="t('admin.searchErrors')"
+                    />
+                  </div>
+                  <div v-if="!errors.length" class="cx-panel px-4 py-7 text-center text-[13px] text-ink-400">
+                    {{ t("admin.noErrors") }}
+                  </div>
+                  <div
+                    v-else-if="!filteredErrors.length"
+                    class="cx-panel px-4 py-7 text-center text-[13px] text-ink-400"
+                  >
+                    {{ t("admin.noErrorMatches") }}
+                  </div>
+                  <div v-else class="space-y-2">
+                    <div v-for="row in filteredErrors" :key="row.id" class="cx-panel">
+                      <div class="cx-row cx-row-top cx-row-wrap">
+                        <div class="min-w-0">
+                          <div class="flex flex-wrap items-center gap-1.5">
+                            <p class="cx-row-title">{{ row.login || row.id.slice(0, 8) }}</p>
+                            <UiBadge :tone="statusTone(row.status)">{{ statusLabel(row.status) }}</UiBadge>
+                          </div>
+                          <p class="cx-row-desc font-mono">{{ row.branch }}</p>
+                          <p class="cx-row-desc cx-tone-warn whitespace-pre-wrap break-words">
+                            {{ row.lastError }}
+                          </p>
+                          <p v-if="row.errorAt" class="cx-row-desc">{{ relativeTime(row.errorAt) }}</p>
+                        </div>
+                        <div class="cx-row-actions flex shrink-0 flex-wrap justify-end gap-1.5">
+                          <UiButton size="sm" variant="outline" :disabled="busy" @click="resumeWorkspace(row.id)">
+                            {{ t("admin.retryPreview") }}
+                          </UiButton>
+                          <UiButton size="sm" variant="ghost" :disabled="busy" @click="toggleErrorDetails(row)">
+                            {{
+                              expandedErrorId === row.id ? t("admin.hideLogs") : t("admin.showLogs")
+                            }}
+                          </UiButton>
+                          <UiButton
+                            v-if="row.lastError"
+                            size="sm"
+                            variant="ghost"
+                            @click="copyText(row.lastError)"
+                          >
+                            {{ t("admin.copyError") }}
+                          </UiButton>
+                          <UiButton size="sm" variant="ghost" :disabled="busy" @click="clearError(row.id)">
+                            {{ t("admin.clearError") }}
+                          </UiButton>
+                          <UiButton size="sm" variant="ghost" :disabled="busy" @click="hibernateWorkspace(row.id)">
+                            {{ t("admin.hibernate") }}
+                          </UiButton>
+                        </div>
+                      </div>
+                      <div v-if="row.hints.length" class="border-t border-line px-3.5 py-2.5">
+                        <p class="cx-section-label mb-1.5">{{ t("admin.suggestedFixes") }}</p>
+                        <div class="space-y-2">
+                          <div v-for="hint in row.hints" :key="hint.id" class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                              <p class="cx-row-title">{{ hint.title }}</p>
+                              <p class="cx-row-desc">{{ hint.detail }}</p>
+                            </div>
+                            <UiButton
+                              v-if="hint.action"
+                              size="sm"
+                              variant="outline"
+                              :disabled="busy"
+                              @click="runHintAction(row, hint)"
+                            >
+                              {{ t("admin.applyFix") }}
+                            </UiButton>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-if="expandedErrorId === row.id" class="border-t border-line px-3.5 py-2.5">
+                        <p v-if="logBusy" class="cx-row-desc">{{ t("nav.working") }}</p>
+                        <template v-else-if="errorLogs">
+                          <p class="cx-section-label">artisan</p>
+                          <pre class="cx-log thin-scroll mb-2 max-h-48 overflow-auto">{{
+                            errorLogs.artisan || t("admin.emptyLog")
+                          }}</pre>
+                          <p class="cx-section-label">vite</p>
+                          <pre class="cx-log thin-scroll max-h-48 overflow-auto">{{
+                            errorLogs.vite || t("admin.emptyLog")
+                          }}</pre>
+                        </template>
+                        <p v-else class="cx-row-desc">{{ t("admin.emptyLog") }}</p>
+                      </div>
                     </div>
                   </div>
                 </section>

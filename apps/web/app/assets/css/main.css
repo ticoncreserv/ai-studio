@@ -529,14 +529,33 @@ option {
   border-top: 1px solid var(--color-line);
 }
 
-/* User turn: flat card, no bubble tail. */
+/* User turn: fill-only card, no border and no bubble tail. The extra top margin
+   opens up the gap between turns while events inside a turn stay tight. */
 .cx-turn-user {
-  border: 1px solid var(--color-line);
+  margin-top: 10px;
   border-radius: var(--cx-radius-panel);
   background: var(--color-paper);
-  padding: 8px 10px;
+  padding: 10px 12px;
   font-size: 13px;
   line-height: 1.55;
+  color: var(--color-ink-950);
+}
+
+/* Long prompts collapse behind a fade until the reader expands them. */
+.cx-turn-clamp {
+  max-height: 112px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 62px, transparent 108px);
+}
+
+.cx-turn-more {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-ink-400);
+  transition: color 120ms ease;
+}
+
+.cx-turn-more:hover {
   color: var(--color-ink-800);
 }
 
@@ -565,12 +584,13 @@ option {
   color: var(--color-ink-600);
 }
 
-/* Composer shell and the palette panel above it. */
+/* Composer shell and the palette panel above it: both sit on the card tone so
+   they read as raised against the conversation canvas. */
 .cx-composer,
 .cx-menu {
   border: 1px solid var(--color-line);
   border-radius: var(--cx-radius-panel);
-  background: var(--color-surface);
+  background: var(--color-paper);
 }
 
 .cx-composer:focus-within {
@@ -597,8 +617,8 @@ option {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   border-radius: 999px;
   background: rgb(255 255 255 / 0.06);
@@ -725,6 +745,7 @@ option {
   color: var(--color-ink-800);
 }
 
+/* The address reads as plain text until it is aimed at, like the reference. */
 .cx-address {
   min-width: 0;
   flex: 1;
@@ -732,18 +753,20 @@ option {
   padding: 0 8px;
   border: 1px solid transparent;
   border-radius: var(--cx-radius-control);
-  background: rgb(255 255 255 / 0.04);
+  background: transparent;
   font-size: 11.5px;
   color: var(--color-ink-500);
   outline: none;
 }
 
 .cx-address:hover {
+  background: rgb(255 255 255 / 0.04);
   color: var(--color-ink-700);
 }
 
 .cx-address:focus {
   border-color: var(--color-line-strong);
+  background: rgb(255 255 255 / 0.04);
   color: var(--color-ink-950);
 }
 
@@ -1133,4 +1156,18 @@ option {
   .admin-shell .cx-row-wrap .cx-row-actions {
     justify-content: flex-start;
   }
+}
+
+.cx-log {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--cx-radius-control);
+  background: rgb(0 0 0 / 0.22);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-ink-700);
+  white-space: pre-wrap;
+  word-break: break-word;
 }

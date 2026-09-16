@@ -27,6 +27,7 @@ export interface WorkspaceRecord {
   port?: number;
   vitePort?: number;
   lastError?: string;
+  errorAt?: string;
   warmedAt?: string;
   lastActiveAt: string;
   bytes?: number;

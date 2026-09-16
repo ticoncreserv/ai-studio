@@ -211,7 +211,9 @@
     "copy": "Copiar resposta",
     "fork": "Ramificar em nova sessão",
     "planAccepted": "Plano aceito",
-    "planRejected": "Plano recusado"
+    "planRejected": "Plano recusado",
+    "showMore": "Mostrar mais",
+    "showLess": "Mostrar menos"
   },
   "preview": {
     "title": "Preview",
@@ -372,7 +374,8 @@
     "hoursAgo": "há {count} h",
     "shortMinutes": "{count}min",
     "shortHours": "{count}h",
-    "shortDays": "{count}d"
+    "shortDays": "{count}d",
+    "agoShort": "há {value}"
   },
   "admin": {
     "title": "Admin da plataforma",
@@ -398,6 +401,24 @@
     "rules": "Regras globais",
     "flags": "Flags",
     "workspaces": "Workspaces",
+    "errors": "Erros",
+    "errorsSection": "Preview e runtime",
+    "errorsHint": "Cada clone ativo que falhou ao subir ou ainda guarda um lastError. Abra os logs, aplique uma correção sugerida ou tente o preview de novo.",
+    "searchErrors": "Buscar erros",
+    "noErrors": "Nenhum erro de workspace no momento.",
+    "noErrorMatches": "Nenhum erro corresponde a esta busca.",
+    "openErrors": "Abrir erros",
+    "retryPreview": "Tentar preview",
+    "showLogs": "Ver logs",
+    "hideLogs": "Ocultar logs",
+    "copyError": "Copiar",
+    "clearError": "Limpar",
+    "suggestedFixes": "Correções sugeridas",
+    "applyFix": "Aplicar",
+    "emptyLog": "Nenhum log capturado ainda.",
+    "resumedOk": "Retomada do preview iniciada.",
+    "clearedOk": "Erro limpo.",
+    "copied": "Copiado.",
     "github": "GitHub App",
     "githubHint": "OAuth e o GitHub App que clona o ticoncreserv/app.",
     "cursorKey": "Chave da API do Cursor",

@@ -211,7 +211,9 @@
     "copy": "Copy reply",
     "fork": "Branch into a new session",
     "planAccepted": "Plan accepted",
-    "planRejected": "Plan rejected"
+    "planRejected": "Plan rejected",
+    "showMore": "Show more",
+    "showLess": "Show less"
   },
   "preview": {
     "title": "Preview",
@@ -372,7 +374,8 @@
     "hoursAgo": "{count} h ago",
     "shortMinutes": "{count}m",
     "shortHours": "{count}h",
-    "shortDays": "{count}d"
+    "shortDays": "{count}d",
+    "agoShort": "{value} ago"
   },
   "admin": {
     "title": "Platform admin",
@@ -398,6 +401,24 @@
     "rules": "Global rules",
     "flags": "Flags",
     "workspaces": "Workspaces",
+    "errors": "Errors",
+    "errorsSection": "Preview & runtime",
+    "errorsHint": "Every live clone that failed to start or still carries a lastError. Open the logs, apply a suggested fix, or retry the preview.",
+    "searchErrors": "Search errors",
+    "noErrors": "No workspace errors right now.",
+    "noErrorMatches": "No errors match this search.",
+    "openErrors": "Open errors",
+    "retryPreview": "Retry preview",
+    "showLogs": "Show logs",
+    "hideLogs": "Hide logs",
+    "copyError": "Copy",
+    "clearError": "Clear",
+    "suggestedFixes": "Suggested fixes",
+    "applyFix": "Apply",
+    "emptyLog": "No log captured yet.",
+    "resumedOk": "Preview resume started.",
+    "clearedOk": "Error cleared.",
+    "copied": "Copied.",
     "github": "GitHub App",
     "githubHint": "OAuth and the GitHub App that clones ticoncreserv/app.",
     "cursorKey": "Cursor API key",

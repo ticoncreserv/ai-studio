@@ -68,6 +68,7 @@ import {
 } from "./runtime/env-file.js";
 import { probeConnections } from "./runtime/connection-probe.js";
 import { mentionIndexFromWorktree, worktreeBytes } from "./runtime/worktree-meta.js";
+import { clearPreviewError, readPreviewLogs, suggestPreviewFixes, writePreviewLogs } from "./runtime/preview-logs.js";
 import {
   commitWorktree,
   restoreCheckpoint,
@@ -321,10 +322,13 @@ export class Platform {
         row.port = handle.port;
         row.vitePort = handle.vitePort;
         row.lastError = undefined;
+        row.errorAt = undefined;
         row.lastActiveAt = new Date().toISOString();
       });
     } catch (error) {
       await this.runtime.hibernate(workspaceId).catch(() => undefined);
+      const message = error instanceof Error ? error.message : String(error);
+      writePreviewLogs(workspaceId, { error: message }, this.envRoot());
       this.store.update((d) => {
         const row = d.workspaces.find((w) => w.id === workspaceId);
         if (!row) return;
@@ -332,7 +336,8 @@ export class Platform {
         row.desired = "running";
         row.port = undefined;
         row.vitePort = undefined;
-        row.lastError = error instanceof Error ? error.message : String(error);
+        row.lastError = message;
+        row.errorAt = new Date().toISOString();
       });
       throw error;
     }
@@ -861,7 +866,12 @@ export class Platform {
   adminOverview() {
     const db = this.store.read();
     const workspaces = db.workspaces.filter((row) => row.status !== "destroyed");
-    const lastError = [...workspaces].reverse().find((row) => row.lastError)?.lastError ?? null;
+    const errored = workspaces.filter((row) => row.status === "error" || Boolean(row.lastError));
+    const last = [...errored].sort((a, b) => {
+      const left = new Date(a.errorAt ?? a.lastActiveAt).getTime();
+      const right = new Date(b.errorAt ?? b.lastActiveAt).getTime();
+      return right - left;
+    })[0];
     return {
       githubConfigured: Boolean(loadGitHubAppCredentials() || hasGitHubOAuth()),
       cursorKey: hasCursorApiKey(),
@@ -870,7 +880,10 @@ export class Platform {
       running: workspaces.filter((row) => row.status === "running").length,
       hibernated: workspaces.filter((row) => row.status === "hibernated").length,
       error: workspaces.filter((row) => row.status === "error").length,
-      lastPreviewError: lastError,
+      lastPreviewError: last?.lastError ?? null,
+      lastPreviewErrorLogin: last ? db.users.find((user) => user.id === last.userId)?.login ?? null : null,
+      lastPreviewErrorAt: last?.errorAt ?? null,
+      lastPreviewErrorWorkspaceId: last?.id ?? null,
       flags: this.flags(),
     };
   }
@@ -961,6 +974,7 @@ export class Platform {
           branch: row.branch,
           status: row.status,
           lastError: row.lastError ?? null,
+          errorAt: row.errorAt ?? null,
           lastActiveAt: row.lastActiveAt,
           port: row.port ?? null,
           vitePort: row.vitePort ?? null,
@@ -1006,6 +1020,75 @@ export class Platform {
         if (row) row.disabled = true;
       });
     }
+    return this.requireWorkspace(workspaceId);
+  }
+
+  listAdminErrors() {
+    const db = this.store.read();
+    return db.workspaces
+      .filter((row) => row.status !== "destroyed" && (row.status === "error" || Boolean(row.lastError)))
+      .map((row) => {
+        const user = db.users.find((item) => item.id === row.userId);
+        const logs = readPreviewLogs(row.id, this.envRoot());
+        const message = row.lastError ?? logs.error ?? "";
+        return {
+          id: row.id,
+          userId: row.userId,
+          login: user?.login ?? "",
+          branch: row.branch,
+          status: row.status,
+          lastError: message || null,
+          errorAt: row.errorAt ?? logs.errorAt ?? null,
+          lastActiveAt: row.lastActiveAt,
+          previewPath: row.previewToken ? `/-/p/${row.previewToken}` : null,
+          hasArtisanLog: Boolean(logs.artisan.trim()),
+          hasViteLog: Boolean(logs.vite.trim()),
+          hints: suggestPreviewFixes(message, `${logs.artisan}\n${logs.vite}`),
+        };
+      })
+      .sort((a, b) => {
+        const left = new Date(a.errorAt ?? a.lastActiveAt).getTime();
+        const right = new Date(b.errorAt ?? b.lastActiveAt).getTime();
+        return right - left;
+      });
+  }
+
+  getWorkspaceLogs(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    const logs = readPreviewLogs(workspaceId, this.envRoot());
+    const message = ws.lastError ?? logs.error ?? "";
+    return {
+      workspaceId,
+      login: this.store.read().users.find((row) => row.id === ws.userId)?.login ?? "",
+      status: ws.status,
+      lastError: message || null,
+      errorAt: ws.errorAt ?? logs.errorAt ?? null,
+      artisan: logs.artisan,
+      vite: logs.vite,
+      hints: suggestPreviewFixes(message, `${logs.artisan}\n${logs.vite}`),
+    };
+  }
+
+  async adminResume(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    if (ws.status === "destroyed") throw new Error("Workspace not found");
+    return this.wakePreview(workspaceId);
+  }
+
+  clearWorkspaceError(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    if (ws.status === "destroyed") throw new Error("Workspace not found");
+    this.store.update((d) => {
+      const row = d.workspaces.find((item) => item.id === workspaceId);
+      if (!row) return;
+      row.lastError = undefined;
+      row.errorAt = undefined;
+      if (row.status === "error") {
+        row.status = "hibernated";
+        row.desired = "hibernated";
+      }
+    });
+    clearPreviewError(workspaceId, this.envRoot());
     return this.requireWorkspace(workspaceId);
   }
 
@@ -1283,6 +1366,8 @@ export function getPlatform(): Platform {
     !current ||
     typeof current.adminHibernate !== "function" ||
     typeof current.adminDestroy !== "function" ||
+    typeof current.listAdminErrors !== "function" ||
+    typeof current.getWorkspaceLogs !== "function" ||
     typeof current.setUserDisabled !== "function" ||
     typeof current.isPlatformAdmin !== "function" ||
     typeof current.repoOwnerLogin !== "function"
