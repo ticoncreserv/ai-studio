@@ -43,6 +43,7 @@ import {
 import { bus } from "./bus.js";
 import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
 import { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
+import { findCursorAgentBinary } from "./providers/ensure-agent.js";
 import { createProvider, listProviders as catalogProviders } from "./providers/index.js";
 import { PROVIDER_CATALOG } from "./providers/types.js";
 import { fixtureAppDir, repoRoot } from "./paths.js";
@@ -1308,10 +1309,16 @@ export class Platform {
 
   agentStatus() {
     const ready = hasCursorApiKey();
+    const cli = findCursorAgentBinary();
     return {
-      ready,
+      ready: ready && Boolean(cli || process.env.VITEST),
       provider: this.preferredProvider(),
-      error: ready || process.env.VITEST ? null : "CURSOR_API_KEY is not set",
+      error:
+        process.env.VITEST || (ready && cli)
+          ? null
+          : !ready
+            ? "CURSOR_API_KEY is not set"
+            : "Cursor agent CLI is not installed",
     };
   }
 

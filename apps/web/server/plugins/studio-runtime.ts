@@ -1,11 +1,16 @@
-import { Reconciler, getPlatform } from "@atelier/supervisor";
+import { Reconciler, ensureCursorAgent, getPlatform } from "@atelier/supervisor";
 
 declare global {
   // eslint-disable-next-line no-var
   var __atelierReconciler: Reconciler | undefined;
 }
 
-export default defineNitroPlugin(() => {
+export default defineNitroPlugin(async () => {
+  if (!process.env.VITEST) {
+    await ensureCursorAgent().catch((error) => {
+      console.error("[atelier] Cursor agent CLI is required for prompts", error);
+    });
+  }
   const platform = getPlatform();
   void platform.sweepForeignWorktrees().catch((error) => {
     console.error("[atelier] failed to sweep fixture worktrees", error);
