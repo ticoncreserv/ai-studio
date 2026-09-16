@@ -10,6 +10,7 @@ import {
   readEnvFile,
   readUserEnv,
   redactEnv,
+  seedGlobalEnvDraft,
   writeGlobalEnv,
   writeUserEnv,
 } from "./env-file.js";
@@ -112,5 +113,36 @@ describe("env-file", () => {
     expect(merged.DB_HOST).toBe("10.0.0.1");
     expect(merged.CUSTOM).toBe("yes");
     expect(readEnvFile(join(dir, ".env")).APP_KEY).toBe("base64:keep");
+  });
+
+  it("seeds a global env draft from example plus non-isolation worktree keys", () => {
+    const draft = seedGlobalEnvDraft(
+      {
+        APP_NAME: "Portal",
+        APP_URL: "http://example.test",
+        DB_HOST: "127.0.0.1",
+        CACHE_STORE: "redis",
+        MAIL_MAILER: "smtp",
+      },
+      {
+        APP_URL: "http://studio/-/p/abc",
+        SESSION_COOKIE: "atelier_x_session",
+        PORT: "8123",
+        DB_HOST: "10.0.0.1",
+        DB_PASSWORD: "shared",
+        CACHE_STORE: "file",
+        MAIL_MAILER: "log",
+        REDIS_PREFIX: "atelier_x_",
+      },
+    );
+    expect(draft.APP_NAME).toBe("Portal");
+    expect(draft.DB_HOST).toBe("10.0.0.1");
+    expect(draft.DB_PASSWORD).toBe("shared");
+    expect(draft.CACHE_STORE).toBe("redis");
+    expect(draft.MAIL_MAILER).toBe("smtp");
+    expect(draft.APP_URL).toBeUndefined();
+    expect(draft.SESSION_COOKIE).toBeUndefined();
+    expect(draft.PORT).toBeUndefined();
+    expect(draft.REDIS_PREFIX).toBeUndefined();
   });
 });

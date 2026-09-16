@@ -9,6 +9,7 @@ import {
   canEdit,
   canInvite,
   canSpectate,
+  canTransition,
   adminLoginsFromEnv,
   compileRules,
   defaultBudget,
@@ -50,6 +51,7 @@ import {
   readUserEnv,
   redactEnv,
   restoreRedactedEnv,
+  seedGlobalEnvDraft,
   serializeEnvFile,
   writeGlobalEnv,
   writeProviderSecrets,
@@ -91,7 +93,7 @@ export class Platform {
 
   hasExplicitAdmin(): boolean {
     const db = this.store.read();
-    return db.users.some((user) => user.platformAdmin) || adminLoginsFromEnv().length > 0;
+    return db.users.some((user) => typeof user.platformAdmin === "boolean") || adminLoginsFromEnv().length > 0;
   }
 
   isPlatformAdmin(user: UserRecord): boolean {
@@ -305,8 +307,9 @@ export class Platform {
     return this.requireWorkspace(workspaceId);
   }
 
-  async hibernate(workspaceId: string): Promise<void> {
-    await this.runtime.hibernate(workspaceId);
+  async hibernate(workspaceId: string): Promise<WorkspaceRecord> {
+    const ws = this.requireWorkspace(workspaceId);
+    await this.runtime.hibernate(workspaceId, { port: ws.port, vitePort: ws.vitePort });
     for (const session of this.sessions(workspaceId)) {
       this.runs.get(session.id)?.stop();
       this.runs.delete(session.id);
@@ -314,13 +317,14 @@ export class Platform {
     this.store.update((d) => {
       const row = d.workspaces.find((w) => w.id === workspaceId);
       if (!row) return;
-      if (row.status === "running") {
-        row.status = transition("running", "hibernated");
+      if (row.status !== "hibernated" && row.status !== "destroyed") {
+        row.status = canTransition(row.status, "hibernated") ? transition(row.status, "hibernated") : "hibernated";
         row.desired = "hibernated";
       }
       row.port = undefined;
       row.vitePort = undefined;
     });
+    return this.requireWorkspace(workspaceId);
   }
 
   reconcile(): void {
@@ -867,14 +871,22 @@ export class Platform {
     if (adminLoginsFromEnv().includes(target.login) && !value) {
       throw new Error("Cannot revoke an env-listed admin");
     }
+    const currentAdmins = db.users.filter((row) => this.isPlatformAdmin(row));
     if (!value) {
-      const remaining = db.users.filter((row) => row.id !== userId && this.isPlatformAdmin(row)).length;
+      const remaining = currentAdmins.filter((row) => row.id !== userId).length;
       const envOthers = adminLoginsFromEnv().filter((login) => login !== target.login).length;
-      if (remaining + envOthers === 0 && (target.platformAdmin || this.isPlatformAdmin(target))) {
+      if (remaining + envOthers === 0) {
         throw new Error("Cannot remove the last platform admin");
       }
     }
+    const bootstrapping = !this.hasExplicitAdmin();
     this.store.update((d) => {
+      if (bootstrapping) {
+        for (const user of d.users) {
+          if (user.id === userId) continue;
+          if (currentAdmins.some((admin) => admin.id === user.id)) user.platformAdmin = true;
+        }
+      }
       const row = d.users.find((user) => user.id === userId);
       if (row) row.platformAdmin = value;
     });
@@ -904,17 +916,40 @@ export class Platform {
     return this.hibernate(workspaceId);
   }
 
+  private seedWorktreePath(): string | undefined {
+    for (const ws of this.store.read().workspaces) {
+      if (ws.status === "destroyed") continue;
+      if (existsSync(join(ws.worktree, ".env.example")) || existsSync(join(ws.worktree, ".env"))) {
+        return ws.worktree;
+      }
+    }
+    return undefined;
+  }
+
+  /** Stored global.env, or an in-memory draft from a clone. Does not write. */
+  resolvedGlobalEnv(): Record<string, string> {
+    const stored = readGlobalEnv(this.envRoot());
+    if (Object.keys(stored).length) return stored;
+    const worktree = this.seedWorktreePath();
+    if (!worktree) return {};
+    return seedGlobalEnvDraft(readEnvFile(join(worktree, ".env.example")), readEnvFile(join(worktree, ".env")));
+  }
+
   getGlobalEnv() {
-    const env = readGlobalEnv(this.envRoot());
-    return { env: redactEnv(env), raw: serializeEnvFile(redactEnv(env)), secrets: Object.keys(env).filter((key) => /password|secret|token|key|private/i.test(key) && !key.endsWith("_NAME")) };
+    const env = this.resolvedGlobalEnv();
+    return {
+      env: redactEnv(env),
+      raw: serializeEnvFile(redactEnv(env)),
+      secrets: Object.keys(env).filter((key) => /password|secret|token|key|private/i.test(key) && !key.endsWith("_NAME")),
+    };
   }
 
   revealGlobalEnvKey(key: string): string {
-    return readGlobalEnv(this.envRoot())[key] ?? "";
+    return this.resolvedGlobalEnv()[key] ?? "";
   }
 
   saveGlobalEnv(input: { env?: Record<string, string>; raw?: string }) {
-    const current = readGlobalEnv(this.envRoot());
+    const current = this.resolvedGlobalEnv();
     const env = restoreRedactedEnv(input.raw != null ? parseEnvFile(input.raw) : (input.env ?? {}), current);
     writeGlobalEnv(env, this.envRoot());
     return this.getGlobalEnv();
@@ -1144,10 +1179,17 @@ export class Platform {
   }
 }
 
-let singleton: Platform | null = null;
+declare global {
+  // eslint-disable-next-line no-var
+  var __atelierPlatform: Platform | undefined;
+}
+
 export function getPlatform(): Platform {
-  if (!singleton) singleton = new Platform();
-  return singleton;
+  const current = globalThis.__atelierPlatform;
+  if (!current || typeof current.adminHibernate !== "function") {
+    globalThis.__atelierPlatform = new Platform();
+  }
+  return globalThis.__atelierPlatform;
 }
 
 export const viewports: Record<Viewport, { width: number; height: number }> = {

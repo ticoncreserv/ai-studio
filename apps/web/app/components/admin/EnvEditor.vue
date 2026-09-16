@@ -1,9 +1,13 @@
 <script setup lang="ts">
-const props = defineProps<{
-  env: Record<string, string>;
-  raw: string;
-  revealUrl: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    env: Record<string, string>;
+    raw: string;
+    revealUrl: string;
+    showFooter?: boolean;
+  }>(),
+  { showFooter: true },
+);
 
 const emit = defineEmits<{
   save: [payload: { env?: Record<string, string>; raw?: string }];
@@ -16,10 +20,17 @@ const raw = ref("");
 const revealed = ref<Record<string, boolean>>({});
 
 watch(
-  () => [props.env, props.raw] as const,
-  ([env, text]) => {
-    rows.value = Object.entries(env).map(([key, value]) => ({ key, value }));
-    raw.value = text;
+  () => props.env,
+  (next) => {
+    rows.value = Object.entries(next ?? {}).map(([key, value]) => ({ key, value }));
+  },
+  { immediate: true, deep: true },
+);
+
+watch(
+  () => props.raw,
+  (text) => {
+    raw.value = text ?? "";
   },
   { immediate: true },
 );
@@ -58,11 +69,13 @@ function submit() {
   }
   emit("save", { env });
 }
+
+defineExpose({ submit });
 </script>
 
 <template>
-  <div>
-    <div class="mb-3 inline-flex rounded-[9px] border border-line bg-black/20 p-0.5">
+  <div class="flex min-h-0 flex-col">
+    <div class="mb-3 inline-flex self-start rounded-[9px] border border-line bg-black/20 p-0.5">
       <button
         type="button"
         class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
@@ -81,32 +94,41 @@ function submit() {
       </button>
     </div>
     <div v-if="mode === 'form'" class="space-y-2">
-      <div v-for="(row, index) in rows" :key="index" class="flex items-center gap-2">
-        <input
-          v-model="row.key"
-          class="h-9 w-[38%] rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
-          :placeholder="t('admin.envKey')"
-        />
-        <input
-          v-model="row.value"
-          :type="isSecret(row.key) && !revealed[row.key] ? 'password' : 'text'"
-          class="h-9 min-w-0 flex-1 rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
-          :placeholder="t('admin.envValue')"
-        />
-        <UiButton v-if="isSecret(row.key)" size="sm" variant="ghost" @click="reveal(row.key)">
-          {{ revealed[row.key] ? t("admin.hide") : t("admin.reveal") }}
-        </UiButton>
-        <UiButton size="sm" variant="ghost" @click="removeRow(index)">{{ t("admin.removeKey") }}</UiButton>
+      <div v-if="!rows.length" class="flex flex-col items-start gap-3 py-6">
+        <p class="text-[13px] text-ink-400">{{ t("admin.envEmpty") }}</p>
+        <UiButton size="sm" variant="outline" @click="addRow">{{ t("admin.addKey") }}</UiButton>
       </div>
-      <UiButton size="sm" variant="outline" @click="addRow">{{ t("admin.addKey") }}</UiButton>
+      <template v-else>
+        <div v-for="(row, index) in rows" :key="index" class="flex items-center gap-2">
+          <input
+            v-model="row.key"
+            class="h-9 w-[38%] rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
+            :placeholder="t('admin.envKey')"
+          />
+          <input
+            v-model="row.value"
+            :type="isSecret(row.key) && !revealed[row.key] ? 'password' : 'text'"
+            class="h-9 min-w-0 flex-1 rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
+            :placeholder="t('admin.envValue')"
+          />
+          <UiButton v-if="isSecret(row.key)" size="sm" variant="ghost" @click="reveal(row.key)">
+            {{ revealed[row.key] ? t("admin.hide") : t("admin.reveal") }}
+          </UiButton>
+          <UiButton size="sm" variant="ghost" @click="removeRow(index)">{{ t("admin.removeKey") }}</UiButton>
+        </div>
+        <UiButton size="sm" variant="ghost" @click="addRow">{{ t("admin.addKey") }}</UiButton>
+      </template>
     </div>
     <textarea
       v-else
       v-model="raw"
       class="h-64 w-full rounded-[10px] border border-line bg-black/25 p-3 font-mono text-[12px] outline-none focus:border-coral-500/40"
     />
-    <UiButton class="mt-4" @click="submit">
-      <slot name="save-label">{{ t("admin.saveEnv") }}</slot>
-    </UiButton>
+    <div v-if="showFooter" class="admin-action-bar mt-4">
+      <slot name="actions" />
+      <UiButton size="sm" @click="submit">
+        <slot name="save-label">{{ t("admin.saveEnv") }}</slot>
+      </UiButton>
+    </div>
   </div>
 </template>

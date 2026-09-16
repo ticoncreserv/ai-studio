@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
+import { PREVIEW_SIDE_EFFECTS } from "./spec.js";
 
 export function parseEnvFile(text: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -111,6 +112,39 @@ export function writeEnvFile(path: string, env: Record<string, string>): void {
 
 export function readGlobalEnv(envRoot?: string): Record<string, string> {
   return readEnvFile(globalEnvPath(envRoot));
+}
+
+/** Isolation / preview side-effects that must not land in the shared environment draft. */
+export const GLOBAL_ENV_SEED_SKIP = new Set([
+  "APP_URL",
+  "SESSION_COOKIE",
+  "PORT",
+  "REDIS_PREFIX",
+  "CACHE_PREFIX",
+  "QUEUE_NAME",
+  "TRUSTED_DEVICE_COOKIE_NAME",
+  ...Object.keys(PREVIEW_SIDE_EFFECTS),
+]);
+
+/**
+ * Prefill the admin environment editor from `.env.example` plus worktree `.env`
+ * keys that are not isolation or preview side-effects. Does not write a file.
+ */
+export function seedGlobalEnvDraft(
+  example: Record<string, string>,
+  worktree: Record<string, string> = {},
+): Record<string, string> {
+  const skipAlways = new Set(["APP_URL", "SESSION_COOKIE", "PORT"]);
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(example)) {
+    if (skipAlways.has(key)) continue;
+    out[key] = value;
+  }
+  for (const [key, value] of Object.entries(worktree)) {
+    if (GLOBAL_ENV_SEED_SKIP.has(key)) continue;
+    out[key] = value;
+  }
+  return out;
 }
 
 export function writeGlobalEnv(env: Record<string, string>, envRoot?: string): void {

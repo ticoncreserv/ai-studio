@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { foldEvents } from "@atelier/domain";
 import { formatAgentError } from "./acp/errors.js";
 import { Platform } from "./platform.js";
-import { JsonStore } from "./store.js";
+import { JsonStore, type UserRecord } from "./store.js";
 import { listBranchMigrations } from "./migrations.js";
 
 const dirs: string[] = [];
@@ -148,6 +148,30 @@ describe("platform", () => {
     expect(conflict && conflict.type === "conflict" ? conflict.message : "").not.toMatch(/fixture workspace/i);
   });
 
+  it("persists hibernated status from running or ready without a live runtime handle", async () => {
+    const p = platform();
+    const user = await p.loginDev("joao");
+    const ws = await p.ensureWorkspace(user);
+    expect(ws.status).toBe("ready");
+    const ready = await p.adminHibernate(ws.id);
+    expect(ready.status).toBe("hibernated");
+    expect(ready.port).toBeUndefined();
+    expect(p.requireWorkspace(ws.id).desired).toBe("hibernated");
+
+    p.store.update((db) => {
+      const row = db.workspaces.find((item) => item.id === ws.id)!;
+      row.status = "running";
+      row.desired = "running";
+      row.port = 45999;
+      row.vitePort = 46000;
+    });
+    const running = await p.hibernate(ws.id);
+    expect(running.status).toBe("hibernated");
+    expect(running.port).toBeUndefined();
+    expect(running.vitePort).toBeUndefined();
+    await expect(p.adminHibernate("missing-workspace")).rejects.toThrow(/not found/i);
+  });
+
   it("surfaces JSON-RPC ACP failures instead of 'The Cursor agent failed.'", () => {
     const message = formatAgentError({
       code: -32603,
@@ -157,5 +181,92 @@ describe("platform", () => {
     expect(`The agent could not complete this prompt. ${message}`).toContain("mcpServers");
     expect(message).not.toBe("The Cursor agent failed.");
   });
+
+  it("prefills global env from the worktree when global.env is empty", async () => {
+    const p = platform();
+    const user = await p.loginDev("julia");
+    await p.ensureWorkspace(user);
+    expect(existsSync(join(p.envRoot(), "global.env"))).toBe(false);
+    const preview = p.getGlobalEnv();
+    expect(preview.env.APP_NAME).toBe("AtelierFixture");
+    expect(preview.env.DB_CONNECTION).toBe("mariadb");
+    expect(preview.env.APP_URL).toBeUndefined();
+    expect(preview.env.SESSION_COOKIE).toBeUndefined();
+    expect(preview.env.PORT).toBeUndefined();
+    expect(preview.env.APP_KEY).toBe("••••");
+    expect(p.revealGlobalEnvKey("APP_KEY")).toBe("base64:fixture-key");
+    expect(existsSync(join(p.envRoot(), "global.env"))).toBe(false);
+    p.saveGlobalEnv({ env: preview.env });
+    expect(existsSync(join(p.envRoot(), "global.env"))).toBe(true);
+    expect(p.revealGlobalEnvKey("APP_KEY")).toBe("base64:fixture-key");
+    expect(p.getGlobalEnv().env.APP_NAME).toBe("AtelierFixture");
+  });
+
+  it("revoking during bootstrap ends owner auto-admin and keeps the other admin", () => {
+    const p = platform();
+    const ana = addUser(p, "ana");
+    const bob = addUser(p, "bob");
+    expect(p.hasExplicitAdmin()).toBe(false);
+    expect(p.isPlatformAdmin(ana)).toBe(true);
+    expect(p.isPlatformAdmin(bob)).toBe(true);
+
+    const updated = p.setPlatformAdmin(ana, bob.id, false);
+    expect(updated?.platformAdmin).toBe(false);
+    expect(p.hasExplicitAdmin()).toBe(true);
+    expect(p.isPlatformAdmin(bob)).toBe(false);
+    expect(p.isPlatformAdmin(ana)).toBe(true);
+    expect(p.listUsers().find((row) => row.id === bob.id)?.platformAdmin).toBe(false);
+    expect(p.listUsers().find((row) => row.id === ana.id)?.platformAdmin).toBe(true);
+
+    const cara = addUser(p, "cara");
+    expect(p.isPlatformAdmin(cara)).toBe(false);
+  });
+
+  it("cannot remove the last platform admin, including env-listed logins", () => {
+    const p = platform();
+    const ana = addUser(p, "ana");
+    expect(() => p.setPlatformAdmin(ana, ana.id, false)).toThrow(/last platform admin/i);
+    expect(p.isPlatformAdmin(ana)).toBe(true);
+    expect(p.hasExplicitAdmin()).toBe(false);
+
+    const bob = addUser(p, "bob");
+    p.setPlatformAdmin(ana, bob.id, false);
+    expect(() => p.setPlatformAdmin(ana, ana.id, false)).toThrow(/last platform admin/i);
+    expect(p.isPlatformAdmin(ana)).toBe(true);
+    expect(p.isPlatformAdmin(bob)).toBe(false);
+
+    const previous = process.env.ATELIER_ADMIN_LOGINS;
+    process.env.ATELIER_ADMIN_LOGINS = "carol";
+    try {
+      const q = platform();
+      const carol = addUser(q, "carol", "viewer");
+      const dave = addUser(q, "dave");
+      expect(q.isPlatformAdmin(carol)).toBe(true);
+      expect(q.isPlatformAdmin(dave)).toBe(false);
+      expect(() => q.setPlatformAdmin(carol, carol.id, false)).toThrow(/env-listed admin|last platform admin/i);
+      q.setPlatformAdmin(carol, dave.id, true);
+      q.setPlatformAdmin(carol, dave.id, false);
+      expect(q.isPlatformAdmin(dave)).toBe(false);
+      expect(q.isPlatformAdmin(carol)).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.ATELIER_ADMIN_LOGINS;
+      else process.env.ATELIER_ADMIN_LOGINS = previous;
+    }
+  });
 });
+
+function addUser(p: Platform, login: string, role: UserRecord["role"] = "owner"): UserRecord {
+  const user: UserRecord = {
+    id: login,
+    login,
+    name: login,
+    email: `${login}@users.noreply.github.com`,
+    locale: "en",
+    role,
+  };
+  p.store.update((db) => {
+    db.users.push(user);
+  });
+  return p.store.read().users.find((row) => row.id === login)!;
+}
 

@@ -73,9 +73,26 @@ const sections: Array<{ id: Section; label: string; icon: typeof LayoutGrid }> =
 ];
 
 const current = computed(() => sections.find((item) => item.id === section.value) ?? sections[0]!);
+const envEditor = ref<{ submit: () => void } | null>(null);
+
+async function refreshData() {
+  const [over, envRes, providerRes, userRes, ruleRes, workspaceRes] = await Promise.all([
+    $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
+    $fetch<{ env: Record<string, string>; raw: string }>("/api/admin/env"),
+    $fetch<{ providers: typeof providers.value }>("/api/admin/providers"),
+    $fetch<{ users: typeof users.value }>("/api/admin/users"),
+    $fetch<{ rules: typeof rules.value }>("/api/admin/rules"),
+    $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
+  ]);
+  overview.value = over;
+  env.value = envRes;
+  providers.value = providerRes.providers;
+  users.value = userRes.users;
+  rules.value = ruleRes.rules;
+  workspaces.value = workspaceRes.workspaces;
+}
 
 async function load() {
-  loading.value = true;
   forbidden.value = false;
   try {
     const me = await $fetch<{ user: { platformAdmin?: boolean } }>("/api/me");
@@ -83,24 +100,11 @@ async function load() {
       forbidden.value = true;
       return;
     }
-    const [over, envRes, providerRes, userRes, ruleRes, workspaceRes] = await Promise.all([
-      $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
-      $fetch<{ env: Record<string, string>; raw: string }>("/api/admin/env"),
-      $fetch<{ providers: typeof providers.value }>("/api/admin/providers"),
-      $fetch<{ users: typeof users.value }>("/api/admin/users"),
-      $fetch<{ rules: typeof rules.value }>("/api/admin/rules"),
-      $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
-    ]);
-    overview.value = over;
-    env.value = envRes;
-    providers.value = providerRes.providers;
-    users.value = userRes.users;
-    rules.value = ruleRes.rules;
-    workspaces.value = workspaceRes.workspaces;
+    await refreshData();
   } catch (err) {
     const status = (err as { statusCode?: number }).statusCode;
     forbidden.value = status === 401 || status === 403;
-    if (!forbidden.value) error.value = t("admin.error");
+    if (!forbidden.value) error.value = apiErrorMessage(err);
   } finally {
     loading.value = false;
   }
@@ -113,14 +117,30 @@ function flash(message: string) {
   }, 2400);
 }
 
-async function wrap(run: () => Promise<void>) {
+function apiErrorMessage(err: unknown): string {
+  const row = err as {
+    data?: { statusMessage?: string; message?: string };
+    statusMessage?: string;
+    message?: string;
+  };
+  const message = row?.data?.statusMessage || row?.data?.message || row?.statusMessage || row?.message;
+  if (typeof message === "string" && /last platform admin/i.test(message)) {
+    return t("admin.lastAdmin");
+  }
+  if (typeof message === "string" && message.trim() && !/^\[[A-Z]+\]\s+"/.test(message)) {
+    return message;
+  }
+  return t("admin.error");
+}
+
+async function wrap(run: () => Promise<void>, onError?: (err: unknown) => string) {
   busy.value = true;
   error.value = "";
   try {
     await run();
     flash(t("admin.saved"));
-  } catch {
-    error.value = t("admin.error");
+  } catch (err) {
+    error.value = onError?.(err) ?? apiErrorMessage(err);
   } finally {
     busy.value = false;
   }
@@ -158,10 +178,29 @@ async function saveProvider(id: string, enabled: boolean) {
   });
 }
 
+async function toggleProvider(id: string, enabled: boolean) {
+  const row = providers.value.find((item) => item.id === id);
+  if (row) row.enabled = enabled;
+  await wrap(async () => {
+    const res = await $fetch<{ providers: typeof providers.value }>("/api/admin/providers", {
+      method: "PUT",
+      body: { id, enabled },
+    });
+    providers.value = res.providers;
+  });
+}
+
 async function toggleAdmin(userId: string, next: boolean) {
   await wrap(async () => {
-    await $fetch(`/api/admin/users/${userId}`, { method: "PATCH", body: { platformAdmin: next } });
-    await load();
+    const res = await $fetch<{ user: (typeof users.value)[number] }>(`/api/admin/users/${userId}`, {
+      method: "PATCH",
+      body: { platformAdmin: next },
+    });
+    const list = await $fetch<{ users: typeof users.value }>("/api/admin/users");
+    users.value = list.users;
+    if (res.user) {
+      users.value = users.value.map((user) => (user.id === userId ? { ...user, ...res.user } : user));
+    }
   });
 }
 
@@ -181,8 +220,16 @@ async function patchFlag(flag: string, value: boolean) {
 
 async function hibernateWorkspace(id: string) {
   await wrap(async () => {
-    await $fetch(`/api/admin/workspaces/${id}/hibernate`, { method: "POST" });
-    await load();
+    const res = await $fetch<{
+      ok: boolean;
+      workspace?: { id: string; status: string; lastError: string | null };
+    }>(`/api/admin/workspaces/${id}/hibernate`, { method: "POST" });
+    const row = workspaces.value.find((item) => item.id === id);
+    if (row) {
+      row.status = res.workspace?.status ?? "hibernated";
+      if (res.workspace) row.lastError = res.workspace.lastError;
+    }
+    await refreshData();
   });
 }
 
@@ -262,10 +309,10 @@ function statusTone(status: string | null) {
           </button>
         </div>
 
-        <main class="thin-scroll min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-8 sm:py-8">
-          <div class="mx-auto w-full max-w-3xl">
-            <p v-if="error" class="mb-4 text-[13px] text-red-400">{{ error }}</p>
-            <div class="mb-6">
+        <main class="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-6 sm:px-8 sm:py-8">
+          <div class="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col">
+            <p v-if="error" class="mb-4 shrink-0 text-[13px] text-red-400">{{ error }}</p>
+            <div class="mb-6 shrink-0">
               <h1 class="text-[22px] font-semibold tracking-tight">{{ t(current.label) }}</h1>
               <p
                 v-if="section !== 'overview'"
@@ -290,7 +337,7 @@ function statusTone(status: string | null) {
               </p>
             </div>
 
-            <template v-if="section === 'overview' && overview">
+            <div v-if="section === 'overview' && overview" class="thin-scroll min-h-0 flex-1 overflow-y-auto">
               <p class="mb-2 text-[11px] font-medium tracking-[0.14em] text-ink-300 uppercase">
                 {{ t("admin.fleet") }}
               </p>
@@ -341,57 +388,38 @@ function statusTone(status: string | null) {
                 <p class="mt-1 text-[13px] leading-relaxed text-ink-600">{{ overview.lastPreviewError }}</p>
               </div>
               <p v-else class="mt-4 text-[12px] text-ink-400">{{ t("admin.noError") }}</p>
-            </template>
+            </div>
 
-            <template v-else-if="section === 'env'">
-              <div class="admin-panel p-4 sm:p-5">
-                <AdminEnvEditor :env="env.env" :raw="env.raw" reveal-url="/api/admin/env" @save="saveEnv" />
-                <UiButton class="mt-3" variant="outline" :disabled="busy" @click="applyEnv">
+            <div v-else-if="section === 'env'" class="admin-panel flex min-h-0 flex-1 flex-col">
+              <div class="thin-scroll min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                <AdminEnvEditor
+                  ref="envEditor"
+                  :env="env.env"
+                  :raw="env.raw"
+                  :show-footer="false"
+                  reveal-url="/api/admin/env"
+                  @save="saveEnv"
+                />
+              </div>
+              <div class="admin-action-bar">
+                <UiButton size="sm" variant="ghost" :disabled="busy" @click="applyEnv">
                   {{ t("admin.applyEnv") }}
                 </UiButton>
+                <UiButton size="sm" :disabled="busy" @click="envEditor?.submit()">
+                  {{ t("admin.saveEnv") }}
+                </UiButton>
               </div>
-            </template>
+            </div>
 
-            <template v-else-if="section === 'providers'">
-              <article v-for="provider in providers" :key="provider.id" class="admin-panel mb-3">
-                <div class="admin-row">
-                  <div class="flex items-center gap-3">
-                    <span class="inline-flex h-8 w-8 items-center justify-center rounded-[9px] bg-white/5">
-                      <Sparkles class="h-3.5 w-3.5 text-coral-400" />
-                    </span>
-                    <div>
-                      <p class="text-[14px] font-medium">{{ provider.label }}</p>
-                      <p class="text-[12px] text-ink-400">
-                        {{ provider.hasKey ? t("admin.hasKey") : t("admin.noKey") }}
-                      </p>
-                    </div>
-                  </div>
-                  <UiBadge :tone="provider.implemented ? 'info' : 'neutral'">
-                    {{ provider.implemented ? provider.id : t("admin.comingSoon") }}
-                  </UiBadge>
-                </div>
-                <div class="admin-row">
-                  <span class="text-[13px]">{{ t("admin.enabled") }}</span>
-                  <UiSwitch
-                    :model-value="provider.enabled"
-                    :label="t('admin.enabled')"
-                    @update:model-value="provider.enabled = $event"
-                  />
-                </div>
-                <div class="space-y-3 px-4 py-4">
-                  <label class="block">
-                    <span class="mb-1.5 block text-[12px] text-ink-400">{{ t("admin.apiKey") }}</span>
-                    <UiInput
-                      v-model="providerKeys[provider.id]"
-                      type="password"
-                      :placeholder="t('admin.apiKeyPlaceholder')"
-                    />
-                  </label>
-                  <UiButton size="sm" :disabled="busy" @click="saveProvider(provider.id, provider.enabled)">
-                    {{ t("admin.saveProvider") }}
-                  </UiButton>
-                </div>
-              </article>
+            <div v-else class="thin-scroll min-h-0 flex-1 overflow-y-auto">
+            <template v-if="section === 'providers'">
+              <AdminProvidersList
+                :providers="providers"
+                v-model:keys="providerKeys"
+                :busy="busy"
+                @toggle="toggleProvider"
+                @save="saveProvider"
+              />
             </template>
 
             <template v-else-if="section === 'users'">
@@ -487,6 +515,7 @@ function statusTone(status: string | null) {
                 </div>
               </div>
             </template>
+          </div>
           </div>
         </main>
       </div>
