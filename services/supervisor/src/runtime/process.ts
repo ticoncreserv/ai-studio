@@ -9,6 +9,7 @@ import { allocatePort } from "./ports.js";
 import { mergeWorktreeEnv } from "./env-file.js";
 import { provisionWorktree, type CloneInput } from "./clone.js";
 import { waitForHealth } from "./health.js";
+import { publicViteOrigin, writeViteAtelierConfig, writeViteHotFile } from "./vite-preview.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -16,6 +17,7 @@ export interface RuntimeHandle {
   workspaceId: string;
   worktree: string;
   port: number;
+  vitePort?: number;
   previewUrl: string;
   stop: () => Promise<void>;
   exec: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string; code: number }>;
@@ -107,10 +109,7 @@ async function installDependencies(worktree: string): Promise<void> {
     });
   }
   if (existsSync(join(worktree, "package.json")) && !existsSync(join(worktree, "node_modules"))) {
-    await execFileAsync("npm", ["install"], { cwd: worktree, timeout: 180_000 }).catch(() => undefined);
-  }
-  if (existsSync(join(worktree, "package.json")) && !existsSync(join(worktree, "public", "build"))) {
-    await execFileAsync("npm", ["run", "build"], { cwd: worktree, timeout: 180_000 }).catch(() => undefined);
+    await execFileAsync("npm", ["install"], { cwd: worktree, timeout: 180_000 });
   }
 }
 
@@ -142,15 +141,27 @@ export class ProcessRuntime implements WorkspaceRuntime {
   }
 
   async start(input: StartRequest): Promise<RuntimeHandle> {
+    const spec = defaultWorkspaceSpec();
+    const viteOrigin = publicViteOrigin(input.publicUrl);
     const existing = handles.get(input.workspaceId);
     if (existing) {
-      const spec = defaultWorkspaceSpec();
-      const stillUp = await waitForHealth(`http://127.0.0.1:${existing.port}${spec.healthCheck.path}`, 2_500);
-      if (stillUp) return existing;
+      const artisanUp = await waitForHealth(`http://127.0.0.1:${existing.port}${spec.healthCheck.path}`, 2_500);
+      const viteUp = existing.vitePort
+        ? await waitForHealth(`http://127.0.0.1:${existing.vitePort}/@vite/client`, 2_500)
+        : false;
+      if (artisanUp && (!existsSync(join(input.worktree, "package.json")) || viteUp)) {
+        if (existing.vitePort) writeViteHotFile(input.worktree, viteOrigin);
+        return existing;
+      }
       await existing.stop();
     }
     assertPreviewToolchain(input.worktree);
+    if (existsSync(join(input.worktree, "package.json")) && !existsSync(join(input.worktree, "node_modules"))) {
+      await installDependencies(input.worktree);
+    }
     const port = await allocatePort();
+    const wantsVite = existsSync(join(input.worktree, "package.json"));
+    const vitePort = wantsVite ? await allocatePort(port + 1) : undefined;
     const env = mergeWorktreeEnv(input.worktree, {
       ...PREVIEW_SIDE_EFFECTS,
       ...isolationEnv(input.workspaceId, input.publicUrl),
@@ -161,6 +172,7 @@ export class ProcessRuntime implements WorkspaceRuntime {
     const children: ChildProcess[] = [];
     const artisan = join(input.worktree, "artisan");
     let artisanLog = "";
+    let viteLog = "";
     if (existsSync(artisan)) {
       const php = spawn("php", ["artisan", "serve", "--host", "127.0.0.1", "--port", String(port)], {
         cwd: input.worktree,
@@ -180,11 +192,41 @@ export class ProcessRuntime implements WorkspaceRuntime {
     } else {
       throw new Error("This workspace is not a Laravel app (artisan missing). Reprovision from ticoncreserv/app.");
     }
-    const spec = defaultWorkspaceSpec();
-    if (input.hmr && existsSync(join(input.worktree, "package.json"))) {
-      const vite = spec.processes.find((p) => p.name === "vite");
-      if (vite) {
-        children.push(spawn(vite.command, vite.args, { cwd: input.worktree, env: childEnv, stdio: "pipe" }));
+    if (wantsVite && vitePort) {
+      const viteBin = join(input.worktree, "node_modules", ".bin", "vite");
+      if (!existsSync(viteBin)) {
+        throw new Error("Vite is not installed in the worktree. Run npm install so preview can compile assets in dev mode.");
+      }
+      const config = writeViteAtelierConfig(input.worktree);
+      const viteEnv = {
+        ...childEnv,
+        PORT: String(vitePort),
+        ATELIER_VITE_PORT: String(vitePort),
+        ATELIER_VITE_ORIGIN: viteOrigin,
+      };
+      const vite = spawn(viteBin, ["--config", config, "--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"], {
+        cwd: input.worktree,
+        env: viteEnv,
+        stdio: "pipe",
+      });
+      vite.stderr?.on("data", (chunk) => {
+        viteLog += String(chunk);
+      });
+      vite.stdout?.on("data", (chunk) => {
+        viteLog += String(chunk);
+      });
+      vite.on("error", (error) => {
+        viteLog += error.message;
+      });
+      children.push(vite);
+      if (existsSync(join(input.worktree, "package.json"))) {
+        children.push(
+          spawn("npm", ["run", "wayfinder:generate"], {
+            cwd: input.worktree,
+            env: childEnv,
+            stdio: "ignore",
+          }),
+        );
       }
     }
     if (process.env.ATELIER_PREVIEW_QUEUE === "1") {
@@ -197,6 +239,7 @@ export class ProcessRuntime implements WorkspaceRuntime {
       workspaceId: input.workspaceId,
       worktree: input.worktree,
       port,
+      vitePort,
       previewUrl: `http://127.0.0.1:${port}`,
       stop: async () => {
         for (const child of children) child.kill();
@@ -220,6 +263,17 @@ export class ProcessRuntime implements WorkspaceRuntime {
       throw new Error(
         `Preview did not become healthy on /up for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check that PHP 8.5 can boot artisan serve."}`,
       );
+    }
+    if (vitePort) {
+      const viteReady = await waitForHealth(`http://127.0.0.1:${vitePort}/@vite/client`, 30_000);
+      if (!viteReady) {
+        await handle.stop();
+        const detail = viteLog.trim().slice(-400);
+        throw new Error(
+          `Vite did not start in dev mode for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check node_modules/.bin/vite and that PORT is not shared with artisan."}`,
+        );
+      }
+      writeViteHotFile(input.worktree, viteOrigin);
     }
     return handle;
   }

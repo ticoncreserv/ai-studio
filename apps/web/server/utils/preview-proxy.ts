@@ -1,8 +1,9 @@
 import type { H3Event } from "h3";
+import { viteDevAssetPath } from "@atelier/supervisor";
 import { platform } from "./platform";
 import { rewriteLocation, rewriteSetCookie } from "./preview-rewrite";
 
-const FORWARD_HEADERS = ["cookie", "content-type", "accept", "x-xsrf-token", "x-requested-with", "authorization"];
+const FORWARD_HEADERS = ["cookie", "content-type", "accept", "x-xsrf-token", "x-requested-with", "authorization", "origin"];
 
 export async function proxyPreview(event: H3Event, token: string, rest = "") {
   const ws = platform().store.read().workspaces.find((row) => row.previewToken === token);
@@ -13,7 +14,10 @@ export async function proxyPreview(event: H3Event, token: string, rest = "") {
 
   const incoming = getRequestURL(event);
   const method = getMethod(event);
-  const target = `http://127.0.0.1:${ws.port}/${rest}${incoming.search}`;
+  const vitePath = ws.vitePort ? viteDevAssetPath(rest) : null;
+  const target = vitePath
+    ? `http://127.0.0.1:${ws.vitePort}${vitePath}${incoming.search}`
+    : `http://127.0.0.1:${ws.port}/${rest}${incoming.search}`;
   const headers = new Headers();
   for (const name of FORWARD_HEADERS) {
     const value = getHeader(event, name);
@@ -33,7 +37,10 @@ export async function proxyPreview(event: H3Event, token: string, rest = "") {
   outgoing.delete("x-frame-options");
   outgoing.set("content-security-policy", "frame-ancestors *");
   const location = outgoing.get("location");
-  if (location) outgoing.set("location", rewriteLocation(location, ws.port, prefix));
+  if (location) {
+    outgoing.set("location", rewriteLocation(location, ws.port, prefix));
+    if (ws.vitePort) outgoing.set("location", rewriteLocation(outgoing.get("location")!, ws.vitePort, `${prefix}/__vite`));
+  }
   const cookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
   if (cookies.length) {
     outgoing.delete("set-cookie");

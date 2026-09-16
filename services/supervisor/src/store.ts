@@ -23,6 +23,7 @@ export interface WorkspaceRecord {
   previewToken: string;
   worktree: string;
   port?: number;
+  vitePort?: number;
   lastError?: string;
   warmedAt?: string;
   lastActiveAt: string;

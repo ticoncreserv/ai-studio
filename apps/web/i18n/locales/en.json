@@ -121,7 +121,7 @@
     "envIsolation": "Isolation env",
     "migrationJournal": "Migration journal",
     "noMigrations": "No migrations have been applied from this studio yet.",
-    "resumeHint": "Resume starts php artisan serve and Vite on this branch.",
+    "resumeHint": "Resume starts php artisan serve and Vite in dev mode so assets compile on demand.",
     "people": "People in this workspace",
     "loading": "Opening the studio…",
     "loadError": "The workspace could not be loaded.",

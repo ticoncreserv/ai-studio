@@ -7,7 +7,7 @@ export const defaultWorkspaceSpec = (): WorkspaceSpec => ({
   processes: [
     { name: "laravel", command: "php", args: ["artisan", "serve", "--host", "127.0.0.1"], optional: false, hmrOnly: false },
     { name: "queue", command: "php", args: ["artisan", "queue:work", "--tries=1", "--timeout=60"], optional: true, hmrOnly: false },
-    { name: "vite", command: "npm", args: ["run", "dev"], optional: true, hmrOnly: true },
+    { name: "vite", command: "vite", args: ["--host", "127.0.0.1", "--strictPort"], optional: true, hmrOnly: true },
   ],
   envContract: [
     { key: "APP_KEY", kind: "structural", required: true },

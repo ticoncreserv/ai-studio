@@ -189,7 +189,10 @@ export class Platform {
 
   async wakePreview(workspaceId: string): Promise<WorkspaceRecord> {
     const ws = this.requireWorkspace(workspaceId);
-    if (this.runtime.isRunning(workspaceId) && ws.status === "running" && ws.port) return ws;
+    const needsVite = existsSync(join(ws.worktree, "package.json"));
+    if (this.runtime.isRunning(workspaceId) && ws.status === "running" && ws.port && (!needsVite || ws.vitePort)) {
+      return ws;
+    }
     return this.startPreview(workspaceId);
   }
 
@@ -224,6 +227,7 @@ export class Platform {
         row.status = from === "running" ? "running" : transition(from, "running");
         row.desired = "running";
         row.port = handle.port;
+        row.vitePort = handle.vitePort;
         row.lastError = undefined;
         row.lastActiveAt = new Date().toISOString();
       });
@@ -235,6 +239,7 @@ export class Platform {
         row.status = "error";
         row.desired = "running";
         row.port = undefined;
+        row.vitePort = undefined;
         row.lastError = error instanceof Error ? error.message : String(error);
       });
       throw error;
@@ -256,6 +261,7 @@ export class Platform {
         row.desired = "hibernated";
       }
       row.port = undefined;
+      row.vitePort = undefined;
     });
   }
 

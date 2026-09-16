@@ -9,6 +9,7 @@ export { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from 
 export type { AgentProvider, ProviderRun } from "./providers/types.js";
 export { ProcessRuntime, DockerRuntime, applyHunkToWorktree } from "./runtime/process.js";
 export type { WorkspaceRuntime, RuntimeHandle } from "./runtime/process.js";
+export { publicViteOrigin, viteDevAssetPath, VITE_PREVIEW_SEGMENT } from "./runtime/vite-preview.js";
 export { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
 export { LocalAuthProvider, GitHubAuthProvider, createAuthProvider, signState, verifyState } from "./auth.js";
 export type { AuthProvider, AuthIdentity } from "./auth.js";

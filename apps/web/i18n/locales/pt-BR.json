@@ -121,7 +121,7 @@
     "envIsolation": "Env de isolamento",
     "migrationJournal": "Diário de migrations",
     "noMigrations": "Nenhuma migration foi aplicada por este estúdio ainda.",
-    "resumeHint": "Retomar sobe php artisan serve e o Vite nesta branch.",
+    "resumeHint": "Retomar sobe php artisan serve e o Vite em modo dev, compilando os assets na hora.",
     "people": "Pessoas neste workspace",
     "loading": "Abrindo o estúdio…",
     "loadError": "Não foi possível carregar o workspace.",

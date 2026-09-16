@@ -82,9 +82,9 @@ Commits in a workspace set `user.name` / `user.email` and `commit.gpgsign=false`
 
 ## Preview
 
-`ProcessRuntime` clones `ticoncreserv/app` (cached bare clone in `var/cache`), writes a worktree `.env` from `.env.example` plus isolation, runs `composer install` / `npm install` when needed, then `php artisan serve` on a free loopback port. Vite starts when the app has a frontend. Health is `GET /up`. `APP_URL` is `{ATELIER_PUBLIC_URL}/-/p/{previewToken}` so CSRF, redirects, and Inertia stay on the studio origin.
+`ProcessRuntime` clones `ticoncreserv/app` (cached bare clone in `var/cache`), writes a worktree `.env` from `.env.example` plus isolation, runs `composer install` / `npm install` when needed, then `php artisan serve` on a free loopback port. Vite runs in **dev mode** on a second loopback port (not a production `public/build` manifest). Laravel reads `public/hot` pointing at `{ATELIER_PUBLIC_URL}/-/p/{token}/__vite`, so `@vite` script tags stay on the studio origin and compile on demand. The Wayfinder plugin is not allowed to block Vite listen — `npm run wayfinder:generate` runs in the background. Health is `GET /up`. `APP_URL` is `{ATELIER_PUBLIC_URL}/-/p/{previewToken}` so CSRF, redirects, and Inertia stay on the studio origin.
 
-`/-/p/{token}` proxies method, query, body, cookies, and CSRF headers, and rewrites `Set-Cookie` `Path` so Laravel session cookies stay on the iframe. Hibernate clears the port. Opening `/w/:id` or a share link wakes the preview.
+`/-/p/{token}` proxies Laravel. `/-/p/{token}/__vite` proxies the Vite dev server (method, query, body, cookies, CSRF). `Set-Cookie` `Path` is rewritten onto the iframe prefix. Hibernate clears both ports. Opening `/w/:id` or a share link wakes the preview.
 
 `DockerRuntime` (`ATELIER_RUNTIME=docker`) uses `infra/workspace-php85.Dockerfile` when the daemon exists. Database hosts from the cloned `.env` are used as-is; unreachable `10.x` homologation hosts surface as Laravel errors, not a fake portal.
 
