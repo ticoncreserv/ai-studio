@@ -48,13 +48,65 @@ export interface StartRequest {
 export interface WorkspaceRuntime {
   provision(input: ProvisionRequest): Promise<{ worktree: string }>;
   start(input: StartRequest): Promise<RuntimeHandle>;
-  hibernate(workspaceId: string): Promise<void>;
+  hibernate(workspaceId: string, ports?: { port?: number; vitePort?: number }): Promise<void>;
   destroy(workspaceId: string): Promise<void>;
   previewUrl(workspaceId: string): string | undefined;
   isRunning(workspaceId: string): boolean;
 }
 
-const handles = new Map<string, RuntimeHandle>();
+type GlobalRuntime = typeof globalThis & { __atelierRuntimeHandles?: Map<string, RuntimeHandle> };
+const handles = ((globalThis as GlobalRuntime).__atelierRuntimeHandles ??= new Map());
+
+function childPids(pid: number): number[] {
+  try {
+    const raw = readFileSync(`/proc/${pid}/task/${pid}/children`, "utf8").trim();
+    const pids = raw.split(/\s+/).map(Number).filter(Boolean);
+    return pids.flatMap((child) => [child, ...childPids(child)]);
+  } catch {
+    return [];
+  }
+}
+
+function killPid(pid: number, signal: NodeJS.Signals) {
+  if (pid === process.pid) return;
+  try {
+    process.kill(pid, signal);
+  } catch {
+    /* already gone */
+  }
+}
+
+function killTree(child: ChildProcess, signal: NodeJS.Signals = "SIGTERM") {
+  if (!child.pid) return;
+  for (const pid of childPids(child.pid)) killPid(pid, signal);
+  try {
+    if (child.pid !== process.pid) child.kill(signal);
+  } catch {
+    /* already gone */
+  }
+}
+
+async function pidsOnPort(port: number): Promise<number[]> {
+  try {
+    const { stdout } = await execFileAsync("lsof", ["-ti", `:${port}`]);
+    return stdout.split(/\s+/).map(Number).filter((pid) => pid && pid !== process.pid);
+  } catch {
+    try {
+      const { stdout } = await execFileAsync("fuser", [`${port}/tcp`]);
+      return stdout.split(/\s+/).map(Number).filter((pid) => pid && pid !== process.pid);
+    } catch {
+      return [];
+    }
+  }
+}
+
+async function killPort(port: number): Promise<void> {
+  const pids = await pidsOnPort(port);
+  for (const pid of pids) killPid(pid, "SIGTERM");
+  if (!pids.length) return;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  for (const pid of await pidsOnPort(port)) killPid(pid, "SIGKILL");
+}
 
 function writeGitignore(worktree: string): void {
   const file = join(worktree, ".gitignore");
@@ -255,7 +307,9 @@ export class ProcessRuntime implements WorkspaceRuntime {
       vitePort,
       previewUrl: `http://127.0.0.1:${port}`,
       stop: async () => {
-        for (const child of children) child.kill();
+        for (const child of children) killTree(child, "SIGTERM");
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        for (const child of children) killTree(child, "SIGKILL");
         handles.delete(input.workspaceId);
       },
       exec: async (command, args) => {
@@ -291,8 +345,14 @@ export class ProcessRuntime implements WorkspaceRuntime {
     return handle;
   }
 
-  async hibernate(workspaceId: string): Promise<void> {
-    await handles.get(workspaceId)?.stop();
+  async hibernate(workspaceId: string, ports?: { port?: number; vitePort?: number }): Promise<void> {
+    const handle = handles.get(workspaceId);
+    const port = handle?.port ?? ports?.port;
+    const vitePort = handle?.vitePort ?? ports?.vitePort;
+    await handle?.stop();
+    handles.delete(workspaceId);
+    if (port) await killPort(port);
+    if (vitePort) await killPort(vitePort);
   }
 
   async destroy(workspaceId: string): Promise<void> {

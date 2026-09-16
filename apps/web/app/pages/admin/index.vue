@@ -127,6 +127,12 @@ function apiErrorMessage(err: unknown): string {
   if (typeof message === "string" && /last platform admin/i.test(message)) {
     return t("admin.lastAdmin");
   }
+  if (typeof message === "string" && /already hibernat/i.test(message)) {
+    return t("admin.alreadyHibernated");
+  }
+  if (typeof message === "string" && /last running/i.test(message)) {
+    return t("admin.lastRunning");
+  }
   if (typeof message === "string" && message.trim() && !/^\[[A-Z]+\]\s+"/.test(message)) {
     return message;
   }
@@ -218,19 +224,45 @@ async function patchFlag(flag: string, value: boolean) {
   });
 }
 
+async function applyHibernatedRow(
+  id: string,
+  workspace?: { id: string; status: string; lastError: string | null },
+) {
+  const row = workspaces.value.find((item) => item.id === id);
+  if (!row) return;
+  row.status = workspace?.status ?? "hibernated";
+  if (workspace) row.lastError = workspace.lastError;
+}
+
+async function refreshWorkspaces() {
+  const [over, workspaceRes] = await Promise.all([
+    $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
+    $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
+  ]);
+  overview.value = over;
+  workspaces.value = workspaceRes.workspaces;
+}
+
 async function hibernateWorkspace(id: string) {
-  await wrap(async () => {
+  busy.value = true;
+  error.value = "";
+  try {
     const res = await $fetch<{
       ok: boolean;
       workspace?: { id: string; status: string; lastError: string | null };
     }>(`/api/admin/workspaces/${id}/hibernate`, { method: "POST" });
-    const row = workspaces.value.find((item) => item.id === id);
-    if (row) {
-      row.status = res.workspace?.status ?? "hibernated";
-      if (res.workspace) row.lastError = res.workspace.lastError;
+    applyHibernatedRow(id, res.workspace);
+    try {
+      await refreshWorkspaces();
+    } catch {
+      applyHibernatedRow(id, res.workspace ?? { id, status: "hibernated", lastError: null });
     }
-    await refreshData();
-  });
+    flash(t("admin.hibernatedOk"));
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    busy.value = false;
+  }
 }
 
 function statusTone(status: string | null) {
@@ -505,10 +537,11 @@ function statusTone(status: string | null) {
                     <p v-if="workspace.lastError" class="mt-1 text-[12px] text-amber-200">{{ workspace.lastError }}</p>
                   </div>
                   <UiButton
+                    type="button"
                     size="sm"
                     variant="outline"
                     :disabled="busy || workspace.status === 'hibernated'"
-                    @click="hibernateWorkspace(workspace.id)"
+                    @click.prevent="hibernateWorkspace(workspace.id)"
                   >
                     {{ t("admin.hibernate") }}
                   </UiButton>

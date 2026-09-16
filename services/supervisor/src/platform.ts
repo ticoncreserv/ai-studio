@@ -913,6 +913,9 @@ export class Platform {
   }
 
   async adminHibernate(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    if (ws.status === "destroyed") throw new Error("Workspace not found");
+    if (ws.status === "hibernated") throw new Error("Workspace already hibernated");
     return this.hibernate(workspaceId);
   }
 

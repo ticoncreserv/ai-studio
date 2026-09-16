@@ -169,6 +169,7 @@ describe("platform", () => {
     expect(running.status).toBe("hibernated");
     expect(running.port).toBeUndefined();
     expect(running.vitePort).toBeUndefined();
+    await expect(p.adminHibernate(ws.id)).rejects.toThrow(/already hibernat/i);
     await expect(p.adminHibernate("missing-workspace")).rejects.toThrow(/not found/i);
   });
 
