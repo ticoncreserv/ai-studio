@@ -56,7 +56,8 @@ export default defineConfig(async (env) => {
   const mod = await import("../vite.config.ts");
   const factory = mod.default;
   const raw = typeof factory === "function" ? await factory(env) : factory;
-  const plugins = (raw.plugins ?? []).flat().filter((plugin) => plugin?.name !== "@laravel/vite-plugin-wayfinder");
+  const skip = new Set(["@laravel/vite-plugin-wayfinder", "vite-plugin-full-reload"]);
+  const plugins = (raw.plugins ?? []).flat().filter((plugin) => plugin && !skip.has(plugin.name));
   return {
     ...raw,
     plugins,
@@ -66,6 +67,19 @@ export default defineConfig(async (env) => {
       port: Number(process.env.ATELIER_VITE_PORT || 5173),
       strictPort: true,
       hmr: false,
+      watch: {
+        ...(raw.server && raw.server.watch),
+        ignored: [
+          "**/app/**",
+          "**/vendor/**",
+          "**/storage/**",
+          "**/database/**",
+          "**/tests/**",
+          "**/bootstrap/cache/**",
+          "**/.git/**",
+          "**/node_modules/**",
+        ],
+      },
     },
   };
 });
