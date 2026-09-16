@@ -40,7 +40,7 @@ sudo apt-get install -y php8.5-cli php8.5-mbstring php8.5-xml php8.5-curl php8.5
 curl -sS https://getcomposer.org/installer | php -- --install-dir="$HOME/.local/bin" --filename=composer
 ```
 
-Without PHP, preview fails on `GET /up` with a real error — not fixture HTML. Set `ATELIER_RUNTIME=docker` only when the daemon and `infra/workspace-php85.Dockerfile` image are available. Homologation databases in the cloned `.env` (`10.x`) are used as-is; `/up` does not need them, but login and screens will fail if those hosts are unreachable.
+Without PHP, preview fails on `GET /up` with a real error — not fixture HTML. After PHP and `composer install` are in place, **Resume preview** starts `php artisan serve` again (the workspace can leave `error` and go back to `running`). Set `ATELIER_RUNTIME=docker` only when the daemon and `infra/workspace-php85.Dockerfile` image are available. Homologation databases in the cloned `.env` (`10.x`) are used as-is; `/up` does not need them, but login and screens will fail if those hosts are unreachable.
 
 ```bash
 pnpm test

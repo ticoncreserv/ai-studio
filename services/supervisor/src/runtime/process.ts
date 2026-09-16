@@ -143,7 +143,12 @@ export class ProcessRuntime implements WorkspaceRuntime {
 
   async start(input: StartRequest): Promise<RuntimeHandle> {
     const existing = handles.get(input.workspaceId);
-    if (existing) return existing;
+    if (existing) {
+      const spec = defaultWorkspaceSpec();
+      const stillUp = await waitForHealth(`http://127.0.0.1:${existing.port}${spec.healthCheck.path}`, 2_500);
+      if (stillUp) return existing;
+      await existing.stop();
+    }
     assertPreviewToolchain(input.worktree);
     const port = await allocatePort();
     const env = mergeWorktreeEnv(input.worktree, {

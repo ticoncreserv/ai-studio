@@ -217,13 +217,18 @@ export class Platform {
       });
       this.store.update((d) => {
         const row = d.workspaces.find((w) => w.id === workspaceId)!;
-        row.status = transition(row.status === "hibernated" || row.status === "ready" || row.status === "error" ? row.status : "ready", "running");
+        const from =
+          row.status === "running" || row.status === "ready" || row.status === "hibernated" || row.status === "error"
+            ? row.status
+            : "ready";
+        row.status = from === "running" ? "running" : transition(from, "running");
         row.desired = "running";
         row.port = handle.port;
         row.lastError = undefined;
         row.lastActiveAt = new Date().toISOString();
       });
     } catch (error) {
+      await this.runtime.hibernate(workspaceId).catch(() => undefined);
       this.store.update((d) => {
         const row = d.workspaces.find((w) => w.id === workspaceId);
         if (!row) return;

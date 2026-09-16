@@ -3,7 +3,7 @@ import type { WorkspaceSpec } from "@atelier/contracts";
 export const defaultWorkspaceSpec = (): WorkspaceSpec => ({
   phpVersion: "8.5",
   documentRoot: "public",
-  healthCheck: { path: "/up", timeoutMs: 15_000 },
+  healthCheck: { path: "/up", timeoutMs: 30_000 },
   processes: [
     { name: "laravel", command: "php", args: ["artisan", "serve", "--host", "127.0.0.1"], optional: false, hmrOnly: false },
     { name: "queue", command: "php", args: ["artisan", "queue:work", "--tries=1", "--timeout=60"], optional: true, hmrOnly: false },

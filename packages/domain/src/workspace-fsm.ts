@@ -4,8 +4,8 @@ const transitions: Record<WorkspaceStatus, WorkspaceStatus[]> = {
   provisioning: ["ready", "error", "destroyed"],
   ready: ["running", "hibernated", "error", "destroyed"],
   running: ["ready", "hibernated", "error", "destroyed"],
-  hibernated: ["ready", "running", "destroyed"],
-  error: ["provisioning", "destroyed"],
+  hibernated: ["ready", "running", "error", "destroyed"],
+  error: ["provisioning", "ready", "running", "hibernated", "destroyed"],
   destroyed: [],
 };
 
