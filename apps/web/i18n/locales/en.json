@@ -14,19 +14,13 @@
   },
   "auth": {
     "title": "Sign in to the studio",
-    "subtitle": "GitHub is the source of access. This environment falls back to a local login until the GitHub App secrets exist.",
+    "subtitle": "Sign in with GitHub. Access follows your permission on ticoncreserv/app.",
     "github": "Continue with GitHub",
-    "dev": "Continue locally",
-    "loginLabel": "GitHub username",
-    "loginPlaceholder": "your-handle",
     "localeLabel": "Interface language",
     "english": "English",
     "portuguese": "Português (Brasil)",
     "error": "Sign-in failed. Try again.",
-    "welcomeBack": "Welcome back",
-    "or": "or",
-    "localHint": "Local login is only for this environment. Production signs in with GitHub and checks repository access.",
-    "createApp": "Create the GitHub App"
+    "welcomeBack": "Welcome back"
   },
   "setup": {
     "github": {
@@ -444,6 +438,7 @@
     "copied": "Copied.",
     "github": "GitHub App",
     "githubHint": "OAuth and the GitHub App that clones ticoncreserv/app.",
+    "githubSetup": "GitHub App setup",
     "cursorKey": "Cursor API key",
     "cursorKeyHint": "Signs every agent session. Stored in the shared environment.",
     "publicUrl": "Public URL",

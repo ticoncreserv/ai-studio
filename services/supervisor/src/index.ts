@@ -20,7 +20,7 @@ export {
   readGlobalEnv,
   readUserEnv,
 } from "./runtime/env-file.js";
-export { LocalAuthProvider, GitHubAuthProvider, createAuthProvider, signState, verifyState } from "./auth.js";
+export { GitHubAuthProvider, createAuthProvider, signState, verifyState } from "./auth.js";
 export type { AuthProvider, AuthIdentity } from "./auth.js";
 export {
   applyStoredGitHubAppCredentials,

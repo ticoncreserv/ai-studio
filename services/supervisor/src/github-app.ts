@@ -215,9 +215,7 @@ export function shouldIncludeLoopbackCallbacks(origin?: string): boolean {
 
 export function canSetupGitHubApp(): boolean {
   const flag = (process.env.ATELIER_ALLOW_GITHUB_APP_SETUP ?? "").toLowerCase();
-  if (flag === "0" || flag === "false" || flag === "off") return false;
-  if (flag === "1" || flag === "true" || flag === "on") return true;
-  return process.env.NODE_ENV !== "production";
+  return flag === "1" || flag === "true" || flag === "on";
 }
 
 export function githubAppSetupStatePath(): string {

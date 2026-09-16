@@ -14,19 +14,13 @@
   },
   "auth": {
     "title": "Entre no estúdio",
-    "subtitle": "O GitHub é a fonte de acesso. Neste ambiente o login local vale até existirem os segredos do GitHub App.",
+    "subtitle": "Entre com o GitHub. O acesso segue sua permissão em ticoncreserv/app.",
     "github": "Continuar com GitHub",
-    "dev": "Continuar localmente",
-    "loginLabel": "Usuário do GitHub",
-    "loginPlaceholder": "seu-usuario",
     "localeLabel": "Idioma da interface",
     "english": "English",
     "portuguese": "Português (Brasil)",
     "error": "Falha no acesso. Tente de novo.",
-    "welcomeBack": "Bem-vindo de volta",
-    "or": "ou",
-    "localHint": "O login local vale só neste ambiente. Em produção o GitHub autentica e verifica o acesso ao repositório.",
-    "createApp": "Criar o GitHub App"
+    "welcomeBack": "Bem-vindo de volta"
   },
   "setup": {
     "github": {
@@ -444,6 +438,7 @@
     "copied": "Copiado.",
     "github": "GitHub App",
     "githubHint": "OAuth e o GitHub App que clona o ticoncreserv/app.",
+    "githubSetup": "Configurar GitHub App",
     "cursorKey": "Chave da API do Cursor",
     "cursorKeyHint": "Assina toda sessão de agente. Guardada no ambiente compartilhado.",
     "publicUrl": "URL pública",

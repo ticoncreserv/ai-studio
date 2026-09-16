@@ -50,13 +50,13 @@ pnpm eval
 
 ## Auth
 
-Production uses a GitHub App (user-to-server token, no `Administration` scope). Access is `GET /repos/ticoncreserv/app` with that token. Without `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, local login is used.
+Studio login is always GitHub (user-to-server token, no `Administration` scope). Access is `GET /repos/ticoncreserv/app` with that token. There is no local username login.
 
 ### Create the GitHub App
 
-You need to be an owner of the `ticoncreserv` organization. The studio can create the app through GitHub’s manifest flow:
+You need to be an owner of the `ticoncreserv` organization. The login page does not link to setup. Enable the manifest flow with `ATELIER_ALLOW_GITHUB_APP_SETUP=1`, then open `/setup/github` directly (or **Admin → GitHub App setup** after an admin is signed in). Turn the flag off when credentials are stored.
 
-1. Open [http://127.0.0.1:43123/setup/github](http://127.0.0.1:43123/setup/github) while the studio is running.
+1. Open [http://127.0.0.1:43123/setup/github](http://127.0.0.1:43123/setup/github) while the studio is running and the flag is on.
 2. Click **Create GitHub App on ticoncreserv**. GitHub shows the pre-filled manifest (homepage, callback, permissions).
 3. Confirm the app. GitHub redirects the **browser** to `{origin}/api/setup/github/callback`. The studio answers that path on `127.0.0.1:43123`, `localhost:43123`, `localhost:8080`, and `http://localhost` (port 80). If a leftover GitHub URL still 404s, paste the `code` query into `/setup/github`. Atelier stores `client_id`, `client_secret`, App ID, private key, and webhook secret in `var/github-app.json` (gitignored) and loads them into the current process.
 4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`. After install or sign-in GitHub redirects to the **Callback URL**. Locally the authorize flow uses `http://localhost/api/auth/github/callback` and the loopback proxy forwards it to the listen port. In production set `ATELIER_PUBLIC_URL=https://your-domain` and register `{ATELIER_PUBLIC_URL}/api/auth/github/callback`.

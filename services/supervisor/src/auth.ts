@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { mapGitHubPermission } from "@atelier/domain";
 import type { Role } from "@atelier/contracts";
-import { githubOAuthRedirectCandidates, hasGitHubOAuth } from "./github-app.js";
+import { githubOAuthRedirectCandidates } from "./github-app.js";
 
 export interface AuthIdentity {
   login: string;
@@ -16,36 +16,10 @@ export interface AuthIdentity {
 }
 
 export interface AuthProvider {
-  id: "local" | "github";
+  id: "github";
   beginLogin(redirectTo: string, redirectUri?: string): Promise<{ url: string; state: string }>;
   completeLogin(input: Record<string, string>): Promise<AuthIdentity>;
   verifyRepoAccess(token: string, repo: string): Promise<{ role: Role | null; pending: boolean }>;
-}
-
-export class LocalAuthProvider implements AuthProvider {
-  id = "local" as const;
-
-  async beginLogin(redirectTo: string): Promise<{ url: string; state: string }> {
-    return { url: `/api/auth/dev?redirect=${encodeURIComponent(redirectTo)}`, state: "dev" };
-  }
-
-  async completeLogin(input: Record<string, string>): Promise<AuthIdentity> {
-    const login = (input.login || "studio").replace(/[^a-zA-Z0-9-]/g, "") || "studio";
-    const locale = input.locale === "en" ? "en" : "pt-BR";
-    return {
-      login,
-      name: input.name || login,
-      email: `${login}@users.noreply.github.com`,
-      locale,
-      role: "owner",
-      commitName: input.name || login,
-      commitEmail: `${login}@users.noreply.github.com`,
-    };
-  }
-
-  async verifyRepoAccess(): Promise<{ role: Role | null; pending: boolean }> {
-    return { role: "owner", pending: false };
-  }
 }
 
 export class GitHubAuthProvider implements AuthProvider {
@@ -137,10 +111,7 @@ export class GitHubAuthProvider implements AuthProvider {
 }
 
 export function createAuthProvider(): AuthProvider {
-  if (hasGitHubOAuth()) {
-    return new GitHubAuthProvider();
-  }
-  return new LocalAuthProvider();
+  return new GitHubAuthProvider();
 }
 
 async function githubJson(url: string, token: string): Promise<unknown> {

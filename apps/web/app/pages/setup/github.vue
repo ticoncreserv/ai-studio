@@ -19,6 +19,10 @@ const { data: setup, error: loadError } = await useAsyncData("github-setup", () 
   }>("/api/setup/github"),
 );
 
+if (loadError.value) {
+  throw createError({ statusCode: 404, statusMessage: "Not Found" });
+}
+
 const created = computed(() => route.query.created === "1");
 const reused = computed(() => route.query.reused === "1");
 const redeemCode = ref(route.query.error ? "" : String(route.query.code ?? ""));

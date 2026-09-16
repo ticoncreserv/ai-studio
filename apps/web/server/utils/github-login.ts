@@ -1,6 +1,7 @@
 import {
   createAuthProvider,
   githubAppAuthorizeRedirectUri,
+  hasGitHubOAuth,
   oauthRedirectUriForIncomingHost,
   saveGitHubInstallationId,
   signSession,
@@ -56,6 +57,9 @@ export function oauthRedirectUri(event: H3Event): string {
 }
 
 export async function handleGitHubOAuthStart(event: H3Event) {
+  if (!hasGitHubOAuth()) {
+    return sendRedirect(event, "/?error=github");
+  }
   await syncGitHubAppPublicUrls(undefined, fetch, requestPublicUrl(event)).catch(() => false);
   const provider = createAuthProvider();
   const { url } = await provider.beginLogin(getQuery(event).redirect?.toString() || "/", oauthRedirectUri(event));
@@ -70,7 +74,7 @@ export async function handleGitHubOAuthCallback(event: H3Event) {
   const code = String(query.code ?? "").trim();
   if (!code) {
     if (query.setup_action === "install") return sendRedirect(event, "/setup/github?installed=1");
-    return sendRedirect(event, "/setup/github?error=oauth");
+    return sendRedirect(event, "/?error=github");
   }
 
   try {
@@ -81,8 +85,11 @@ export async function handleGitHubOAuthCallback(event: H3Event) {
     });
     return sendRedirect(event, next);
   } catch {
-    const params = new URLSearchParams({ error: "oauth" });
-    if (installationId) params.set("installation_id", installationId);
-    return sendRedirect(event, `/setup/github?${params.toString()}`);
+    if (query.setup_action === "install") {
+      const params = new URLSearchParams({ error: "oauth" });
+      if (installationId) params.set("installation_id", installationId);
+      return sendRedirect(event, `/setup/github?${params.toString()}`);
+    }
+    return sendRedirect(event, "/?error=github");
   }
 }
