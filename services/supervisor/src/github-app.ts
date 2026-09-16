@@ -315,7 +315,16 @@ export function preferredOAuthRedirectUri(origin?: string): string {
 export function githubAppAuthorizeRedirectUri(origin?: string): string {
   const canonical = atelierCanonicalOrigin(origin);
   if (!isLoopbackOrigin(canonical)) return `${canonical}${GITHUB_OAUTH_CALLBACK_PATH}`;
-  return `http://localhost${GITHUB_OAUTH_CALLBACK_PATH}`;
+  // Stay on the origin the browser opened (usually ATELIER_PUBLIC_URL / :43123).
+  // Portless localhost needs the :80 proxy and is often not the registered callback.
+  if (origin && isLoopbackOrigin(origin)) {
+    try {
+      return `${normalizeOrigin(origin)}${GITHUB_OAUTH_CALLBACK_PATH}`;
+    } catch {
+      // fall through
+    }
+  }
+  return `${canonical}${GITHUB_OAUTH_CALLBACK_PATH}`;
 }
 
 export function oauthRedirectUriForIncomingHost(host?: string, proto?: string, forwardedPort?: string): string {
