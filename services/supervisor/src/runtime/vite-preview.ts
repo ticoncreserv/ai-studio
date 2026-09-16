@@ -60,7 +60,6 @@ export default defineConfig(async (env) => {
   return {
     ...raw,
     plugins,
-    base: process.env.ATELIER_VITE_BASE || "/",
     server: {
       ...raw.server,
       host: "127.0.0.1",

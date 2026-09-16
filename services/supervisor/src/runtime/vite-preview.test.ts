@@ -33,7 +33,7 @@ describe("vite preview urls", () => {
     expect(readFileSync(join(dir, "public", "hot"), "utf8")).toBe("http://127.0.0.1:43123/-/p/tok/__vite");
     const config = writeViteAtelierConfig(dir);
     expect(readFileSync(config, "utf8")).toContain("@laravel/vite-plugin-wayfinder");
-    expect(readFileSync(config, "utf8")).toContain("ATELIER_VITE_BASE");
+    expect(readFileSync(config, "utf8")).toContain("ATELIER_VITE_PORT");
     rmSync(join(dir, "public", "hot"));
     ensureViteHotFile(dir, "http://127.0.0.1:43123/-/p/tok/__vite");
     expect(readFileSync(join(dir, "public", "hot"), "utf8")).toBe("http://127.0.0.1:43123/-/p/tok/__vite");

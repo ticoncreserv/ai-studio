@@ -202,7 +202,6 @@ export class ProcessRuntime implements WorkspaceRuntime {
         ...childEnv,
         PORT: String(vitePort),
         ATELIER_VITE_PORT: String(vitePort),
-        ATELIER_VITE_BASE: `${viteOrigin}/`,
       };
       const vite = spawn(viteBin, ["--config", config, "--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"], {
         cwd: input.worktree,
