@@ -158,7 +158,7 @@
     "checkpoint": "Checkpoint",
     "conflict": "Sync conflict",
     "queue": "Follow-up queued",
-    "modeAgent": "Agent",
+    "modeAgent": "Build",
     "modePlan": "Plan",
     "modeAsk": "Ask",
     "attach": "Attach",
