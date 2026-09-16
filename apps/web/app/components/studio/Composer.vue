@@ -256,7 +256,7 @@ onBeforeUnmount(() => recognition?.stop());
 </script>
 
 <template>
-  <form class="relative shrink-0 px-2.5 pb-1.5" @submit.prevent="emit('submit')">
+  <form class="relative shrink-0 px-2.5 pb-2.5" @submit.prevent="emit('submit')">
     <div v-if="mentionsOpen && !slashOpen" class="cx-menu absolute inset-x-2.5 bottom-full z-20 mb-1 p-1 shadow-float">
       <p v-if="!mentionHits.length" class="cx-menu-row cx-muted">{{ t("chat.noMentions") }}</p>
       <button
