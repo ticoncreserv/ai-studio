@@ -4,7 +4,8 @@ import type { SessionEvent } from "@atelier/contracts";
 import { parseMcpConfig, toAcpMcpServers as entriesToAcp, type AcpMcpServer } from "@atelier/domain";
 import { AcpSession } from "../acp/session.js";
 import { eventsFromAcpUpdate, permissionFromAcp } from "../acp/events.js";
-import { cursorAgentEnv, hasCursorApiKey, resolveCursorAgentCommand } from "./env.js";
+import { cursorAgentEnv, hasCursorApiKey } from "./env.js";
+import { ensureCursorAgent } from "./ensure-agent.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
 import { PROVIDER_CATALOG } from "./types.js";
 
@@ -44,8 +45,9 @@ export class CursorProvider implements AgentProvider {
   }): Promise<ProviderRun> {
     const env = cursorAgentEnv();
     if (!hasCursorApiKey(env)) throw new Error("CURSOR_API_KEY is not set");
+    const command = await ensureCursorAgent({ env });
     const acp = new AcpSession(
-      resolveCursorAgentCommand(env),
+      command,
       cursorArgs(input.mode),
       (msg) => {
         for (const event of eventsFromAcpUpdate(msg)) input.onEvent(event);

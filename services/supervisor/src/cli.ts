@@ -1,5 +1,12 @@
 import { getPlatform } from "./platform.js";
 import { Reconciler } from "./reconciler.js";
+import { ensureCursorAgent } from "./providers/ensure-agent.js";
+
+if (!process.env.VITEST) {
+  await ensureCursorAgent().catch((error) => {
+    console.error("[atelier-supervisor] Cursor agent CLI is required for prompts", error);
+  });
+}
 
 const platform = getPlatform();
 const reconciler = new Reconciler();

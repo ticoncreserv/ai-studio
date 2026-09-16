@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startLoopbackProxy } from "./loopback-proxy.mjs";
+import { ensureCursorAgentCli } from "./ensure-cursor-agent.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = dirname(here);
@@ -19,6 +20,12 @@ const nuxtBin = [
 if (!nuxtBin) {
   console.error("[dev-web] nuxt binary not found");
   process.exit(1);
+}
+
+try {
+  ensureCursorAgentCli();
+} catch (error) {
+  console.error("[dev-web]", error instanceof Error ? error.message : error);
 }
 
 const listened = await startLoopbackProxy({ targetPort: port });

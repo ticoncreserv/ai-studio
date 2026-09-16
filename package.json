@@ -7,6 +7,7 @@
     "node": ">=24.0.0 <25"
   },
   "scripts": {
+    "predev": "node scripts/ensure-cursor-agent.mjs",
     "dev": "pnpm --filter @atelier/web dev",
     "dev:supervisor": "pnpm --filter @atelier/supervisor start",
     "build": "pnpm -r build",

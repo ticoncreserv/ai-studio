@@ -6,6 +6,7 @@ export type { BusListener } from "./bus.js";
 export { AcpSession } from "./acp/session.js";
 export { createProvider, listProviders, MockProvider, CursorProvider, PROVIDER_CATALOG } from "./providers/index.js";
 export { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
+export { ensureCursorAgent, findCursorAgentBinary } from "./providers/ensure-agent.js";
 export type { AgentProvider, ProviderRun } from "./providers/types.js";
 export { ProcessRuntime, DockerRuntime, applyHunkToWorktree } from "./runtime/process.js";
 export type { WorkspaceRuntime, RuntimeHandle } from "./runtime/process.js";
