@@ -14,13 +14,14 @@
   },
   "auth": {
     "title": "Entre no estúdio",
-    "subtitle": "Entre com o GitHub. O acesso segue sua permissão em ticoncreserv/app.",
+    "subtitle": "O acesso segue sua permissão em ticoncreserv/app.",
     "github": "Continuar com GitHub",
     "localeLabel": "Idioma da interface",
     "english": "English",
     "portuguese": "Português (Brasil)",
-    "error": "Falha no acesso. Tente de novo.",
-    "welcomeBack": "Bem-vindo de volta"
+    "error": "O acesso com GitHub falhou. Tente de novo.",
+    "welcomeBack": "Bem-vindo de volta",
+    "sessionReady": "Seu workspace está pronto."
   },
   "setup": {
     "github": {
