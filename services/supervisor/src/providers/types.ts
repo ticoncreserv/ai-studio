@@ -6,6 +6,8 @@ export interface ProviderRun {
   prompt: (blocks: AcpPromptBlock[]) => Promise<void>;
   cancel: () => Promise<void>;
   stop: () => void;
+  acpSessionId?: string;
+  respondPermission?: (rpcId: number, outcome: "allow-once" | "allow-always" | "reject-once") => void;
 }
 
 export interface AgentProvider {
@@ -14,6 +16,9 @@ export interface AgentProvider {
     cwd: string;
     onEvent: (event: SessionEvent) => void;
     resumeSessionId?: string;
+    mode?: "agent" | "plan" | "ask";
+    mcpServers?: Array<{ name: string; command: string; args?: string[] }>;
+    onPermission?: (event: SessionEvent, rpcId: number) => void;
   }): Promise<ProviderRun>;
 }
 

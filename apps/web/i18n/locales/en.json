@@ -45,7 +45,7 @@
       "permissions": "Permissions: contents read and write, metadata read, pull requests read and write, email addresses read. No Administration.",
       "oauthHint": "A GitHub OAuth App also covers login. Use the same callback URL and set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.",
       "cursorTitle": "Cursor ACP is a separate credential",
-      "cursorHint": "The GitHub App does not authenticate Cursor. Set CURSOR_API_KEY in .env so prompts run through agent acp. Origin-scoped session tokens are stripped before the agent starts.",
+      "cursorHint": "GitHub App credentials and CURSOR_API_KEY are required. The studio clones ticoncreserv/app and runs prompts through Cursor ACP. MockProvider is tests-only.",
       "blocked": "GitHub App setup is disabled in this environment.",
       "error": "GitHub did not return app credentials. Try again.",
       "used": "That callback code is single-use. If the app was already created, the secrets are on this machine — install it next.",
@@ -92,7 +92,7 @@
   },
   "workspace": {
     "warming": "Warming the workspace to ready…",
-    "ready": "Workspace ready. Opening the preview lights php-fpm and Caddy.",
+    "ready": "Workspace ready. Opening the preview starts Laravel on this branch.",
     "hibernated": "Workspace hibernated. Resume to start preview processes.",
     "error": "Workspace failed to start.",
     "branch": "Branch",
@@ -121,7 +121,7 @@
     "envIsolation": "Isolation env",
     "migrationJournal": "Migration journal",
     "noMigrations": "No migrations have been applied from this studio yet.",
-    "resumeHint": "Resume starts php-fpm and Caddy on this branch.",
+    "resumeHint": "Resume starts php artisan serve and Vite on this branch.",
     "people": "People in this workspace",
     "loading": "Opening the studio…",
     "loadError": "The workspace could not be loaded.",
@@ -165,6 +165,7 @@
     "thinking": "The agent is working…",
     "usingCursor": "Cursor",
     "usingMock": "Mock",
+    "cursorRequired": "CURSOR_API_KEY is required. Prompts will not run until it is set in .env.",
     "promptFailed": "The prompt did not complete. Try again.",
     "modeHintAgent": "Edit the worktree and run tools.",
     "modeHintPlan": "Propose a plan before changing files.",
@@ -218,7 +219,8 @@
     "inspectHint": "Click the preview to attach a note to the composer.",
     "pinAdded": "Comment added to the composer",
     "debugTitle": "Preview diagnostics",
-    "debugFix": "Ask the agent to fix N+1 and slow queries",
+    "debugEmpty": "No preview metrics yet. Laravel can postMessage atelier-preview-metrics when it has numbers.",
+    "debugFix": "Ask the agent to fix the last preview error",
     "longQueryTitle": "ERP query in progress",
     "fit": "Fit"
   },
@@ -284,7 +286,8 @@
     "kindApp": "Portal",
     "kindErp": "ERP",
     "readOnly": "Read-only",
-    "migrateForward": "Forward migrate"
+    "migrateForward": "Forward migrate",
+    "empty": "No database connections in this worktree .env yet."
   },
   "flags": {
     "publish": "Publish",

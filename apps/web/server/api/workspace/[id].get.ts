@@ -1,15 +1,17 @@
 import { foldEvents } from "@atelier/domain";
-import { platform, userFromEvent } from "../../utils/platform";
+import { requireWorkspaceAccess } from "../../utils/authz";
+import { platform } from "../../utils/platform";
 
-export default defineEventHandler((event) => {
-  const user = userFromEvent(event);
-  if (!user) throw createError({ statusCode: 401 });
+export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, "id")!;
-  const workspace = platform().requireWorkspace(id);
+  const { user, workspace } = requireWorkspaceAccess(event, id, "view");
   const sessions = platform().sessions(id, getQuery(event).q?.toString());
   const sessionId = getQuery(event).session?.toString() ?? sessions[0]?.id;
   const session = sessions.find((s) => s.id === sessionId) ?? sessions[0];
   const db = platform().store.read();
+  const quota = await platform().workspaceQuota(id);
+  const mentions = await platform().mentionIndex(id);
+  const canEditWorkspace = platform().canAccessWorkspace(user, workspace, "edit");
   return {
     user,
     workspace,
@@ -18,9 +20,9 @@ export default defineEventHandler((event) => {
     snapshot: session ? foldEvents(session.events) : null,
     events: session?.events ?? [],
     flags: platform().flags(),
-    mentions: platform().mentionIndex(),
+    mentions,
     recipes: db.recipes,
-    connections: db.connections,
+    connections: platform().workspaceConnections(id),
     rules: platform().getRules(),
     providers: platform().listProviders(),
     preferredProvider: platform().preferredProvider(),
@@ -28,8 +30,10 @@ export default defineEventHandler((event) => {
     lock: db.runLock[id] ?? null,
     env: platform().envPreview(id),
     divergence: platform().workspaceDivergence(id),
-    quota: { usedMb: Math.round((workspace.bytes ?? 386 * 1024 * 1024) / (1024 * 1024)), limitMb: 2048 },
+    quota,
     migrationLog: db.migrationLog,
     previewPath: `/-/p/${workspace.previewToken}/`,
+    canEdit: canEditWorkspace,
+    agent: platform().agentStatus(),
   };
 });

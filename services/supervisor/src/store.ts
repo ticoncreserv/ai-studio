@@ -36,6 +36,7 @@ export interface SessionRecord {
   events: SessionEvent[];
   provider: string;
   createdAt: string;
+  acpSessionId?: string;
 }
 
 export interface InviteRecord {
@@ -107,13 +108,7 @@ const emptyDb = (): DbShape => ({
   sessions: [],
   invites: [],
   shares: [],
-  connections: [
-    { id: "portal", name: "Portal (homologation)", kind: "app", env: "homologation", driver: "mariadb", host: "10.0.128.112", database: "PortalCliente" },
-    { id: "sqlsrv", name: "sqlsrv", kind: "erp", env: "homologation", driver: "sqlsrv", host: "10.10.0.211", database: "Protheus" },
-    { id: "beton-test", name: "betonTeste", kind: "erp", env: "homologation", driver: "sqlsrv", host: "10.10.0.211", database: "betonMIXProducao_Portal" },
-    { id: "beton-interface", name: "betonInterfaceTeste", kind: "erp", env: "homologation", driver: "sqlsrv", host: "10.10.0.212", database: "betonInterface" },
-    { id: "despacho", name: "betonDESPACHO", kind: "erp", env: "homologation", driver: "sqlsrv", host: "10.10.0.11", database: "Despacho" },
-  ],
+  connections: [],
   recipes: [
     {
       id: "inertia-crud",
@@ -173,7 +168,7 @@ export class JsonStore {
     return {
       ...base,
       ...raw,
-      connections: mergeById(raw.connections, base.connections),
+      connections: raw.connections ?? [],
       recipes: mergeById(raw.recipes, base.recipes),
       rules: mergeById(raw.rules, base.rules),
       flags: { ...base.flags, ...raw.flags },

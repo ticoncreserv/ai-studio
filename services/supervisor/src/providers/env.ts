@@ -17,7 +17,8 @@ export function hasCursorApiKey(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 export function preferredAgentProvider(env: NodeJS.ProcessEnv = process.env): ProviderId {
-  return hasCursorApiKey(env) ? "cursor" : "mock";
+  if (hasCursorApiKey(env)) return "cursor";
+  return env.VITEST ? "mock" : "cursor";
 }
 
 export function resolveSessionProvider(provider: string | undefined, env: NodeJS.ProcessEnv = process.env): ProviderId {

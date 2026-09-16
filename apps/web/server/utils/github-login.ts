@@ -32,6 +32,8 @@ export async function finishGitHubLogin(
       row.accessPending = identity.accessPending;
     }
   });
+  const fresh = platform().store.read().users.find((row) => row.id === user.id) ?? user;
+  platform().syncMembership(fresh);
   setCookie(event, "atelier_session", signSession(user.id), { httpOnly: true, sameSite: "lax", path: "/" });
   return { user, identity, next: identity.accessPending ? "/pending" : "/" };
 }

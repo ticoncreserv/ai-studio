@@ -1,8 +1,9 @@
-import { platform, userFromEvent } from "../../../utils/platform";
+import { requireWorkspaceAccess } from "../../../utils/authz";
+import { platform } from "../../../utils/platform";
 
 export default defineEventHandler(async (event) => {
-  const user = userFromEvent(event);
-  if (!user) throw createError({ statusCode: 401 });
-  await platform().hibernate(getRouterParam(event, "id")!);
+  const id = getRouterParam(event, "id")!;
+  requireWorkspaceAccess(event, id, "edit");
+  await platform().hibernate(id);
   return { ok: true };
 });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Viewport } from "@atelier/contracts";
-import type { PreviewTool } from "~/types/studio";
+import type { PreviewDebug, PreviewTool } from "~/types/studio";
 import {
   ExternalLink,
   MessageCircle,
@@ -21,6 +21,8 @@ const props = defineProps<{
   previewKey: number;
   toolMode: PreviewTool;
   debugOpen: boolean;
+  debug?: PreviewDebug | null;
+  lastError?: string;
 }>();
 
 const emit = defineEmits<{
@@ -116,7 +118,7 @@ function onOverlayClick(e: MouseEvent) {
         <p class="font-display text-3xl text-ink-950">
           {{ status === "hibernated" ? t("preview.hibernated") : status === "error" ? t("preview.error") : t("preview.booting") }}
         </p>
-        <p class="mt-2 text-sm text-ink-500">{{ t("workspace.resumeHint") }}</p>
+        <p class="mt-2 text-sm text-ink-500">{{ lastError || t("workspace.resumeHint") }}</p>
         <UiButton class="mt-4" size="sm" @click="emit('resume')">{{ t("workspace.resume") }}</UiButton>
       </div>
 
@@ -137,18 +139,20 @@ function onOverlayClick(e: MouseEvent) {
         class="absolute right-4 top-4 z-20 rounded-[9px] border border-line bg-black/45 px-3 py-1.5 text-[11px] font-medium text-ink-800 backdrop-blur-xl"
         @click="emit('update:debugOpen', !debugOpen)"
       >
-        {{ t("preview.debugTime", { ms: 42 }) }} · {{ t("preview.debugQueries", { count: 3 }) }}
+        {{ debug?.timeMs != null ? t("preview.debugTime", { ms: debug.timeMs }) : t("preview.debugTitle") }}
+        <template v-if="debug?.queries != null"> · {{ t("preview.debugQueries", { count: debug.queries }) }}</template>
       </button>
 
       <div v-if="debugOpen" class="glass-window absolute right-4 top-14 z-20 w-64 p-3">
         <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("preview.debugTitle") }}</p>
-        <ul class="mt-2 space-y-1 text-[12px] text-ink-600">
-          <li>{{ t("preview.debugTime", { ms: 42 }) }}</li>
-          <li>{{ t("preview.debugQueries", { count: 3 }) }}</li>
-          <li>{{ t("preview.debugMemory", { mb: 28 }) }}</li>
-          <li class="text-amber-200">{{ t("preview.nPlusOne") }}</li>
+        <ul v-if="debug && (debug.timeMs != null || debug.queries != null || debug.memoryMb != null)" class="mt-2 space-y-1 text-[12px] text-ink-600">
+          <li v-if="debug.timeMs != null">{{ t("preview.debugTime", { ms: debug.timeMs }) }}</li>
+          <li v-if="debug.queries != null">{{ t("preview.debugQueries", { count: debug.queries }) }}</li>
+          <li v-if="debug.memoryMb != null">{{ t("preview.debugMemory", { mb: debug.memoryMb }) }}</li>
+          <li v-if="debug.nPlusOne" class="text-amber-200">{{ t("preview.nPlusOne") }}</li>
         </ul>
-        <UiButton class="mt-3 w-full" size="sm" @click="emit('fixDebug')">{{ t("preview.debugFix") }}</UiButton>
+        <p v-else class="mt-2 text-[12px] text-ink-500">{{ t("preview.debugEmpty") }}</p>
+        <UiButton v-if="debug?.nPlusOne || lastError" class="mt-3 w-full" size="sm" @click="emit('fixDebug')">{{ t("preview.debugFix") }}</UiButton>
       </div>
     </div>
   </section>

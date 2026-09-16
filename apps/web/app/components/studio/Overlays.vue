@@ -122,6 +122,7 @@ function submitQuestion() {
   <UiSheet :open="sheet === 'connections'" :title="t('connections.title')" @close="emit('update:sheet', null)">
     <p class="text-sm text-ink-500">{{ t("connections.erpReadOnly") }}</p>
     <p class="mt-1 text-sm text-ink-500">{{ t("connections.appMigrate") }}</p>
+    <p v-if="!data.connections.length" class="mt-3 text-sm text-ink-400">{{ t("connections.empty") }}</p>
     <article v-for="conn in data.connections" :key="conn.id" class="mt-3 rounded-2xl border border-line bg-canvas/60 p-3">
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-sm font-semibold">{{ conn.name }}</h3>

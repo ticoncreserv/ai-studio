@@ -20,3 +20,15 @@ export async function installationToken(appId: string, privateKey: string, insta
   if (!body.token) throw new Error("installation token failed");
   return body.token;
 }
+
+export async function resolveInstallationToken(input: {
+  appId?: string;
+  privateKey?: string;
+  installationId?: string;
+}): Promise<string | null> {
+  const appId = input.appId || process.env.GITHUB_APP_ID;
+  const privateKey = (input.privateKey || process.env.GITHUB_APP_PRIVATE_KEY || "").replace(/\\n/g, "\n");
+  const installationId = input.installationId || process.env.GITHUB_INSTALLATION_ID;
+  if (!appId || !privateKey || !installationId) return null;
+  return installationToken(appId, privateKey, installationId);
+}

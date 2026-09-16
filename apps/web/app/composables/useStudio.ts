@@ -1,6 +1,6 @@
 import { foldEvents } from "@atelier/domain";
 import type { AgentMode, ClientCommand, SessionEvent, Viewport } from "@atelier/contracts";
-import type { PreviewTool, StudioAttachment, StudioDialog, StudioPayload, StudioSheet } from "~/types/studio";
+import type { PreviewDebug, PreviewTool, StudioAttachment, StudioDialog, StudioPayload, StudioSheet } from "~/types/studio";
 
 export function useStudio() {
   const { t, locale, setLocale } = useI18n();
@@ -30,6 +30,7 @@ export function useStudio() {
   const attachments = ref<StudioAttachment[]>([]);
   const mobileTab = ref<"chat" | "preview">("chat");
   const debugOpen = ref(false);
+  const previewDebug = ref<PreviewDebug | null>(null);
   const questionAnswers = ref<Record<string, string[]>>({});
 
   const events = computed<SessionEvent[]>(() => {
@@ -45,6 +46,7 @@ export function useStudio() {
   const pendingPlan = computed(() => events.value.find((e) => e.type === "plan" && e.outcome === "pending"));
   const pendingQuestion = computed(() => events.value.find((e) => e.type === "question" && e.outcome === "pending"));
   const pendingPermission = computed(() => events.value.find((e) => e.type === "permission" && e.outcome === "pending"));
+  const lastRuntimeError = computed(() => [...events.value].reverse().find((e) => e.type === "runtime_error"));
 
   async function refresh() {
     loadError.value = false;
@@ -52,9 +54,16 @@ export function useStudio() {
       data.value = await $fetch<StudioPayload>(`/api/workspace/${workspaceId.value}`, {
         query: { q: query.value || undefined, session: data.value?.session?.id },
       });
+      hydratePresence();
     } catch {
       loadError.value = true;
     }
+  }
+
+  function hydratePresence() {
+    if (!data.value) return;
+    const mine = data.value.presence.find((row) => row.userId === data.value?.user.id);
+    spectator.value = !data.value.canEdit || mine?.mode === "spectator";
   }
 
   let socket: WebSocket | null = null;
@@ -71,6 +80,9 @@ export function useStudio() {
         return;
       }
       streamingText.value = "";
+      if (event.type === "diff" || event.type === "checkpoint" || event.type === "runtime_error") {
+        previewKey.value += 1;
+      }
       void refresh();
     };
   }
@@ -99,7 +111,24 @@ export function useStudio() {
   }
 
   function onPreviewMessage(e: MessageEvent) {
-    const payload = e.data as { type?: string; source?: string; message?: string };
+    const payload = e.data as {
+      type?: string;
+      source?: string;
+      message?: string;
+      timeMs?: number;
+      queries?: number;
+      memoryMb?: number;
+      nPlusOne?: boolean;
+    };
+    if (payload?.type === "atelier-preview-metrics") {
+      previewDebug.value = {
+        timeMs: payload.timeMs,
+        queries: payload.queries,
+        memoryMb: payload.memoryMb,
+        nPlusOne: payload.nPlusOne,
+      };
+      return;
+    }
     if (payload?.type !== "atelier-preview-error") return;
     void $fetch("/api/errors", {
       method: "POST",
@@ -114,6 +143,13 @@ export function useStudio() {
 
   onMounted(async () => {
     await refresh();
+    if (data.value && data.value.workspace.status !== "running") {
+      try {
+        await resume();
+      } catch {
+        /* preview error is stored on the workspace */
+      }
+    }
     connectSocket();
     window.addEventListener("keydown", onKey);
     window.addEventListener("message", onPreviewMessage);
@@ -136,8 +172,11 @@ export function useStudio() {
     try {
       await $fetch(`/api/sessions/${data.value.session.id}/command`, {
         method: "POST",
-        body: { command, spectator: spectator.value },
+        body: { command },
       });
+      if (command.type === "prompt" || command.type === "accept_hunk" || command.type === "reject_hunk" || command.type === "restore_checkpoint" || command.type === "sync_base") {
+        previewKey.value += 1;
+      }
       await refresh();
     } catch {
       flash(t("chat.promptFailed"));
@@ -204,9 +243,9 @@ export function useStudio() {
   async function newSession() {
     const created = await $fetch<{ id: string }>("/api/sessions", {
       method: "POST",
-      body: { workspaceId: workspaceId.value, provider: data.value?.preferredProvider ?? data.value?.session?.provider ?? "mock" },
+      body: { workspaceId: workspaceId.value, provider: data.value?.preferredProvider ?? data.value?.session?.provider ?? "cursor" },
     });
-    if (data.value) data.value.session = { ...(data.value.session as StudioPayload["session"]), ...created, title: "", events: [], provider: data.value.preferredProvider ?? data.value.session?.provider ?? "mock", createdAt: new Date().toISOString() };
+    if (data.value) data.value.session = { ...(data.value.session as StudioPayload["session"]), ...created, title: "", events: [], provider: data.value.preferredProvider ?? data.value.session?.provider ?? "cursor", createdAt: new Date().toISOString() };
     await refresh();
   }
 
@@ -362,6 +401,7 @@ export function useStudio() {
     attachments,
     mobileTab,
     debugOpen,
+    previewDebug,
     questionAnswers,
     events,
     snapshot,
@@ -369,6 +409,7 @@ export function useStudio() {
     pendingPlan,
     pendingQuestion,
     pendingPermission,
+    lastRuntimeError,
     commands,
     filteredCommands,
     mentionHits,

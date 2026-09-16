@@ -1,11 +1,14 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer } from "node:http";
-import { mkdirSync, existsSync, cpSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { previewServerScript, repoRoot } from "../paths.js";
-import { isolationEnv, PREVIEW_SIDE_EFFECTS } from "./spec.js";
+import { repoRoot } from "../paths.js";
+import { isolationEnv, PREVIEW_SIDE_EFFECTS, defaultWorkspaceSpec } from "./spec.js";
+import { allocatePort } from "./ports.js";
+import { mergeWorktreeEnv } from "./env-file.js";
+import { provisionWorktree, type CloneInput } from "./clone.js";
+import { waitForHealth } from "./health.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,124 +21,153 @@ export interface RuntimeHandle {
   exec: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string; code: number }>;
 }
 
+export interface ProvisionRequest {
+  workspaceId: string;
+  branch: string;
+  user: { name: string; email: string };
+  sourceDir?: string;
+  repo?: string;
+  token?: string;
+  force?: boolean;
+}
+
+export interface StartRequest {
+  workspaceId: string;
+  worktree: string;
+  publicUrl: string;
+  hmr?: boolean;
+}
+
 export interface WorkspaceRuntime {
-  provision(input: {
-    workspaceId: string;
-    branch: string;
-    sourceDir: string;
-    user: { name: string; email: string };
-  }): Promise<{ worktree: string }>;
-  start(input: { workspaceId: string; worktree: string; hmr?: boolean }): Promise<RuntimeHandle>;
+  provision(input: ProvisionRequest): Promise<{ worktree: string }>;
+  start(input: StartRequest): Promise<RuntimeHandle>;
   hibernate(workspaceId: string): Promise<void>;
   destroy(workspaceId: string): Promise<void>;
   previewUrl(workspaceId: string): string | undefined;
+  isRunning(workspaceId: string): boolean;
 }
 
 const handles = new Map<string, RuntimeHandle>();
-let nextPort = 45400;
 
-function gitEnv(user: { name: string; email: string }): string[] {
-  return [
-    "-c",
-    `user.name=${user.name}`,
-    "-c",
-    `user.email=${user.email}`,
-    "-c",
-    "commit.gpgsign=false",
-  ];
+function writeGitignore(worktree: string): void {
+  const file = join(worktree, ".gitignore");
+  const extra = ["", ".env", ".cursor/", "var/uploads/", ""].join("\n");
+  if (!existsSync(file)) {
+    writeFileSync(file, extra.trimStart());
+    return;
+  }
+  const current = readFileSync(file, "utf8");
+  const missing = [".env", ".cursor/", "var/uploads/"].filter((line) => !current.split("\n").includes(line));
+  if (missing.length) writeFileSync(file, `${current.trimEnd()}\n${missing.join("\n")}\n`);
 }
 
-async function git(cwd: string, user: { name: string; email: string }, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", [...gitEnv(user), ...args], { cwd });
-  return stdout.trim();
+function writeMcpConfig(worktree: string): void {
+  mkdirSync(join(worktree, ".cursor"), { recursive: true });
+  writeFileSync(
+    join(worktree, ".cursor/mcp.json"),
+    JSON.stringify(
+      {
+        mcpServers: {
+          "laravel-boost": { command: "php", args: ["artisan", "boost:mcp"] },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+async function installDependencies(worktree: string): Promise<void> {
+  if (existsSync(join(worktree, "composer.json")) && !existsSync(join(worktree, "vendor"))) {
+    await execFileAsync("composer", ["install", "--no-interaction", "--prefer-dist"], {
+      cwd: worktree,
+      timeout: 180_000,
+    }).catch(() => undefined);
+  }
+  if (existsSync(join(worktree, "package.json")) && !existsSync(join(worktree, "node_modules"))) {
+    await execFileAsync("npm", ["install"], { cwd: worktree, timeout: 180_000 }).catch(() => undefined);
+  }
+  if (existsSync(join(worktree, "package.json")) && !existsSync(join(worktree, "public", "build"))) {
+    await execFileAsync("npm", ["run", "build"], { cwd: worktree, timeout: 180_000 }).catch(() => undefined);
+  }
 }
 
 export class ProcessRuntime implements WorkspaceRuntime {
-  constructor(private readonly root = join(repoRoot(), "var", "workspaces")) {
+  constructor(private readonly root = process.env.ATELIER_WORKTREE_ROOT || join(repoRoot(), "var", "workspaces")) {
     mkdirSync(this.root, { recursive: true });
   }
 
-  async provision(input: {
-    workspaceId: string;
-    branch: string;
-    sourceDir: string;
-    user: { name: string; email: string };
-  }): Promise<{ worktree: string }> {
+  async provision(input: ProvisionRequest): Promise<{ worktree: string }> {
     const worktree = join(this.root, input.workspaceId);
-    if (existsSync(worktree)) return { worktree };
-    mkdirSync(worktree, { recursive: true });
-    const vendorSrc = join(input.sourceDir, "vendor");
-    const modulesSrc = join(input.sourceDir, "node_modules");
-    cpSync(input.sourceDir, worktree, {
-      recursive: true,
-      dereference: false,
-      filter: (src) => !src.includes("/.git/") && !src.endsWith("/vendor") && !src.endsWith("/node_modules"),
+    const clone: CloneInput = {
+      worktree,
+      branch: input.branch,
+      user: input.user,
+      sourceDir: input.sourceDir,
+      repo: input.repo,
+      token: input.token,
+      force: input.force,
+    };
+    await provisionWorktree(clone);
+    writeGitignore(worktree);
+    writeMcpConfig(worktree);
+    mergeWorktreeEnv(worktree, {
+      ...PREVIEW_SIDE_EFFECTS,
+      ...isolationEnv(input.workspaceId, "http://127.0.0.1"),
     });
-    if (existsSync(vendorSrc)) {
-      try {
-        await execFileAsync("cp", ["-al", vendorSrc, join(worktree, "vendor")]);
-      } catch {
-        cpSync(vendorSrc, join(worktree, "vendor"), { recursive: true });
-      }
-    }
-    if (existsSync(modulesSrc)) {
-      try {
-        await execFileAsync("cp", ["-al", modulesSrc, join(worktree, "node_modules")]);
-      } catch {
-        cpSync(modulesSrc, join(worktree, "node_modules"), { recursive: true });
-      }
-    }
-    if (!existsSync(join(worktree, ".git"))) {
-      await git(worktree, input.user, ["init"]);
-      await git(worktree, input.user, ["add", "-A"]);
-      await git(worktree, input.user, ["commit", "-m", "chore: provision workspace", "--allow-empty"]);
-      await git(worktree, input.user, ["checkout", "-B", input.branch]);
-    }
-    mkdirSync(join(worktree, ".cursor"), { recursive: true });
-    writeFileSync(
-      join(worktree, ".cursor/mcp.json"),
-      JSON.stringify(
-        {
-          mcpServers: {
-            "laravel-boost": { command: "php", args: ["artisan", "boost:mcp"] },
-            "preview-inspector": { command: "node", args: ["scripts/preview-inspector.mjs"] },
-          },
-        },
-        null,
-        2,
-      ),
-    );
+    await installDependencies(worktree);
     return { worktree };
   }
 
-  async start(input: { workspaceId: string; worktree: string; hmr?: boolean }): Promise<RuntimeHandle> {
+  async start(input: StartRequest): Promise<RuntimeHandle> {
     const existing = handles.get(input.workspaceId);
     if (existing) return existing;
-    const port = nextPort++;
-    const previewUrl = `http://127.0.0.1:${port}`;
-    const env = {
-      ...process.env,
+    const port = await allocatePort();
+    const env = mergeWorktreeEnv(input.worktree, {
       ...PREVIEW_SIDE_EFFECTS,
-      ...isolationEnv(input.workspaceId, previewUrl),
+      ...isolationEnv(input.workspaceId, input.publicUrl),
+      APP_URL: input.publicUrl,
       PORT: String(port),
-      WORKTREE: input.worktree,
-    };
-    const child = startPreviewServer(input.worktree, port, env);
+    });
+    const childEnv = { ...process.env, ...env, PORT: String(port), APP_URL: input.publicUrl };
+    const children: ChildProcess[] = [];
+    const artisan = join(input.worktree, "artisan");
+    if (existsSync(artisan)) {
+      children.push(
+        spawn("php", ["artisan", "serve", "--host", "127.0.0.1", "--port", String(port)], {
+          cwd: input.worktree,
+          env: childEnv,
+          stdio: "pipe",
+        }),
+      );
+    } else {
+      throw new Error("This workspace is not a Laravel app (artisan missing). Reprovision from ticoncreserv/app.");
+    }
+    const spec = defaultWorkspaceSpec();
+    if (input.hmr && existsSync(join(input.worktree, "package.json"))) {
+      const vite = spec.processes.find((p) => p.name === "vite");
+      if (vite) {
+        children.push(spawn(vite.command, vite.args, { cwd: input.worktree, env: childEnv, stdio: "pipe" }));
+      }
+    }
+    if (process.env.ATELIER_PREVIEW_QUEUE === "1") {
+      const queue = spec.processes.find((p) => p.name === "queue");
+      if (queue) {
+        children.push(spawn(queue.command, queue.args, { cwd: input.worktree, env: childEnv, stdio: "pipe" }));
+      }
+    }
     const handle: RuntimeHandle = {
       workspaceId: input.workspaceId,
       worktree: input.worktree,
       port,
-      previewUrl,
+      previewUrl: `http://127.0.0.1:${port}`,
       stop: async () => {
-        child.kill();
+        for (const child of children) child.kill();
         handles.delete(input.workspaceId);
       },
       exec: async (command, args) => {
         try {
-          const { stdout, stderr } = await execFileAsync(command, args, {
-            cwd: input.worktree,
-            env,
-          });
+          const { stdout, stderr } = await execFileAsync(command, args, { cwd: input.worktree, env: childEnv });
           return { stdout, stderr, code: 0 };
         } catch (error) {
           const err = error as { stdout?: string; stderr?: string; code?: number };
@@ -144,6 +176,11 @@ export class ProcessRuntime implements WorkspaceRuntime {
       },
     };
     handles.set(input.workspaceId, handle);
+    const healthy = await waitForHealth(`http://127.0.0.1:${port}${spec.healthCheck.path}`, spec.healthCheck.timeoutMs);
+    if (!healthy) {
+      await handle.stop();
+      throw new Error(`Preview did not become healthy on /up for workspace ${input.workspaceId}`);
+    }
     return handle;
   }
 
@@ -160,25 +197,21 @@ export class ProcessRuntime implements WorkspaceRuntime {
   previewUrl(workspaceId: string): string | undefined {
     return handles.get(workspaceId)?.previewUrl;
   }
+
+  isRunning(workspaceId: string): boolean {
+    return handles.has(workspaceId);
+  }
 }
 
 export class DockerRuntime extends ProcessRuntime {
-  // Same contract as ProcessRuntime. Production image is infra/workspace-php85.Dockerfile.
-}
-
-function startPreviewServer(worktree: string, port: number, env: NodeJS.ProcessEnv): ChildProcess {
-  const script = previewServerScript();
-  if (existsSync(script)) {
-    return spawn(process.execPath, [script], { env: { ...env, PORT: String(port), WORKTREE: worktree }, stdio: "pipe" });
+  override async start(input: StartRequest): Promise<RuntimeHandle> {
+    try {
+      await execFileAsync("docker", ["info"], { timeout: 5000 });
+    } catch {
+      throw new Error("ATELIER_RUNTIME=docker but docker is not available on this host");
+    }
+    return super.start(input);
   }
-  const server = createServer((req, res) => {
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.end(`<html><body><p>Preview unavailable for ${worktree}</p><p>${req.url}</p></body></html>`);
-  });
-  server.listen(port);
-  const dummy = spawn(process.execPath, ["-e", "setInterval(()=>{}, 1<<30)"], { stdio: "ignore" });
-  dummy.on("exit", () => server.close());
-  return dummy;
 }
 
 export function applyHunkToWorktree(worktree: string, filePath: string, contents: string): void {

@@ -1,11 +1,14 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
 import type { ClientCommand, ProviderId, Role, SessionEvent, Viewport } from "@atelier/contracts";
 import {
   applyFileDecision,
   applyHunkDecision,
   budgetExceeded,
+  canEdit,
+  canInvite,
+  canSpectate,
   compileRules,
   defaultBudget,
   defaultDiskPolicy,
@@ -23,17 +26,27 @@ import {
 } from "@atelier/domain";
 import { bus } from "./bus.js";
 import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
-import { preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
+import { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
 import { createProvider, listProviders } from "./providers/index.js";
 import { fixtureAppDir, repoRoot } from "./paths.js";
 import { applyHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
 import { worktreeDivergence } from "./migrations.js";
 import { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
+import { atelierPublicUrl, githubAppRepo, loadGitHubAppCredentials } from "./github-app.js";
+import { resolveInstallationToken } from "./github.js";
+import { isForeignWorktree } from "./runtime/clone.js";
+import { connectionsFromWorktree, mergeWorktreeEnv, readEnvFile, redactEnv } from "./runtime/env-file.js";
+import { mentionIndexFromWorktree, worktreeBytes } from "./runtime/worktree-meta.js";
+import { commitWorktree, restoreCheckpoint, restoreFile, syncBaseBranch, worktreeDiffEvents } from "./runtime/worktree-diff.js";
+import type { AcpPromptBlock } from "./acp/session.js";
+import type { ProviderRun } from "./providers/types.js";
 
 export class Platform {
   readonly store: JsonStore;
   readonly runtime: WorkspaceRuntime;
-  private readonly runs = new Map<string, { cancel: () => Promise<void>; stop: () => void }>();
+  private readonly runs = new Map<string, ProviderRun>();
+  private readonly runModes = new Map<string, "agent" | "plan" | "ask">();
+  private readonly pendingPermissions = new Map<string, { rpcId: number; respond: ProviderRun["respondPermission"] }>();
 
   constructor(store = new JsonStore(join(repoRoot(), "var", "platform.json"))) {
     this.store = store;
@@ -45,7 +58,21 @@ export class Platform {
   }
 
   listProviders() {
-    return listProviders().filter((p) => p.id === "mock" || p.id === "cursor" || this.flags().multiProvider);
+    return listProviders().filter((p) => p.id === "cursor" || (p.id === "mock" && process.env.VITEST) || this.flags().multiProvider);
+  }
+
+  roleFor(user: UserRecord, projectId = "concreserv"): Role {
+    return this.store.read().members.find((m) => m.userId === user.id && m.projectId === projectId)?.role ?? user.role;
+  }
+
+  canAccessWorkspace(user: UserRecord, workspace: WorkspaceRecord, mode: "view" | "edit"): boolean {
+    if (workspace.userId === user.id) return true;
+    const role = this.roleFor(user, workspace.projectId);
+    return mode === "view" ? canSpectate(role) : canEdit(role);
+  }
+
+  publicPreviewUrl(token: string): string {
+    return `${atelierPublicUrl().replace(/\/$/, "")}/-/p/${token}`;
   }
 
   async loginDev(login: string, locale: "en" | "pt-BR" = "pt-BR"): Promise<UserRecord> {
@@ -62,11 +89,23 @@ export class Platform {
       };
       this.store.update((d) => {
         d.users.push(user!);
-        d.members.push({ userId: user!.id, projectId: "concreserv", role: "owner" });
+        d.members.push({ userId: user!.id, projectId: "concreserv", role: user!.role });
       });
+    } else {
+      this.syncMembership(user);
     }
     await this.warmForUser(user);
     return user;
+  }
+
+  syncMembership(user: UserRecord): void {
+    this.store.update((d) => {
+      const row = d.users.find((u) => u.id === user.id);
+      const role = row?.role ?? user.role;
+      const member = d.members.find((m) => m.userId === user.id && m.projectId === "concreserv");
+      if (member) member.role = role;
+      else d.members.push({ userId: user.id, projectId: "concreserv", role });
+    });
   }
 
   authorizeGitHub(permissions: Parameters<typeof mapGitHubPermission>[0]): Role | null {
@@ -76,17 +115,41 @@ export class Platform {
   async ensureWorkspace(user: UserRecord): Promise<WorkspaceRecord> {
     const db = this.store.read();
     let ws = db.workspaces.find((w) => w.userId === user.id && w.status !== "destroyed");
+    const repo = githubAppRepo();
+    if (ws && (await isForeignWorktree(ws.worktree, repo))) {
+      await this.runtime.destroy(ws.id);
+      this.store.update((d) => {
+        const row = d.workspaces.find((w) => w.id === ws!.id);
+        if (row) {
+          row.status = "destroyed";
+          row.desired = "destroyed";
+        }
+      });
+      ws = undefined;
+    }
     if (ws) return ws;
     const id = randomUUID();
     const branch = `user/${user.login}/studio`;
-    const sourceDir = fixtureAppDir();
+    const creds = loadGitHubAppCredentials();
+    const token = await resolveInstallationToken({
+      appId: creds?.appId,
+      privateKey: creds?.privateKey,
+      installationId: creds?.installationId,
+    });
+    if (!token && !process.env.VITEST) {
+      throw new Error("GitHub App credentials (app id, private key, installation id) are required to clone ticoncreserv/app");
+    }
     const { worktree } = await this.runtime.provision({
       workspaceId: id,
       branch,
-      sourceDir,
+      repo,
+      token: process.env.VITEST ? undefined : token ?? undefined,
+      sourceDir: process.env.VITEST ? fixtureAppDir() : undefined,
       user: { name: user.name, email: user.email },
     });
+    this.hydrateProjectRules(worktree);
     this.materializeRules(worktree, user.locale, this.getRules());
+    const bytes = await worktreeBytes(worktree);
     ws = {
       id,
       projectId: "concreserv",
@@ -97,9 +160,37 @@ export class Platform {
       previewToken: randomBytes(12).toString("hex"),
       worktree,
       lastActiveAt: new Date().toISOString(),
+      bytes,
     };
     this.store.update((d) => d.workspaces.push(ws!));
+    mergeWorktreeEnv(worktree, {
+      ...PREVIEW_SIDE_EFFECTS,
+      ...isolationEnv(id, this.publicPreviewUrl(ws.previewToken)),
+      APP_URL: this.publicPreviewUrl(ws.previewToken),
+    });
     return ws;
+  }
+
+  async sweepForeignWorktrees(): Promise<void> {
+    const repo = githubAppRepo();
+    for (const ws of this.store.read().workspaces) {
+      if (ws.status === "destroyed") continue;
+      if (!(await isForeignWorktree(ws.worktree, repo))) continue;
+      await this.runtime.destroy(ws.id);
+      this.store.update((d) => {
+        const row = d.workspaces.find((w) => w.id === ws.id);
+        if (row) {
+          row.status = "destroyed";
+          row.desired = "destroyed";
+        }
+      });
+    }
+  }
+
+  async wakePreview(workspaceId: string): Promise<WorkspaceRecord> {
+    const ws = this.requireWorkspace(workspaceId);
+    if (this.runtime.isRunning(workspaceId) && ws.status === "running" && ws.port) return ws;
+    return this.startPreview(workspaceId);
   }
 
   async warmForUser(user: UserRecord): Promise<WorkspaceRecord> {
@@ -117,25 +208,49 @@ export class Platform {
 
   async startPreview(workspaceId: string): Promise<WorkspaceRecord> {
     const ws = this.requireWorkspace(workspaceId);
-    const handle = await this.runtime.start({ workspaceId, worktree: ws.worktree });
-    this.store.update((d) => {
-      const row = d.workspaces.find((w) => w.id === workspaceId)!;
-      row.status = transition(row.status === "hibernated" || row.status === "ready" ? row.status : "ready", "running");
-      row.desired = "running";
-      row.port = handle.port;
-      row.lastActiveAt = new Date().toISOString();
-    });
+    try {
+      const handle = await this.runtime.start({
+        workspaceId,
+        worktree: ws.worktree,
+        publicUrl: this.publicPreviewUrl(ws.previewToken),
+        hmr: true,
+      });
+      this.store.update((d) => {
+        const row = d.workspaces.find((w) => w.id === workspaceId)!;
+        row.status = transition(row.status === "hibernated" || row.status === "ready" || row.status === "error" ? row.status : "ready", "running");
+        row.desired = "running";
+        row.port = handle.port;
+        row.lastError = undefined;
+        row.lastActiveAt = new Date().toISOString();
+      });
+    } catch (error) {
+      this.store.update((d) => {
+        const row = d.workspaces.find((w) => w.id === workspaceId);
+        if (!row) return;
+        row.status = "error";
+        row.desired = "running";
+        row.port = undefined;
+        row.lastError = error instanceof Error ? error.message : String(error);
+      });
+      throw error;
+    }
     return this.requireWorkspace(workspaceId);
   }
 
   async hibernate(workspaceId: string): Promise<void> {
     await this.runtime.hibernate(workspaceId);
+    for (const session of this.sessions(workspaceId)) {
+      this.runs.get(session.id)?.stop();
+      this.runs.delete(session.id);
+    }
     this.store.update((d) => {
       const row = d.workspaces.find((w) => w.id === workspaceId);
-      if (row && row.status === "running") {
+      if (!row) return;
+      if (row.status === "running") {
         row.status = transition("running", "hibernated");
         row.desired = "hibernated";
       }
+      row.port = undefined;
     });
   }
 
@@ -223,11 +338,15 @@ export class Platform {
     const session = this.store.read().sessions.find((s) => s.id === input.sessionId);
     if (!session) throw new Error("Session not found");
     const ws = this.requireWorkspace(session.workspaceId);
+    if (!this.canAccessWorkspace(input.user, ws, "view")) throw new Error("Forbidden");
 
-    if (input.spectator) {
-      if (input.command.type !== "prompt") return;
+    const presence = this.store.read().presence.find((p) => p.workspaceId === ws.id && p.userId === input.user.id);
+    const canWrite = ws.userId === input.user.id || canEdit(this.roleFor(input.user, ws.projectId));
+    const spectator = Boolean(input.spectator || presence?.mode === "spectator" || !canWrite);
+    if (spectator && input.command.type === "prompt") {
       throw new Error("Spectators cannot send prompts");
     }
+    if (spectator && input.command.type !== "prompt") return;
 
     if (input.command.type === "prompt") {
       await this.runPrompt(input.user, session, ws, input.command);
@@ -240,8 +359,11 @@ export class Platform {
     if (input.command.type === "accept_hunk" || input.command.type === "reject_hunk") {
       const hunkId = input.command.hunkId;
       const accepted = input.command.type === "accept_hunk";
-      this.mutateHunks(session.id, (state) => applyHunkDecision(state, hunkId, accepted ? "accepted" : "rejected"));
-      if (accepted) this.applyAcceptedHunks(session.id, ws.worktree);
+      const state = this.snapshot(session.id);
+      const hunk = state.hunks.find((h) => h.id === hunkId);
+      this.mutateHunks(session.id, (next) => applyHunkDecision(next, hunkId, accepted ? "accepted" : "rejected"));
+      if (accepted && hunk) applyHunkToWorktree(ws.worktree, hunk.filePath, hunk.newLines);
+      if (!accepted && hunk) await restoreFile(ws.worktree, hunk.filePath, this.restoreRev(session));
       return;
     }
     if (input.command.type === "accept_file" || input.command.type === "reject_file") {
@@ -249,34 +371,47 @@ export class Platform {
       const accepted = input.command.type === "accept_file";
       this.mutateHunks(session.id, (state) => applyFileDecision(state, filePath, accepted ? "accepted" : "rejected"));
       if (accepted) this.applyAcceptedHunks(session.id, ws.worktree);
+      if (!accepted) await restoreFile(ws.worktree, filePath, this.restoreRev(session));
       return;
     }
     if (input.command.type === "sync_base") {
+      const creds = loadGitHubAppCredentials();
+      const token = await resolveInstallationToken({
+        appId: creds?.appId,
+        privateKey: creds?.privateKey,
+        installationId: creds?.installationId,
+      });
+      const result = await syncBaseBranch(ws.worktree, { name: input.user.name, email: input.user.email }, token ?? undefined);
       this.append(session.id, {
         type: "conflict",
         id: randomUUID(),
         at: new Date().toISOString(),
-        files: [],
-        message: "Base branch fetched. No conflicts on the fixture workspace.",
+        files: result.files,
+        message: result.message,
       });
       return;
     }
     if (input.command.type === "fix_error") {
+      const lastError = [...session.events].reverse().find((e) => e.type === "runtime_error");
       await this.runPrompt(input.user, session, ws, {
         type: "prompt",
-        text: `Fix this preview error: ${input.command.eventId}`,
+        text: `Fix this preview error: ${lastError && lastError.type === "runtime_error" ? lastError.message : input.command.eventId}`,
         attachments: [],
         mentions: [],
       });
       return;
     }
     if (input.command.type === "restore_checkpoint") {
+      const command = input.command;
+      const checkpoint = session.events.find((e) => e.type === "checkpoint" && e.id === command.checkpointId);
+      const sha = checkpoint && checkpoint.type === "checkpoint" ? checkpoint.gitSha : command.checkpointId;
+      await restoreCheckpoint(ws.worktree, sha, { name: input.user.name, email: input.user.email });
       this.append(session.id, {
         type: "checkpoint",
         id: randomUUID(),
         at: new Date().toISOString(),
-        gitSha: "restored",
-        label: `Restored ${input.command.checkpointId}`,
+        gitSha: sha,
+        label: `Restored ${sha.slice(0, 8)}`,
       });
       return;
     }
@@ -285,16 +420,27 @@ export class Platform {
       this.store.update((d) => {
         const s = d.sessions.find((x) => x.id === session.id);
         if (!s) return;
-        s.events = s.events.map((e) => (e.type === "plan" ? { ...e, outcome } : e));
+        s.events = s.events.map((e) => (e.type === "plan" && e.outcome === "pending" ? { ...e, outcome } : e));
       });
+      if (outcome === "accepted") {
+        await this.runPrompt(input.user, session, ws, {
+          type: "prompt",
+          text: "The plan was accepted. Continue implementing it.",
+          attachments: [],
+          mentions: [],
+        });
+      }
       return;
     }
     if (input.command.type === "decide_permission") {
       const outcome = input.command.outcome;
+      const pending = this.pendingPermissions.get(session.id);
+      pending?.respond?.(pending.rpcId, outcome);
+      this.pendingPermissions.delete(session.id);
       this.store.update((d) => {
         const s = d.sessions.find((x) => x.id === session.id);
         if (!s) return;
-        s.events = s.events.map((e) => (e.type === "permission" ? { ...e, outcome } : e));
+        s.events = s.events.map((e) => (e.type === "permission" && e.outcome === "pending" ? { ...e, outcome } : e));
       });
       return;
     }
@@ -303,6 +449,12 @@ export class Platform {
         const s = d.sessions.find((x) => x.id === session.id);
         if (!s) return;
         s.events = s.events.map((e) => (e.type === "question" ? { ...e, outcome: "answered" } : e));
+      });
+      await this.runPrompt(input.user, session, ws, {
+        type: "prompt",
+        text: `Question answers: ${JSON.stringify(input.command.answers)}`,
+        attachments: [],
+        mentions: [],
       });
     }
   }
@@ -399,32 +551,58 @@ export class Platform {
     const budget = defaultBudget();
     const providerId = resolveSessionProvider(session.provider);
     if (providerId !== session.provider) this.setSessionProvider(session.id, providerId);
-    const provider = createProvider(providerId);
+    const mode = command.mode ?? "agent";
     let streamed = "";
-    let run: Awaited<ReturnType<typeof provider.start>> | undefined;
+    let run = this.runs.get(session.id);
+    if (run && this.runModes.get(session.id) !== mode) {
+      run.stop();
+      this.runs.delete(session.id);
+      this.runModes.delete(session.id);
+      run = undefined;
+    }
     try {
-      run = await provider.start({
-        cwd: ws.worktree,
-        onEvent: (event) => {
-          if (event.type === "assistant_delta") streamed += event.text;
-          usage.toolCalls += event.type === "tool_call" ? 1 : 0;
-          const reason = budgetExceeded(budget, usage);
-          if (reason) {
-            this.append(session.id, {
-              type: "budget",
-              id: randomUUID(),
-              at: new Date().toISOString(),
-              reason,
-              message: `Run stopped: ${reason} budget exceeded`,
+      if (!run) {
+        const provider = createProvider(providerId);
+        run = await provider.start({
+          cwd: ws.worktree,
+          resumeSessionId: session.acpSessionId,
+          mode,
+          onEvent: (event) => {
+            if (event.type === "assistant_delta") streamed += event.text;
+            usage.toolCalls += event.type === "tool_call" ? 1 : 0;
+            const reason = budgetExceeded(budget, usage);
+            if (reason) {
+              this.append(session.id, {
+                type: "budget",
+                id: randomUUID(),
+                at: new Date().toISOString(),
+                reason,
+                message: `Run stopped: ${reason} budget exceeded`,
+              });
+              void this.runs.get(session.id)?.cancel();
+              return;
+            }
+            this.append(session.id, event);
+          },
+          onPermission: (event, rpcId) => {
+            this.append(session.id, event);
+            this.pendingPermissions.set(session.id, {
+              rpcId,
+              respond: this.runs.get(session.id)?.respondPermission,
             });
-            void run?.cancel();
-            return;
-          }
-          this.append(session.id, event);
-        },
-      });
-      this.runs.set(session.id, run);
-      await run.prompt([{ type: "text", text: packed.text }]);
+          },
+        });
+        this.runs.set(session.id, run);
+        this.runModes.set(session.id, mode);
+        if (run.acpSessionId) {
+          this.store.update((d) => {
+            const row = d.sessions.find((s) => s.id === session.id);
+            if (row) row.acpSessionId = run!.acpSessionId;
+          });
+        }
+      }
+      const blocks: AcpPromptBlock[] = [{ type: "text", text: packed.text }, ...this.attachmentBlocks(command.attachments)];
+      await run.prompt(blocks);
       if (streamed.trim()) {
         this.append(session.id, {
           type: "assistant_message",
@@ -434,7 +612,26 @@ export class Platform {
           streaming: false,
         });
       }
+      for (const event of await worktreeDiffEvents(ws.worktree)) this.append(session.id, event);
+      const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(userText));
+      if (sha) {
+        this.append(session.id, {
+          type: "checkpoint",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          gitSha: sha,
+          label: titleFromPrompt(userText),
+        });
+      }
+      const bytes = await worktreeBytes(ws.worktree);
+      this.store.update((d) => {
+        const row = d.workspaces.find((w) => w.id === ws.id);
+        if (row) row.bytes = bytes;
+      });
     } catch (error) {
+      run?.stop();
+      this.runs.delete(session.id);
+      this.runModes.delete(session.id);
       const message = error instanceof Error ? error.message : "The Cursor agent failed.";
       this.append(session.id, {
         type: "assistant_message",
@@ -444,8 +641,6 @@ export class Platform {
         streaming: false,
       });
     } finally {
-      run?.stop();
-      this.runs.delete(session.id);
       this.store.update((d) => {
         delete d.runLock[ws.id];
       });
@@ -453,6 +648,7 @@ export class Platform {
   }
 
   createInvite(user: UserRecord): { token: string; url: string } {
+    if (!canInvite(this.roleFor(user))) throw new Error("Forbidden");
     const token = randomBytes(16).toString("hex");
     this.store.update((d) => {
       d.invites.push({
@@ -532,19 +728,60 @@ export class Platform {
     if (worktree) this.materializeRules(worktree, locale, layers);
   }
 
-  mentionIndex() {
-    return {
-      routes: ["quotes", "customers", "deliveries", "login"],
-      models: ["Quote", "Customer", "Delivery"],
-      pages: ["Quotes/Index", "Customers/Index", "Auth/Login"],
-    };
+  async mentionIndex(workspaceId?: string) {
+    if (!workspaceId) return { routes: [] as string[], models: [] as string[], pages: [] as string[] };
+    return mentionIndexFromWorktree(this.requireWorkspace(workspaceId).worktree);
   }
 
   envPreview(workspaceId: string) {
     const spec = defaultWorkspaceSpec();
     const ws = this.requireWorkspace(workspaceId);
-    const env = { ...PREVIEW_SIDE_EFFECTS, ...isolationEnv(workspaceId, `http://127.0.0.1:${ws.port ?? 0}`) };
-    return { env, validation: validateEnvContract(spec, env), spec };
+    const publicUrl = this.publicPreviewUrl(ws.previewToken);
+    const overlay = { ...PREVIEW_SIDE_EFFECTS, ...isolationEnv(workspaceId, publicUrl), APP_URL: publicUrl };
+    const current = readEnvFile(join(ws.worktree, ".env"));
+    const merged = { ...current, ...overlay };
+    const allowed = new Set([
+      ...spec.envContract.map((row) => row.key),
+      ...Object.keys(overlay),
+    ]);
+    const env = Object.fromEntries(Object.entries(merged).filter(([key]) => allowed.has(key)));
+    return { env: redactEnv(env), validation: validateEnvContract(spec, merged), spec };
+  }
+
+  workspaceConnections(workspaceId: string) {
+    const stored = this.store.read().connections;
+    const fromWorktree = connectionsFromWorktree(this.requireWorkspace(workspaceId).worktree);
+    return fromWorktree.length ? fromWorktree : stored;
+  }
+
+  async workspaceQuota(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    const bytes = await worktreeBytes(ws.worktree);
+    this.store.update((d) => {
+      const row = d.workspaces.find((w) => w.id === workspaceId);
+      if (row) row.bytes = bytes;
+    });
+    const policy = defaultDiskPolicy();
+    return {
+      usedMb: Math.round(bytes / (1024 * 1024)),
+      limitMb: Math.round(policy.maxBytesPerWorkspace / (1024 * 1024)),
+      bytes,
+    };
+  }
+
+  agentStatus() {
+    const ready = hasCursorApiKey();
+    return {
+      ready,
+      provider: this.preferredProvider(),
+      error: ready || process.env.VITEST ? null : "CURSOR_API_KEY is not set",
+    };
+  }
+
+  assertWorkspaceAccess(user: UserRecord, workspaceId: string, mode: "view" | "edit"): WorkspaceRecord {
+    const ws = this.requireWorkspace(workspaceId);
+    if (!this.canAccessWorkspace(user, ws, mode)) throw new Error("Forbidden");
+    return ws;
   }
 
   workspaceDivergence(workspaceId: string) {
@@ -564,6 +801,48 @@ export class Platform {
     const ws = this.store.read().workspaces.find((w) => w.id === id);
     if (!ws) throw new Error("Workspace not found");
     return ws;
+  }
+
+  private restoreRev(session: SessionRecord): string {
+    const last = [...session.events].reverse().find((event) => event.type === "checkpoint" && event.gitSha && event.gitSha !== "fixture");
+    return last && last.type === "checkpoint" ? `${last.gitSha}^` : "HEAD";
+  }
+
+  private attachmentBlocks(paths: string[]): AcpPromptBlock[] {
+    const mimeByExt: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+    };
+    const blocks: AcpPromptBlock[] = [];
+    for (const path of paths) {
+      const mime = mimeByExt[extname(path).toLowerCase()];
+      if (mime && existsSync(path)) {
+        blocks.push({ type: "image", data: readFileSync(path).toString("base64"), mimeType: mime });
+      } else {
+        blocks.push({ type: "text", text: `Attachment: ${path}` });
+      }
+    }
+    return blocks;
+  }
+
+  private hydrateProjectRules(worktree: string) {
+    const file = join(worktree, "AGENTS.md");
+    if (!existsSync(file)) return;
+    const body = readFileSync(file, "utf8").trim();
+    if (!body) return;
+    this.store.update((d) => {
+      const project = d.rules.find((rule) => rule.level === "project");
+      if (!project) {
+        d.rules.push({ id: "project", level: "project", title: "Project", body: body.slice(0, 8000) });
+        return;
+      }
+      if (project.body.includes("Follow Inertia + Vue page conventions")) {
+        project.body = body.slice(0, 8000);
+      }
+    });
   }
 
   private materializeRules(worktree: string, locale: "en" | "pt-BR", layers = this.getRules()) {

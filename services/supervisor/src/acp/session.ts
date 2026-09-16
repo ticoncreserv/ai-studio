@@ -79,8 +79,8 @@ export class AcpSession {
     return this.send("authenticate", { methodId: "cursor_login" });
   }
 
-  async newSession(cwd: string): Promise<string> {
-    const result = (await this.send("session/new", { cwd, mcpServers: [] })) as { sessionId: string };
+  async newSession(cwd: string, mcpServers: unknown[] = []): Promise<string> {
+    const result = (await this.send("session/new", { cwd, mcpServers })) as { sessionId: string };
     this.sessionId = result.sessionId;
     return result.sessionId;
   }

@@ -4,7 +4,8 @@ import { cursorAgentEnv, hasCursorApiKey, preferredAgentProvider, resolveSession
 describe("cursor agent env", () => {
   it("prefers cursor only when an API key is present", () => {
     expect(hasCursorApiKey({ CURSOR_API_KEY: "crsr_test" })).toBe(true);
-    expect(preferredAgentProvider({})).toBe("mock");
+    expect(preferredAgentProvider({})).toBe("cursor");
+    expect(preferredAgentProvider({ VITEST: "true" })).toBe("mock");
     expect(preferredAgentProvider({ CURSOR_API_KEY: "crsr_test" })).toBe("cursor");
   });
 

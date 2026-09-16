@@ -1,8 +1,8 @@
-import { platform, userFromEvent } from "../utils/platform";
+import { requireWorkspaceAccess } from "../utils/authz";
+import { platform } from "../utils/platform";
 
 export default defineEventHandler(async (event) => {
-  const user = userFromEvent(event);
-  if (!user) throw createError({ statusCode: 401 });
-  const body = await readBody<{ workspaceId: string; provider?: "mock" | "cursor" }>(event);
+  const body = await readBody<{ workspaceId: string; provider?: "cursor" | "claude" | "gemini" | "grok" | "mock" }>(event);
+  requireWorkspaceAccess(event, body.workspaceId, "edit");
   return platform().createSession(body.workspaceId, body.provider ?? platform().preferredProvider());
 });

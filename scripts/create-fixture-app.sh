@@ -8,5 +8,5 @@ if command -v php >/dev/null 2>&1; then
   php "$TARGET/artisan" route:list --json >/dev/null
   echo "artisan route:list --json ok"
 else
-  echo "PHP is not installed; ProcessRuntime will serve the fixture through scripts/preview-server.mjs."
+  echo "PHP is not installed; fixture artisan checks are skipped. Production preview uses php artisan serve on the cloned app."
 fi

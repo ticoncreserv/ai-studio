@@ -1,12 +1,19 @@
 import { ClientCommandSchema } from "@atelier/contracts";
-import { platform, userFromEvent } from "../../../utils/platform";
+import { requireUser } from "../../../utils/authz";
+import { platform } from "../../../utils/platform";
 
 export default defineEventHandler(async (event) => {
-  const user = userFromEvent(event);
-  if (!user) throw createError({ statusCode: 401 });
+  const user = requireUser(event);
   const sessionId = getRouterParam(event, "id")!;
-  const body = await readBody<{ command: unknown; spectator?: boolean }>(event);
+  const session = platform().store.read().sessions.find((row) => row.id === sessionId);
+  if (!session) throw createError({ statusCode: 404, statusMessage: "session not found" });
+  try {
+    platform().assertWorkspaceAccess(user, session.workspaceId, "view");
+  } catch {
+    throw createError({ statusCode: 403, statusMessage: "forbidden" });
+  }
+  const body = await readBody<{ command: unknown }>(event);
   const command = ClientCommandSchema.parse(body.command);
-  await platform().handleCommand({ user, sessionId, command, spectator: body.spectator });
+  await platform().handleCommand({ user, sessionId, command });
   return { ok: true, snapshot: platform().snapshot(sessionId) };
 });

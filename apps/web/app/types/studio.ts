@@ -16,6 +16,13 @@ export interface StudioWorkspace {
   lastError?: string;
 }
 
+export interface PreviewDebug {
+  timeMs?: number;
+  queries?: number;
+  memoryMb?: number;
+  nPlusOne?: boolean;
+}
+
 export interface StudioPayload {
   user: { id: string; login: string; role: string; locale: "en" | "pt-BR" };
   workspace: StudioWorkspace;
@@ -44,6 +51,8 @@ export interface StudioPayload {
   quota: { usedMb: number; limitMb: number };
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;
   previewPath: string;
+  canEdit: boolean;
+  agent: { ready: boolean; provider: string; error: string | null };
 }
 
 export interface StudioAttachment {

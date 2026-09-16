@@ -45,7 +45,7 @@
       "permissions": "Permissões: contents leitura e escrita, metadata leitura, pull requests leitura e escrita, email addresses leitura. Sem Administration.",
       "oauthHint": "Um OAuth App do GitHub também cobre o login. Use o mesmo callback e defina GITHUB_CLIENT_ID e GITHUB_CLIENT_SECRET.",
       "cursorTitle": "O ACP do Cursor é outra credencial",
-      "cursorHint": "O GitHub App não autentica o Cursor. Defina CURSOR_API_KEY no .env para os prompts rodarem no agent acp. Tokens de sessão Origin são removidos antes de subir o agente.",
+      "cursorHint": "Credenciais do GitHub App e CURSOR_API_KEY são obrigatórias. O estúdio clona ticoncreserv/app e envia prompts pelo ACP do Cursor. MockProvider vale só nos testes.",
       "blocked": "A criação do GitHub App está desligada neste ambiente.",
       "error": "O GitHub não devolveu as credenciais do app. Tente de novo.",
       "used": "Esse code do callback vale uma vez só. Se o app já foi criado, as credenciais estão nesta máquina — instale o app em seguida.",
@@ -92,7 +92,7 @@
   },
   "workspace": {
     "warming": "Aquecendo o workspace até ready…",
-    "ready": "Workspace pronto. Abrir o preview só acende php-fpm e Caddy.",
+    "ready": "Workspace pronto. Abrir o preview sobe o Laravel nesta branch.",
     "hibernated": "Workspace hibernado. Retome para ligar os processos de preview.",
     "error": "O workspace falhou ao iniciar.",
     "branch": "Branch",
@@ -121,7 +121,7 @@
     "envIsolation": "Env de isolamento",
     "migrationJournal": "Diário de migrations",
     "noMigrations": "Nenhuma migration foi aplicada por este estúdio ainda.",
-    "resumeHint": "Retomar liga php-fpm e Caddy nesta branch.",
+    "resumeHint": "Retomar sobe php artisan serve e o Vite nesta branch.",
     "people": "Pessoas neste workspace",
     "loading": "Abrindo o estúdio…",
     "loadError": "Não foi possível carregar o workspace.",
@@ -165,6 +165,7 @@
     "thinking": "O agente está trabalhando…",
     "usingCursor": "Cursor",
     "usingMock": "Mock",
+    "cursorRequired": "CURSOR_API_KEY é obrigatória. Os prompts não rodam até ela estar no .env.",
     "promptFailed": "O prompt não concluiu. Tente de novo.",
     "modeHintAgent": "Edita o worktree e executa ferramentas.",
     "modeHintPlan": "Propõe um plano antes de mudar arquivos.",
@@ -218,7 +219,8 @@
     "inspectHint": "Clique no preview para anexar uma nota ao compositor.",
     "pinAdded": "Comentário adicionado ao compositor",
     "debugTitle": "Diagnóstico do preview",
-    "debugFix": "Pedir ao agente para corrigir N+1 e consultas lentas",
+    "debugEmpty": "Ainda não há métricas do preview. O Laravel pode enviar postMessage atelier-preview-metrics quando tiver números.",
+    "debugFix": "Pedir ao agente para corrigir o último erro do preview",
     "longQueryTitle": "Consulta ao ERP em andamento",
     "fit": "Ajustar"
   },
@@ -284,7 +286,8 @@
     "kindApp": "Portal",
     "kindErp": "ERP",
     "readOnly": "Somente leitura",
-    "migrateForward": "Migrate para frente"
+    "migrateForward": "Migrate para frente",
+    "empty": "Ainda não há conexões de banco no .env deste worktree."
   },
   "flags": {
     "publish": "Publicar",

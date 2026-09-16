@@ -5,7 +5,7 @@ export const defaultWorkspaceSpec = (): WorkspaceSpec => ({
   documentRoot: "public",
   healthCheck: { path: "/up", timeoutMs: 15_000 },
   processes: [
-    { name: "caddy-php", command: "node", args: ["scripts/preview-server.mjs"], optional: false, hmrOnly: false },
+    { name: "laravel", command: "php", args: ["artisan", "serve", "--host", "127.0.0.1"], optional: false, hmrOnly: false },
     { name: "queue", command: "php", args: ["artisan", "queue:work", "--tries=1", "--timeout=60"], optional: true, hmrOnly: false },
     { name: "vite", command: "npm", args: ["run", "dev"], optional: true, hmrOnly: true },
   ],

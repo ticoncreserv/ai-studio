@@ -1,15 +1,15 @@
 # Atelier
 
-Self-hosted studio for assisted creation on `github.com/ticoncreserv/app` (Laravel 13 + Inertia + Vue). A signed-in GitHub user gets a personal branch, a Cursor ACP session, and a live preview in mobile, tablet, and desktop viewports.
+Self-hosted studio for assisted creation on `github.com/ticoncreserv/app` (Laravel 13 + Inertia + Vue). A signed-in GitHub user gets a personal branch (`user/{login}/studio`), a Cursor ACP session, and a live Laravel preview in mobile, tablet, and desktop viewports.
 
-This repository is the **platform**. The target app stays in its own repo. Until GitHub App secrets exist, the studio runs against `fixtures/laravel-app` and a deterministic `MockProvider` that replays ACP transcripts.
+This repository is the **platform**. The target app stays in `ticoncreserv/app`. Production needs a GitHub App (clone + push) and `CURSOR_API_KEY` (prompts). `fixtures/laravel-app` and `MockProvider` exist only for tests, eval, and SLO checks.
 
 ## Stack
 
 - Node 24 LTS (see `.nvmrc`)
 - TypeScript 6 (the 7.x compiler has no API yet; `typescript-eslint` and `vue-tsc` still need 6)
-- `apps/web` — Nuxt 4 + Nitro + Vue 3 + Tailwind CSS v4 + i18n (`en`, `pt-BR`)
-- `services/supervisor` — ACP sessions, workspace runtime, reconciler
+- `apps/web` — Nuxt 4 + Nitro + Vue 3 + Tailwind CSS v4 + i18n (`pt-BR` default, `en`)
+- `services/supervisor` — ACP sessions, GitHub clone, Laravel preview, reconciler
 - `packages/contracts` — Zod events and commands
 - `packages/domain` — pure reducer, FSM, rules, permissions, schema guard
 - `packages/db` — future Drizzle/Postgres schema. The running studio does not need `DATABASE_URL` or `REDIS_URL`; it persists to `var/platform.json` and runs jobs in-process.
@@ -23,9 +23,15 @@ pnpm install
 pnpm dev
 ```
 
-Locally the web app listens on [http://127.0.0.1:43123](http://127.0.0.1:43123). That port is only the current bind — production uses `ATELIER_PUBLIC_URL` as a dedicated https origin (no `:43123`). `pnpm dev` also answers on `http://localhost` (port 80) and `http://localhost:8080` and forwards those requests to the studio, so local GitHub callbacks that omit the port do not 404. Sign in with a local GitHub handle, open a workspace, and send a prompt. The mock agent proposes an Inertia quotes page; accept a hunk to write it into the worktree.
+Required in `.env` before opening a workspace:
 
-The studio exposes the product surfaces from the plan: session rail and search, agent/plan/ask modes, recipes, attachments, @-mentions, hunk/file review, plan/question/permission cards, rules editor, homologation connection catalog, schema-divergence banner, spectator mode, share/invite dialogs, feature flags, disk quota, and a three-viewport preview with inspect notes and a diagnostics overlay.
+- GitHub App: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_INSTALLATION_ID` (or `var/github-app.json` from `/setup/github`)
+- Cursor: `CURSOR_API_KEY`
+- Public origin: `ATELIER_PUBLIC_URL` (preview `APP_URL` and OAuth callbacks)
+
+Locally the web app listens on [http://127.0.0.1:43123](http://127.0.0.1:43123). That port is only the current bind — production uses `ATELIER_PUBLIC_URL` as a dedicated https origin. `pnpm dev` also answers on `http://localhost` (port 80) and `http://localhost:8080` so local GitHub callbacks that omit the port do not 404.
+
+Without PHP on the host, Laravel preview fails with a real health-check error. Set `ATELIER_RUNTIME=docker` only when the daemon and `infra/workspace-php85.Dockerfile` image are available.
 
 ```bash
 pnpm test
@@ -44,8 +50,8 @@ You need to be an owner of the `ticoncreserv` organization. The studio can creat
 1. Open [http://127.0.0.1:43123/setup/github](http://127.0.0.1:43123/setup/github) while the studio is running.
 2. Click **Create GitHub App on ticoncreserv**. GitHub shows the pre-filled manifest (homepage, callback, permissions).
 3. Confirm the app. GitHub redirects the **browser** to `{origin}/api/setup/github/callback`. The studio answers that path on `127.0.0.1:43123`, `localhost:43123`, `localhost:8080`, and `http://localhost` (port 80). If a leftover GitHub URL still 404s, paste the `code` query into `/setup/github`. Atelier stores `client_id`, `client_secret`, App ID, private key, and webhook secret in `var/github-app.json` (gitignored) and loads them into the current process.
-4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`. After install or sign-in GitHub redirects to the **Callback URL**. Locally the authorize flow uses `http://localhost/api/auth/github/callback` (the URL already stored on the existing app) and the loopback proxy forwards it to the listen port. In production set `ATELIER_PUBLIC_URL=https://your-domain` and register `{ATELIER_PUBLIC_URL}/api/auth/github/callback` — the listen port is not part of that origin. Alias paths `/auth/github/callback` and `/github/callback` work on the same origins.
-5. Copy the values into `.env` if you want them to survive a restart or another host (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`).
+4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`. After install or sign-in GitHub redirects to the **Callback URL**. Locally the authorize flow uses `http://localhost/api/auth/github/callback` and the loopback proxy forwards it to the listen port. In production set `ATELIER_PUBLIC_URL=https://your-domain` and register `{ATELIER_PUBLIC_URL}/api/auth/github/callback`.
+5. Copy the values into `.env` if you want them to survive a restart or another host (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_INSTALLATION_ID`, `GITHUB_WEBHOOK_SECRET`).
 
 Manual path: GitHub → Organization settings → Developer settings → GitHub Apps → New GitHub App.
 
@@ -56,24 +62,26 @@ Manual path: GitHub → Organization settings → Developer settings → GitHub 
 | Setup URL | `{ATELIER_PUBLIC_URL}/setup/github` |
 | Permissions | `contents` read/write, `metadata` read, `pull requests` read/write, `email addresses` read |
 | Webhook URL | `{origin}/api/webhooks/github` (inactive until the URL is public) |
-| Webhook secret | `GITHUB_WEBHOOK_SECRET` — HMAC for `X-Hub-Signature-256`. Empty after the first create because the manifest had no hook; the studio now generates one and verifies deliveries. |
+| Webhook secret | `GITHUB_WEBHOOK_SECRET` — HMAC for `X-Hub-Signature-256` |
 | Where can this GitHub App be installed | Only on this account |
 
 A GitHub OAuth App also covers login. Same callback URL; only `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are required.
 
-Cursor ACP is a different credential. Set `CURSOR_API_KEY` in `.env`. The studio strips any inherited Origin-scoped `CURSOR_AUTH_TOKEN` before spawning `agent acp`. Without a key, sessions stay on `MockProvider`.
+Cursor ACP is a different credential. Set `CURSOR_API_KEY` in `.env`. The studio strips any inherited Origin-scoped `CURSOR_AUTH_TOKEN` before spawning `agent acp`. Without a key, the studio shows an error — it does not fall back to Mock.
 
-Commits in a workspace set `user.name` / `user.email` and `commit.gpgsign=false` per invocation. The agent is recorded as `Co-authored-by`.
+Commits in a workspace set `user.name` / `user.email` and `commit.gpgsign=false` per invocation.
 
 ## Preview
 
-`ProcessRuntime` serves the fixture through `scripts/preview-server.mjs`. `DockerRuntime` uses `infra/workspace-php85.Dockerfile` (`php:8.5-fpm` + Caddy, `pdo_dblib` + `pdo_odbc`/`msodbcsql18`, no `pdo_sqlsrv`, no `ext-redis`). Preview URLs in development: `/-/p/{token}`.
+`ProcessRuntime` clones `ticoncreserv/app` (cached bare clone in `var/cache`), writes a worktree `.env` from `.env.example` plus isolation, runs `composer install` / `npm install` when needed, then `php artisan serve` on a free loopback port. Vite starts when the app has a frontend. Health is `GET /up`. `APP_URL` is `{ATELIER_PUBLIC_URL}/-/p/{previewToken}` so CSRF, redirects, and Inertia stay on the studio origin.
 
-Side effects are forced off (`MAIL_MAILER=log`, integration flags false). Isolation env sets `SESSION_COOKIE`, `APP_URL`, `QUEUE_NAME`, `REDIS_PREFIX`, and `CACHE_PREFIX` per workspace.
+`/-/p/{token}` proxies method, query, body, cookies, and CSRF headers, and rewrites `Set-Cookie` `Path` so Laravel session cookies stay on the iframe. Hibernate clears the port. Opening `/w/:id` or a share link wakes the preview.
+
+`DockerRuntime` (`ATELIER_RUNTIME=docker`) uses `infra/workspace-php85.Dockerfile` when the daemon exists. Database hosts from the cloned `.env` are used as-is; unreachable `10.x` homologation hosts surface as Laravel errors, not a fake portal.
 
 ## ACP
 
-`agent acp` is the first provider. `CURSOR_API_KEY` authenticates the child process. An Origin-scoped `CURSOR_AUTH_TOKEN` on the host cannot be reused (`permission_denied` on `cursor_login`); that handshake is recorded in `fixtures/acp/initialize-handshake.ndjson`. Without a key, the studio uses `MockProvider`.
+`agent acp --trust` is the only production provider. The process stays up across prompts (`session/load` + stored `acpSessionId`). Mode is `--mode plan|ask`. Worktree `.cursor/mcp.json` (Laravel Boost) is passed to `session/new`. Permissions are shown in the UI before `acp.respond`. After each run the studio reads `git status` / diff from the worktree — Cursor writes files directly.
 
 ## Feature flags
 

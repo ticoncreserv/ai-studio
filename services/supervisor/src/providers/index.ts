@@ -9,9 +9,12 @@ export type { AgentProvider } from "./types.js";
 
 export function createProvider(id: ProviderId): AgentProvider {
   if (id === "cursor") return new CursorProvider();
-  return new MockProvider();
+  if (id === "mock" && process.env.VITEST) return new MockProvider();
+  if (id === "mock") throw new Error("MockProvider is only available in tests. Set CURSOR_API_KEY.");
+  throw new Error(`Provider ${id} is not available`);
 }
 
 export function listProviders() {
-  return PROVIDER_CATALOG;
+  if (process.env.VITEST) return PROVIDER_CATALOG;
+  return PROVIDER_CATALOG.filter((provider) => provider.id !== "mock");
 }

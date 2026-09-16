@@ -1,24 +1,9 @@
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { SessionEvent } from "@atelier/contracts";
+import { loadTranscript } from "../transcripts.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
 import { PROVIDER_CATALOG } from "./types.js";
 
-const here = dirname(fileURLToPath(import.meta.url));
-
-export function loadTranscript(name = "create-inertia-page.ndjson"): SessionEvent[] {
-  const candidates = [
-    join(process.cwd(), "fixtures/acp", name),
-    join(here, "../../../../fixtures/acp", name),
-  ];
-  const file = candidates.find((p) => existsSync(p));
-  if (!file) return defaultEvents();
-  return readFileSync(file, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as SessionEvent);
-}
+export { loadTranscript };
 
 function defaultEvents(): SessionEvent[] {
   return [
@@ -131,7 +116,7 @@ export class MockProvider implements AgentProvider {
     let cancelled = false;
     return {
       prompt: async () => {
-        const events = loadTranscript();
+        const events = loadTranscript().length ? loadTranscript() : defaultEvents();
         for (const event of events) {
           if (cancelled) break;
           await new Promise((r) => setTimeout(r, 40));

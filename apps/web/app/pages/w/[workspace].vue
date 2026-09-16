@@ -24,12 +24,14 @@ const {
   attachments,
   mobileTab,
   debugOpen,
+  previewDebug,
   questionAnswers,
   events,
   previewSrc,
   pendingPlan,
   pendingQuestion,
   pendingPermission,
+  lastRuntimeError,
   commands,
   filteredCommands,
   mentionHits,
@@ -58,7 +60,9 @@ function onCommand(payload: { type: string; [key: string]: unknown }) {
 }
 
 function onFixDebug() {
-  void sendCommand({ type: "fix_error", eventId: "debug-overlay" });
+  const eventId = lastRuntimeError.value && lastRuntimeError.value.type === "runtime_error" ? lastRuntimeError.value.id : "";
+  if (!eventId) return;
+  void sendCommand({ type: "fix_error", eventId });
   debugOpen.value = false;
 }
 </script>
@@ -87,8 +91,8 @@ function onFixDebug() {
       :status-label="statusLabel(data.workspace.status)"
       :status-tone="statusTone(data.workspace.status)"
       :login="data.user.login"
-      :presence-count="Math.max(1, data.presence.length)"
-      :presence-label="t('workspace.presence', { count: Math.max(1, data.presence.length) })"
+      :presence-count="data.presence.length"
+      :presence-label="t('workspace.presence', { count: data.presence.length })"
       :publish-enabled="!!data.flags.publish"
       @invite="dialog = 'invite'"
       @share="dialog = 'share'"
@@ -158,6 +162,7 @@ function onFixDebug() {
           class="min-h-0 min-w-0 flex-1"
           :class="mobileTab === 'chat' ? 'hidden lg:flex' : 'flex'"
         >
+        <p v-if="data.agent?.error" class="px-4 py-2 text-[12px] text-amber-100">{{ t("chat.cursorRequired") }}</p>
         <StudioPreviewPane
           :src="previewSrc"
           :status="data.workspace.status"
@@ -166,6 +171,8 @@ function onFixDebug() {
           :preview-key="previewKey"
           :tool-mode="toolMode"
           :debug-open="debugOpen"
+          :debug="previewDebug"
+          :last-error="data.workspace.lastError"
           @update:viewport="viewport = $event"
           @update:rotated="rotated = $event"
           @update:tool-mode="toolMode = $event"

@@ -1,15 +1,14 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { platform, userFromEvent } from "../utils/platform";
+import { requireWorkspaceAccess } from "../utils/authz";
+import { platform } from "../utils/platform";
 
 export default defineEventHandler(async (event) => {
-  const user = userFromEvent(event);
-  if (!user) throw createError({ statusCode: 401 });
   const form = await readMultipartFormData(event);
-  const file = form?.find((p) => p.name === "file" && p.filename);
-  const workspaceId = form?.find((p) => p.name === "workspaceId")?.data.toString();
+  const file = form?.find((part) => part.name === "file" && part.filename);
+  const workspaceId = form?.find((part) => part.name === "workspaceId")?.data.toString();
   if (!file || !workspaceId) throw createError({ statusCode: 400 });
-  const ws = platform().requireWorkspace(workspaceId);
+  const { workspace: ws } = requireWorkspaceAccess(event, workspaceId, "edit");
   const dir = join(ws.worktree, "var", "uploads");
   mkdirSync(dir, { recursive: true });
   const dest = join(dir, file.filename || "upload.bin");

@@ -1,8 +1,8 @@
-import { platform, userFromEvent } from "../utils/platform";
+import { requireUser } from "../utils/authz";
+import { platform } from "../utils/platform";
 
-export default defineEventHandler((event) => {
-  const user = userFromEvent(event);
-  if (!user) throw createError({ statusCode: 401, statusMessage: "unauthorized" });
+export default defineEventHandler(async (event) => {
+  const user = requireUser(event);
   const ws = platform().store.read().workspaces.find((w) => w.userId === user.id && w.status !== "destroyed");
   return {
     user,
@@ -10,8 +10,9 @@ export default defineEventHandler((event) => {
     sessions: ws ? platform().sessions(ws.id).slice(0, 6) : [],
     flags: platform().flags(),
     providers: platform().listProviders(),
-    mentions: platform().mentionIndex(),
-    connections: platform().store.read().connections,
+    mentions: ws ? await platform().mentionIndex(ws.id) : { routes: [], models: [], pages: [] },
+    connections: ws ? platform().workspaceConnections(ws.id) : [],
     recipes: platform().store.read().recipes,
+    agent: platform().agentStatus(),
   };
 });

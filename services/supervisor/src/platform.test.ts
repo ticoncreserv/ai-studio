@@ -12,6 +12,7 @@ const dirs: string[] = [];
 function platform(): Platform {
   const dir = mkdtempSync(join(tmpdir(), "atelier-"));
   dirs.push(dir);
+  process.env.ATELIER_WORKTREE_ROOT = join(dir, "workspaces");
   return new Platform(new JsonStore(join(dir, "platform.json")));
 }
 
@@ -116,4 +117,34 @@ describe("platform", () => {
       extraInDatabase: [],
     });
   });
+
+  it("reads mentions, quota, and env from the worktree", async () => {
+    const p = platform();
+    const user = await p.loginDev("helena");
+    const ws = await p.ensureWorkspace(user);
+    mkdirSync(join(ws.worktree, "app", "Models"), { recursive: true });
+    writeFileSync(join(ws.worktree, "app", "Models", "UniqueWidget.php"), "<?php");
+    const mentions = await p.mentionIndex(ws.id);
+    expect(mentions.models).toContain("UniqueWidget");
+    expect(mentions.routes).not.toEqual(["quotes", "customers", "deliveries", "login"]);
+    const quota = await p.workspaceQuota(ws.id);
+    expect(quota.usedMb).toBeGreaterThanOrEqual(0);
+    expect(quota.limitMb).toBeGreaterThan(0);
+    expect(quota.usedMb).not.toBe(386);
+    const env = p.envPreview(ws.id);
+    expect(env.env.APP_URL).toContain(ws.previewToken);
+    expect(env.env.APP_URL).not.toMatch(/127\.0\.0\.1:\d+$/);
+  });
+
+  it("syncs the base branch without inventing a fixture message", async () => {
+    const p = platform();
+    const user = await p.loginDev("igor");
+    const ws = await p.ensureWorkspace(user);
+    const session = p.createSession(ws.id, "mock");
+    await p.handleCommand({ user, sessionId: session.id, command: { type: "sync_base" } });
+    const stored = p.store.read().sessions.find((s) => s.id === session.id);
+    const conflict = stored?.events.find((e) => e.type === "conflict");
+    expect(conflict && conflict.type === "conflict" ? conflict.message : "").not.toMatch(/fixture workspace/i);
+  });
 });
+

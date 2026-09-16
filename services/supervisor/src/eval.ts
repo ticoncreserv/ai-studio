@@ -1,5 +1,5 @@
 import { foldEvents } from "@atelier/domain";
-import { loadTranscript } from "./providers/mock.js";
+import { loadTranscript } from "./transcripts.js";
 
 export interface GoldTask {
   id: string;
