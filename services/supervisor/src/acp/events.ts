@@ -20,6 +20,13 @@ export function eventsFromAcpUpdate(msg: Record<string, unknown>): SessionEvent[
   const at = new Date().toISOString();
   const id = crypto.randomUUID();
 
+  if (
+    update.sessionUpdate === "agent_thought_chunk" ||
+    update.sessionUpdate === "agent_thought" ||
+    update.sessionUpdate === "thought_chunk"
+  ) {
+    return [];
+  }
   if (update.sessionUpdate === "agent_message_chunk" && update.content?.text) {
     return [{ type: "assistant_delta", id, at, text: update.content.text }];
   }

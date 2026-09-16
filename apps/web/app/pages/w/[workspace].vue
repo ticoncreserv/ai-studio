@@ -177,11 +177,7 @@ function onFixDebug() {
           :working-since="workingSince"
           :failed-event-id="failedEventId"
           :enter-event-id="enterEventId"
-          :spectator="spectator"
-          :spectator-enabled="!!data?.flags?.spectator"
           :query="query"
-          :branch="data.workspace.branch"
-          :runner="data.session?.provider ?? data.preferredProvider"
           @command="onCommand"
           @update:query="query = $event"
           @search="refresh"
@@ -189,7 +185,6 @@ function onFixDebug() {
           @suggestion="useSuggestion"
           @fork="newSession"
           @retry="retryFailed"
-          @toggle-spectator="toggleSpectator"
         >
           <p v-if="data.agent?.error" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ t("chat.cursorRequired") }}</p>
           <StudioComposer

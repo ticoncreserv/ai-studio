@@ -31,5 +31,10 @@ describe("ACP event mapping", () => {
         },
       },
     })[0]).toMatchObject({ type: "available_skills", commands: [{ name: "create-skill", hint: "name" }] });
+    expect(
+      eventsFromAcpUpdate({
+        params: { update: { sessionUpdate: "agent_thought_chunk", content: { text: "Reading the skill" } } },
+      }),
+    ).toEqual([]);
   });
 });

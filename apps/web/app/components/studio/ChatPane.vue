@@ -9,11 +9,7 @@ const props = defineProps<{
   workingSince: number | null;
   failedEventId: string;
   enterEventId: string;
-  spectator: boolean;
-  spectatorEnabled: boolean;
   query: string;
-  branch: string;
-  runner: string;
 }>();
 
 const emit = defineEmits<{
@@ -24,7 +20,6 @@ const emit = defineEmits<{
   suggestion: [text: string];
   fork: [];
   retry: [];
-  "toggle-spectator": [];
 }>();
 
 const { t } = useI18n();
@@ -145,23 +140,5 @@ const workingLabel = computed(() =>
     </div>
 
     <slot />
-
-    <div class="cx-footer shrink-0">
-      <span class="inline-flex min-w-0 items-center gap-1">
-        <span class="truncate" :title="branch">{{ branch }}</span>
-      </span>
-      <span class="hidden truncate sm:inline" :title="runner">{{ runner }}</span>
-      <button
-        v-if="spectatorEnabled"
-        type="button"
-        class="truncate hover:text-ink-700"
-        @click="emit('toggle-spectator')"
-      >
-        {{ spectator ? t("workspace.watching") : t("workspace.editor") }}
-      </button>
-      <span class="ml-auto flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-        <UiSpinner v-if="sending" size="sm" :label="t('chat.working')" />
-      </span>
-    </div>
   </section>
 </template>
