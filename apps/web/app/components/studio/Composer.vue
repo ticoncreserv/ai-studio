@@ -11,6 +11,7 @@ const props = defineProps<{
   recipesEnabled: boolean;
   spectator: boolean;
   sending: boolean;
+  provider: string;
   attachments: StudioAttachment[];
   mentionsOpen: boolean;
   mentionHits: Array<{ item: string; kind: string }>;
@@ -92,6 +93,9 @@ const modeHint = computed(() => {
           <UiIconButton :label="t('chat.attach')" size="sm" @click="fileInput?.click()">
             <Paperclip class="h-4 w-4" />
           </UiIconButton>
+          <span class="rounded-[8px] bg-white/5 px-2 py-1 text-[11px] font-semibold text-ink-600">
+            {{ provider === "cursor" ? t("chat.usingCursor") : provider === "mock" ? t("chat.usingMock") : provider }}
+          </span>
           <select
             class="h-8 max-w-[110px] rounded-[8px] bg-white/5 px-2 text-[11px] font-semibold text-ink-800 outline-none"
             :value="mode"

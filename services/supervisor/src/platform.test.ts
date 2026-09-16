@@ -52,7 +52,7 @@ describe("platform", () => {
     const p = platform();
     const user = await p.loginDev("carla");
     const ws = await p.ensureWorkspace(user);
-    const session = p.createSession(ws.id);
+    const session = p.createSession(ws.id, "mock");
     await expect(
       p.handleCommand({
         user,

@@ -139,6 +139,8 @@ export function useStudio() {
         body: { command, spectator: spectator.value },
       });
       await refresh();
+    } catch {
+      flash(t("chat.promptFailed"));
     } finally {
       sending.value = false;
     }
@@ -202,9 +204,9 @@ export function useStudio() {
   async function newSession() {
     const created = await $fetch<{ id: string }>("/api/sessions", {
       method: "POST",
-      body: { workspaceId: workspaceId.value, provider: data.value?.session?.provider ?? "mock" },
+      body: { workspaceId: workspaceId.value, provider: data.value?.preferredProvider ?? data.value?.session?.provider ?? "mock" },
     });
-    if (data.value) data.value.session = { ...(data.value.session as StudioPayload["session"]), ...created, title: "", events: [], provider: data.value.session?.provider ?? "mock", createdAt: new Date().toISOString() };
+    if (data.value) data.value.session = { ...(data.value.session as StudioPayload["session"]), ...created, title: "", events: [], provider: data.value.preferredProvider ?? data.value.session?.provider ?? "mock", createdAt: new Date().toISOString() };
     await refresh();
   }
 

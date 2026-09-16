@@ -24,8 +24,13 @@ export class AcpSession {
     private readonly onPermission: (id: number, params: unknown) => void,
   ) {}
 
-  start(env: NodeJS.ProcessEnv = process.env): void {
-    this.proc = spawn(this.command, this.args, { stdio: ["pipe", "pipe", "pipe"], env });
+  start(env: NodeJS.ProcessEnv = process.env, cwd?: string): void {
+    this.proc = spawn(this.command, this.args, { stdio: ["pipe", "pipe", "pipe"], env, cwd });
+    this.proc.on("exit", (code) => {
+      const err = new Error(`ACP process exited (${code ?? "null"})`);
+      for (const waiter of this.pending.values()) waiter.reject(err);
+      this.pending.clear();
+    });
     const rl = createInterface({ input: this.proc.stdout });
     rl.on("line", (line) => {
       let msg: Record<string, unknown>;

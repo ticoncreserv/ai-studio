@@ -1,5 +1,6 @@
 import type { SessionEvent } from "@atelier/contracts";
 import { AcpSession } from "../acp/session.js";
+import { cursorAgentEnv, hasCursorApiKey } from "./env.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
 import { PROVIDER_CATALOG } from "./types.js";
 
@@ -11,6 +12,8 @@ export class CursorProvider implements AgentProvider {
     onEvent: (event: SessionEvent) => void;
     resumeSessionId?: string;
   }): Promise<ProviderRun> {
+    const env = cursorAgentEnv();
+    if (!hasCursorApiKey(env)) throw new Error("CURSOR_API_KEY is not set");
     const acp = new AcpSession(
       this.capability.command,
       this.capability.args,
@@ -29,13 +32,8 @@ export class CursorProvider implements AgentProvider {
         acp.respond(id, { outcome: { outcome: "selected", optionId: "allow-once" } });
       },
     );
-    acp.start();
+    acp.start(env, input.cwd);
     await acp.initialize();
-    try {
-      await acp.authenticate();
-    } catch {
-      // Origin-scoped tokens cannot authenticate; caller should fall back to MockProvider.
-    }
     if (input.resumeSessionId) {
       try {
         await acp.loadSession(input.resumeSessionId, input.cwd);

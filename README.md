@@ -61,7 +61,7 @@ Manual path: GitHub → Organization settings → Developer settings → GitHub 
 
 A GitHub OAuth App also covers login. Same callback URL; only `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are required.
 
-Cursor ACP is a different credential. The GitHub App does not authenticate `cursor-agent`. Until a Cursor user token works, the studio uses `MockProvider`.
+Cursor ACP is a different credential. Set `CURSOR_API_KEY` in `.env`. The studio strips any inherited Origin-scoped `CURSOR_AUTH_TOKEN` before spawning `agent acp`. Without a key, sessions stay on `MockProvider`.
 
 Commits in a workspace set `user.name` / `user.email` and `commit.gpgsign=false` per invocation. The agent is recorded as `Co-authored-by`.
 
@@ -73,7 +73,7 @@ Side effects are forced off (`MAIL_MAILER=log`, integration flags false). Isolat
 
 ## ACP
 
-`cursor-agent acp` is the first provider. The available Origin-scoped token cannot authenticate (`permission_denied` on `cursor_login`); the handshake is recorded in `fixtures/acp/initialize-handshake.ndjson`. Development uses `MockProvider` until a Cursor user token exists.
+`agent acp` is the first provider. `CURSOR_API_KEY` authenticates the child process. An Origin-scoped `CURSOR_AUTH_TOKEN` on the host cannot be reused (`permission_denied` on `cursor_login`); that handshake is recorded in `fixtures/acp/initialize-handshake.ndjson`. Without a key, the studio uses `MockProvider`.
 
 ## Feature flags
 

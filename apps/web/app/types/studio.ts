@@ -36,6 +36,7 @@ export interface StudioPayload {
   }>;
   rules: Array<{ id: string; level: "platform" | "project" | "user"; title: string; body: string }>;
   providers: ProviderCapability[];
+  preferredProvider: string;
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
   lock: { sessionId: string; userId: string } | null;
   env: { env: Record<string, string> };

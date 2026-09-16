@@ -23,6 +23,7 @@ export default defineEventHandler((event) => {
     connections: db.connections,
     rules: platform().getRules(),
     providers: platform().listProviders(),
+    preferredProvider: platform().preferredProvider(),
     presence: db.presence.filter((p) => p.workspaceId === id),
     lock: db.runLock[id] ?? null,
     env: platform().envPreview(id),

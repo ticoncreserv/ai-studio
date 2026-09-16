@@ -138,6 +138,7 @@ function onFixDebug() {
               :recipes-enabled="!!data.flags.recipes"
               :spectator="spectator"
               :sending="sending"
+              :provider="data.session?.provider ?? data.preferredProvider"
               :attachments="attachments"
               :mentions-open="mentionsOpen"
               :mention-hits="mentionHits"

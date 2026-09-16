@@ -23,6 +23,7 @@ import {
 } from "@atelier/domain";
 import { bus } from "./bus.js";
 import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
+import { preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
 import { createProvider, listProviders } from "./providers/index.js";
 import { fixtureAppDir, repoRoot } from "./paths.js";
 import { applyHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
@@ -177,7 +178,11 @@ export class Platform {
     return session;
   }
 
-  createSession(workspaceId: string, provider: ProviderId = "mock"): SessionRecord {
+  preferredProvider(): ProviderId {
+    return preferredAgentProvider();
+  }
+
+  createSession(workspaceId: string, provider: ProviderId = preferredAgentProvider()): SessionRecord {
     const session: SessionRecord = {
       id: randomUUID(),
       workspaceId,
@@ -392,31 +397,54 @@ export class Platform {
 
     const usage = { startedAt: Date.now(), toolCalls: 0, costUsd: 0 };
     const budget = defaultBudget();
-    const provider = createProvider((session.provider as ProviderId) || "mock");
-    const run = await provider.start({
-      cwd: ws.worktree,
-      onEvent: (event) => {
-        usage.toolCalls += event.type === "tool_call" ? 1 : 0;
-        const reason = budgetExceeded(budget, usage);
-        if (reason) {
-          this.append(session.id, {
-            type: "budget",
-            id: randomUUID(),
-            at: new Date().toISOString(),
-            reason,
-            message: `Run stopped: ${reason} budget exceeded`,
-          });
-          void run.cancel();
-          return;
-        }
-        this.append(session.id, event);
-      },
-    });
-    this.runs.set(session.id, run);
+    const providerId = resolveSessionProvider(session.provider);
+    if (providerId !== session.provider) this.setSessionProvider(session.id, providerId);
+    const provider = createProvider(providerId);
+    let streamed = "";
+    let run: Awaited<ReturnType<typeof provider.start>> | undefined;
     try {
+      run = await provider.start({
+        cwd: ws.worktree,
+        onEvent: (event) => {
+          if (event.type === "assistant_delta") streamed += event.text;
+          usage.toolCalls += event.type === "tool_call" ? 1 : 0;
+          const reason = budgetExceeded(budget, usage);
+          if (reason) {
+            this.append(session.id, {
+              type: "budget",
+              id: randomUUID(),
+              at: new Date().toISOString(),
+              reason,
+              message: `Run stopped: ${reason} budget exceeded`,
+            });
+            void run?.cancel();
+            return;
+          }
+          this.append(session.id, event);
+        },
+      });
+      this.runs.set(session.id, run);
       await run.prompt([{ type: "text", text: packed.text }]);
+      if (streamed.trim()) {
+        this.append(session.id, {
+          type: "assistant_message",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          text: streamed.trim(),
+          streaming: false,
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The Cursor agent failed.";
+      this.append(session.id, {
+        type: "assistant_message",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        text: `The agent could not complete this prompt. ${message}`,
+        streaming: false,
+      });
     } finally {
-      run.stop();
+      run?.stop();
       this.runs.delete(session.id);
       this.store.update((d) => {
         delete d.runLock[ws.id];
