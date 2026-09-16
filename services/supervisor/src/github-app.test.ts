@@ -126,10 +126,11 @@ describe("github app manifest", () => {
     expect(githubOAuthRedirectCandidates()).not.toContain("http://localhost/api/auth/github/callback");
   });
 
-  it("keeps the portless localhost callback GitHub already stored", () => {
+  it("sends GitHub back to the loopback origin the browser opened", () => {
     expect(githubAppAuthorizeRedirectUri("http://127.0.0.1:43123")).toBe(
-      "http://localhost/api/auth/github/callback",
+      "http://127.0.0.1:43123/api/auth/github/callback",
     );
+    expect(githubAppAuthorizeRedirectUri()).toBe("http://127.0.0.1:43123/api/auth/github/callback");
     expect(githubAppAuthorizeRedirectUri("https://atelier.example")).toBe(
       "https://atelier.example/api/auth/github/callback",
     );

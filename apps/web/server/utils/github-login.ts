@@ -2,25 +2,27 @@ import {
   createAuthProvider,
   githubAppAuthorizeRedirectUri,
   hasGitHubOAuth,
-  oauthRedirectUriForIncomingHost,
   saveGitHubInstallationId,
   signSession,
   syncGitHubAppPublicUrls,
 } from "@atelier/supervisor";
-import { requestCallbackHost, requestPublicUrl } from "./public-url";
+import { requestPublicUrl } from "./public-url";
 import { platform } from "./platform";
 import type { H3Event } from "h3";
 
 export async function finishGitHubLogin(
   event: H3Event,
-  input: { code: string; installationId?: string; locale?: string },
+  input: { code: string; installationId?: string; locale?: string; state?: string },
 ) {
   if (input.installationId) saveGitHubInstallationId(input.installationId);
   const provider = createAuthProvider();
   const identity = await provider.completeLogin({
     code: input.code,
     locale: input.locale || String(getCookie(event, "atelier-locale") ?? "pt-BR"),
-    redirectUri: incomingOAuthRedirectUri(event),
+    // Must match the authorize redirect_uri. The loopback proxy 302s localhost:80
+    // to :43123, so the incoming Host is the wrong value to send to GitHub.
+    redirectUri: oauthRedirectUri(event),
+    state: input.state,
   });
   const user = await platform().loginDev(identity.login, identity.locale);
   platform().store.update((db) => {
@@ -41,15 +43,6 @@ export async function finishGitHubLogin(
     identity,
     next: fresh.disabled ? "/disabled" : identity.accessPending ? "/pending" : "/",
   };
-}
-
-export function incomingOAuthRedirectUri(event: H3Event): string {
-  const forwardedHost = getHeader(event, "x-forwarded-host");
-  return oauthRedirectUriForIncomingHost(
-    forwardedHost || getHeader(event, "host") || requestCallbackHost(event),
-    getHeader(event, "x-forwarded-proto") || undefined,
-    getHeader(event, "x-forwarded-port") || undefined,
-  );
 }
 
 export function oauthRedirectUri(event: H3Event): string {
@@ -82,6 +75,7 @@ export async function handleGitHubOAuthCallback(event: H3Event) {
       code,
       installationId,
       locale: String(getCookie(event, "atelier-locale") ?? "pt-BR"),
+      state: String(query.state ?? ""),
     });
     return sendRedirect(event, next);
   } catch {
