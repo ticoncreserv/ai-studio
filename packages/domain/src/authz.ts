@@ -26,6 +26,8 @@ export function canSpectate(role: Role): boolean {
   return role === "owner" || role === "editor" || role === "viewer";
 }
 
+export const FALLBACK_REPO_OWNER_LOGIN = "ticoncreserv";
+
 export function adminLoginsFromEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): string[] {
   return (env.ATELIER_ADMIN_LOGINS ?? "")
     .split(",")
@@ -33,12 +35,22 @@ export function adminLoginsFromEnv(env: NodeJS.ProcessEnv | Record<string, strin
     .filter(Boolean);
 }
 
+export function sameLogin(left: string, right: string): boolean {
+  return left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+export function isRepoOwnerLogin(login: string, repoOwnerLogin = FALLBACK_REPO_OWNER_LOGIN): boolean {
+  return sameLogin(login, repoOwnerLogin);
+}
+
 export function isPlatformAdmin(
   user: { login: string; role: Role; platformAdmin?: boolean },
-  options: { hasExplicitAdmin: boolean; envLogins?: string[] } = { hasExplicitAdmin: false },
+  options: { hasExplicitAdmin: boolean; envLogins?: string[]; repoOwnerLogin?: string } = { hasExplicitAdmin: false },
 ): boolean {
   const envLogins = options.envLogins ?? adminLoginsFromEnv();
-  if (envLogins.includes(user.login)) return true;
+  const repoOwnerLogin = options.repoOwnerLogin?.trim() || FALLBACK_REPO_OWNER_LOGIN;
+  if (isRepoOwnerLogin(user.login, repoOwnerLogin)) return true;
+  if (envLogins.some((login) => sameLogin(login, user.login))) return true;
   if (user.platformAdmin) return true;
   if (!options.hasExplicitAdmin && user.role === "owner") return true;
   return false;

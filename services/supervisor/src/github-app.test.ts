@@ -21,6 +21,7 @@ import {
   verifyGitHubWebhookSignature,
   saveGitHubAppCredentials,
   loadGitHubAppCredentials,
+  githubRepoOwnerLogin,
 } from "./github-app.js";
 
 const envKeys = [
@@ -230,5 +231,44 @@ describe("github app manifest", () => {
         "http://127.0.0.1:43123/api/auth/github/callback",
       ]),
     );
+  });
+
+  it("resolves the GitHub repository owner login from the installation or repo", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-gh-"));
+    const path = join(dir, "github-app.json");
+    const previous = process.env.ATELIER_REPO;
+    try {
+      delete process.env.ATELIER_REPO;
+      expect(githubRepoOwnerLogin(join(dir, "missing.json"))).toBe("ticoncreserv");
+      saveGitHubAppCredentials(
+        {
+          appId: "1",
+          clientId: "Iv1.keep",
+          clientSecret: "keep",
+          privateKey: "pem",
+          webhookSecret: "hook",
+        },
+        path,
+      );
+      expect(githubRepoOwnerLogin(path)).toBe("ticoncreserv");
+      saveGitHubAppCredentials(
+        {
+          appId: "1",
+          clientId: "Iv1.keep",
+          clientSecret: "keep",
+          privateKey: "pem",
+          webhookSecret: "hook",
+          ownerLogin: "ada",
+        },
+        path,
+      );
+      expect(githubRepoOwnerLogin(path)).toBe("ada");
+      expect(loadGitHubAppCredentials(path)?.ownerLogin).toBe("ada");
+      process.env.ATELIER_REPO = "octocat/hello";
+      expect(githubRepoOwnerLogin(join(dir, "other.json"))).toBe("octocat");
+    } finally {
+      if (previous === undefined) delete process.env.ATELIER_REPO;
+      else process.env.ATELIER_REPO = previous;
+    }
   });
 });

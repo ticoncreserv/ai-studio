@@ -46,6 +46,7 @@ const users = ref<
     accessPending: boolean;
     platformAdmin: boolean;
     envAdmin: boolean;
+    repoOwner: boolean;
     workspaceStatus: string | null;
     lastActiveAt: string | null;
   }>
@@ -126,6 +127,9 @@ function apiErrorMessage(err: unknown): string {
   const message = row?.data?.statusMessage || row?.data?.message || row?.statusMessage || row?.message;
   if (typeof message === "string" && /last platform admin/i.test(message)) {
     return t("admin.lastAdmin");
+  }
+  if (typeof message === "string" && /github repository owner/i.test(message)) {
+    return t("admin.cannotRevokeOwner");
   }
   if (typeof message === "string" && /already hibernat/i.test(message)) {
     return t("admin.alreadyHibernated");
@@ -474,7 +478,8 @@ function statusTone(status: string | null) {
                       </p>
                     </div>
                   </div>
-                  <p v-if="user.envAdmin" class="text-[11px] text-ink-400">{{ t("admin.envLocked") }}</p>
+                  <p v-if="user.repoOwner" class="text-[11px] text-ink-400">{{ t("admin.ownerLocked") }}</p>
+                  <p v-else-if="user.envAdmin" class="text-[11px] text-ink-400">{{ t("admin.envLocked") }}</p>
                   <UiButton
                     v-else
                     size="sm"

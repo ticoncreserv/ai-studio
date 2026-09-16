@@ -11,6 +11,8 @@ import {
   canSpectate,
   canTransition,
   adminLoginsFromEnv,
+  isRepoOwnerLogin,
+  sameLogin,
   compileRules,
   defaultBudget,
   defaultDiskPolicy,
@@ -36,7 +38,13 @@ import { fixtureAppDir, repoRoot } from "./paths.js";
 import { applyHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
 import { worktreeDivergence } from "./migrations.js";
 import { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
-import { atelierPublicUrl, githubAppRepo, hasGitHubOAuth, loadGitHubAppCredentials } from "./github-app.js";
+import {
+  atelierPublicUrl,
+  githubAppRepo,
+  githubRepoOwnerLogin,
+  hasGitHubOAuth,
+  loadGitHubAppCredentials,
+} from "./github-app.js";
 import { resolveInstallationToken } from "./github.js";
 import { isForeignWorktree } from "./runtime/clone.js";
 import {
@@ -96,11 +104,20 @@ export class Platform {
     return db.users.some((user) => typeof user.platformAdmin === "boolean") || adminLoginsFromEnv().length > 0;
   }
 
+  repoOwnerLogin(): string {
+    return githubRepoOwnerLogin();
+  }
+
+  isRepoOwner(user: UserRecord): boolean {
+    return isRepoOwnerLogin(user.login, this.repoOwnerLogin());
+  }
+
   isPlatformAdmin(user: UserRecord): boolean {
     const row = this.store.read().users.find((item) => item.id === user.id) ?? user;
     return matchPlatformAdmin(row, {
       hasExplicitAdmin: this.hasExplicitAdmin(),
       envLogins: adminLoginsFromEnv(),
+      repoOwnerLogin: this.repoOwnerLogin(),
     });
   }
 
@@ -855,7 +872,8 @@ export class Platform {
         role: this.roleFor(user),
         accessPending: Boolean(user.accessPending),
         platformAdmin: this.isPlatformAdmin(user),
-        envAdmin: adminLoginsFromEnv().includes(user.login),
+        envAdmin: adminLoginsFromEnv().some((login) => sameLogin(login, user.login)),
+        repoOwner: this.isRepoOwner(user),
         workspaceId: workspace?.id ?? null,
         workspaceStatus: workspace?.status ?? null,
         lastActiveAt: workspace?.lastActiveAt ?? null,
@@ -868,8 +886,11 @@ export class Platform {
     const db = this.store.read();
     const target = db.users.find((row) => row.id === userId);
     if (!target) throw new Error("User not found");
-    if (adminLoginsFromEnv().includes(target.login) && !value) {
+    if (adminLoginsFromEnv().some((login) => sameLogin(login, target.login)) && !value) {
       throw new Error("Cannot revoke an env-listed admin");
+    }
+    if (!value && this.isRepoOwner(target)) {
+      throw new Error("Cannot revoke the GitHub repository owner");
     }
     const currentAdmins = db.users.filter((row) => this.isPlatformAdmin(row));
     if (!value) {
@@ -1189,7 +1210,11 @@ declare global {
 
 export function getPlatform(): Platform {
   const current = globalThis.__atelierPlatform;
-  if (!current || typeof current.adminHibernate !== "function") {
+  if (
+    !current ||
+    typeof current.adminHibernate !== "function" ||
+    typeof current.repoOwnerLogin !== "function"
+  ) {
     globalThis.__atelierPlatform = new Platform();
   }
   return globalThis.__atelierPlatform;

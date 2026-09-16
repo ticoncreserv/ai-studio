@@ -254,6 +254,32 @@ describe("platform", () => {
       else process.env.ATELIER_ADMIN_LOGINS = previous;
     }
   });
+
+  it("always treats the GitHub repository owner as admin and rejects revoke", () => {
+    const p = platform();
+    const ownerLogin = p.repoOwnerLogin();
+    const owner = addUser(p, ownerLogin, "viewer");
+    const bob = addUser(p, "bob");
+    p.store.update((db) => {
+      const row = db.users.find((user) => user.id === owner.id);
+      if (row) row.platformAdmin = false;
+    });
+    expect(p.isPlatformAdmin(owner)).toBe(true);
+    expect(p.listUsers().find((row) => row.id === owner.id)).toMatchObject({
+      platformAdmin: true,
+      repoOwner: true,
+    });
+
+    p.setPlatformAdmin(owner, bob.id, true);
+    expect(() => p.setPlatformAdmin(bob, owner.id, false)).toThrow(/repository owner/i);
+    expect(p.isPlatformAdmin(owner)).toBe(true);
+    expect(p.store.read().users.find((row) => row.id === owner.id)?.platformAdmin).toBe(false);
+
+    p.setPlatformAdmin(owner, bob.id, false);
+    expect(p.isPlatformAdmin(bob)).toBe(false);
+    expect(p.isPlatformAdmin(owner)).toBe(true);
+    expect(() => p.setPlatformAdmin(owner, bob.id, false)).not.toThrow();
+  });
 });
 
 function addUser(p: Platform, login: string, role: UserRecord["role"] = "owner"): UserRecord {

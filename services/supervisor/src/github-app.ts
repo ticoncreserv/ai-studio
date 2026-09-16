@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { FALLBACK_REPO_OWNER_LOGIN } from "@atelier/domain";
 import { appJwt } from "./github.js";
 import { repoRoot } from "./paths.js";
 
@@ -13,6 +14,7 @@ export interface GitHubAppCredentials {
   slug?: string;
   htmlUrl?: string;
   installationId?: string;
+  ownerLogin?: string;
 }
 
 export interface GitHubAppManifest {
@@ -53,6 +55,24 @@ export function githubAppOrg(): string {
 
 export function githubAppRepo(): string {
   return process.env.ATELIER_REPO ?? "ticoncreserv/app";
+}
+
+function storedGitHubOwnerLogin(path: string): string {
+  if (!existsSync(path)) return "";
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as { ownerLogin?: string };
+    return typeof raw.ownerLogin === "string" ? raw.ownerLogin.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+export function githubRepoOwnerLogin(path = githubAppStorePath()): string {
+  const stored = storedGitHubOwnerLogin(path);
+  if (stored) return stored;
+  const repo = process.env.ATELIER_REPO ?? "ticoncreserv/app";
+  const fromRepo = repo.split("/")[0]?.trim();
+  return fromRepo || FALLBACK_REPO_OWNER_LOGIN;
 }
 
 export const GITHUB_OAUTH_CALLBACK_PATH = "/api/auth/github/callback";
@@ -461,6 +481,7 @@ export function loadGitHubAppCredentials(path = githubAppStorePath()): GitHubApp
       slug: raw.slug,
       htmlUrl: raw.htmlUrl,
       installationId: raw.installationId,
+      ownerLogin: raw.ownerLogin,
     };
   } catch {
     return null;
@@ -470,6 +491,15 @@ export function loadGitHubAppCredentials(path = githubAppStorePath()): GitHubApp
 export function saveGitHubAppCredentials(creds: GitHubAppCredentials, path = githubAppStorePath()): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(creds, null, 2)}\n`, { mode: 0o600 });
+}
+
+export function persistRepoOwnerLogin(path = githubAppStorePath()): string {
+  const login = githubRepoOwnerLogin(path);
+  const creds = loadGitHubAppCredentials(path);
+  if (creds && !creds.ownerLogin?.trim()) {
+    saveGitHubAppCredentials({ ...creds, ownerLogin: login }, path);
+  }
+  return login;
 }
 
 export function applyGitHubAppCredentials(creds: GitHubAppCredentials): void {
@@ -491,6 +521,7 @@ export function applyStoredGitHubAppCredentials(): GitHubAppCredentials | null {
   const creds = loadGitHubAppCredentials();
   if (creds) applyGitHubAppCredentials(creds);
   ensureGitHubWebhookSecret();
+  persistRepoOwnerLogin();
   return loadGitHubAppCredentials();
 }
 

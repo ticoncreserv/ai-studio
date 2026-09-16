@@ -39,6 +39,8 @@ export {
   githubAppRegisteredCallbackUrls,
   githubAppOrg,
   githubAppRepo,
+  githubRepoOwnerLogin,
+  persistRepoOwnerLogin,
   githubLoopbackOrigins,
   githubOAuthRedirectCandidates,
   oauthRedirectUriForIncomingHost,
