@@ -13,6 +13,7 @@ import {
   X,
 } from "@lucide/vue";
 import type { StudioAttachment } from "~/types/studio";
+import type { QueuedPrompt } from "~/utils/chat-events";
 
 const props = defineProps<{
   modelValue: string;
@@ -28,6 +29,7 @@ const props = defineProps<{
   attachments: StudioAttachment[];
   mentionsOpen: boolean;
   mentionHits: Array<{ item: string; kind: string }>;
+  queue?: QueuedPrompt[];
 }>();
 
 const emit = defineEmits<{
@@ -40,6 +42,7 @@ const emit = defineEmits<{
   attach: [files: FileList];
   "remove-attachment": [path: string];
   "toggle-spectator": [];
+  "drop-queue": [];
 }>();
 
 const { t } = useI18n();
@@ -52,6 +55,9 @@ const recipesOpen = ref(false);
 const cursor = ref(0);
 const listening = ref(false);
 const dictationSupported = ref(false);
+const queued = computed(() => props.queue ?? []);
+const canSend = computed(() => Boolean(props.modelValue.trim() || props.recipeId || props.attachments.length));
+const showStop = computed(() => props.sending && !canSend.value);
 
 type Recognition = {
   lang: string;
@@ -170,7 +176,7 @@ onBeforeUnmount(() => recognition?.stop());
 <template>
   <form class="relative shrink-0 px-2.5 pb-1.5" @submit.prevent="emit('submit')">
     <div v-if="mentionsOpen" class="cx-menu absolute inset-x-2.5 bottom-full z-20 mb-1 p-1 shadow-float">
-      <p v-if="!mentionHits.length" class="cx-menu-row text-ink-400">{{ t("chat.noMentions") }}</p>
+      <p v-if="!mentionHits.length" class="cx-menu-row cx-muted">{{ t("chat.noMentions") }}</p>
       <button
         v-for="hit in mentionHits"
         :key="hit.kind + hit.item"
@@ -227,14 +233,14 @@ onBeforeUnmount(() => recognition?.stop());
           <ChevronRight class="ml-auto h-3 w-3 shrink-0 text-ink-400 transition-transform" :class="recipesOpen && 'rotate-90'" />
         </button>
         <template v-if="recipesOpen">
-          <button type="button" class="cx-menu-row pl-[29px]" @click="pickRecipe('')">
+          <button type="button" class="cx-menu-row cx-menu-row-sub" @click="pickRecipe('')">
             <span class="min-w-0 flex-1 truncate">{{ t("chat.recipeNone") }}</span>
           </button>
           <button
             v-for="recipe in recipes"
             :key="recipe.id"
             type="button"
-            class="cx-menu-row pl-[29px]"
+            class="cx-menu-row cx-menu-row-sub"
             :data-active="recipe.id === recipeId || undefined"
             @click="pickRecipe(recipe.id)"
           >
@@ -251,6 +257,17 @@ onBeforeUnmount(() => recognition?.stop());
           @update:model-value="emit('toggle-spectator')"
         />
       </div>
+    </div>
+
+    <div v-if="queued.length" class="cx-queue mb-1.5">
+      <span class="cx-working-dots" aria-hidden="true"><i /><i /><i /></span>
+      <span class="min-w-0 flex-1 truncate">
+        {{ queued.length > 1 ? t("chat.queueCount", { count: queued.length }) : t("chat.queue") }}
+        · {{ queued[0]?.text }}
+      </span>
+      <button type="button" class="text-ink-400 hover:text-ink-950" :aria-label="t('chat.discardQueue')" @click="emit('drop-queue')">
+        <X class="h-3.5 w-3.5" />
+      </button>
     </div>
 
     <div class="cx-composer">
@@ -287,7 +304,7 @@ onBeforeUnmount(() => recognition?.stop());
           @keydown.ctrl.enter.prevent="emit('submit')"
           @paste="onPaste"
         />
-        <UiIconButton v-if="sending" :label="t('chat.cancel')" size="sm" @click="emit('cancel')">
+        <UiIconButton v-if="sending && canSend" :label="t('chat.stop')" size="sm" @click="emit('cancel')">
           <X class="h-3.5 w-3.5" />
         </UiIconButton>
         <button
@@ -302,15 +319,26 @@ onBeforeUnmount(() => recognition?.stop());
           <Mic class="h-3.5 w-3.5" />
         </button>
         <button
-          type="submit"
-          :disabled="spectator || sending"
+          v-if="showStop"
+          type="button"
           class="cx-round"
           data-tone="primary"
-          :aria-label="t('chat.send')"
-          :title="t('chat.send')"
+          :aria-label="t('chat.stop')"
+          :title="t('chat.stop')"
+          @click="emit('cancel')"
         >
-          <UiSpinner v-if="sending" size="sm" :label="t('chat.thinking')" />
-          <ArrowUp v-else class="h-3.5 w-3.5" />
+          <span class="h-2.5 w-2.5 rounded-[2px] bg-current" />
+        </button>
+        <button
+          v-else
+          type="submit"
+          :disabled="spectator || !canSend"
+          class="cx-round"
+          data-tone="primary"
+          :aria-label="sending ? t('chat.queue') : t('chat.send')"
+          :title="sending ? t('chat.queue') : t('chat.send')"
+        >
+          <ArrowUp class="h-3.5 w-3.5" />
         </button>
       </div>
 

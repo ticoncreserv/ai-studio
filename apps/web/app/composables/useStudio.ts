@@ -1,6 +1,14 @@
 import { foldEvents } from "@atelier/domain";
 import type { AgentMode, ClientCommand, SessionEvent, Viewport } from "@atelier/contracts";
 import type { PreviewDebug, PreviewTool, StudioAttachment, StudioDialog, StudioPayload, StudioSheet } from "~/types/studio";
+import {
+  hasProgressAfterLastUser,
+  mergePendingTurn,
+  upsertSessionEvent,
+  userMessageCount,
+  type PendingUserTurn,
+  type QueuedPrompt,
+} from "~/utils/chat-events";
 import { nextPreviewEventId, shouldReloadPreviewOnCommand, shouldReloadPreviewOnEvent } from "~/utils/preview-reload";
 
 export function useStudio() {
@@ -24,6 +32,9 @@ export function useStudio() {
   const toast = ref("");
   const streamingText = ref("");
   const sending = ref(false);
+  const pendingTurn = ref<PendingUserTurn | null>(null);
+  const queue = ref<QueuedPrompt[]>([]);
+  const workingSince = ref<number | null>(null);
   const previewBusy = ref(false);
   const previewKey = ref(0);
   const lastPreviewEventId = ref("");
@@ -37,13 +48,16 @@ export function useStudio() {
   const questionAnswers = ref<Record<string, string[]>>({});
 
   const events = computed<SessionEvent[]>(() => {
-    const persisted = (data.value?.events ?? []) as SessionEvent[];
+    const persisted = mergePendingTurn((data.value?.events ?? []) as SessionEvent[], pendingTurn.value);
     if (!streamingText.value) return persisted;
     return [
       ...persisted,
       { type: "assistant_delta", id: "live", at: new Date().toISOString(), text: streamingText.value },
     ];
   });
+  const showWorking = computed(() => sending.value && !hasProgressAfterLastUser(events.value));
+  const failedEventId = computed(() => (pendingTurn.value?.status === "failed" ? pendingTurn.value.id : ""));
+  const enterEventId = computed(() => pendingTurn.value?.id ?? "");
   const snapshot = computed(() => foldEvents(events.value));
   const previewSrc = computed(() => data.value?.previewPath ?? "");
   const pendingPlan = computed(() => events.value.find((e) => e.type === "plan" && e.outcome === "pending"));
@@ -85,16 +99,7 @@ export function useStudio() {
     socket = new WebSocket(`${proto}://${location.host}/_ws?session=${sessionId}`);
     socket.onmessage = (frame) => {
       const event = JSON.parse(String(frame.data)) as SessionEvent;
-      if (event.type === "assistant_delta") {
-        streamingText.value += event.text;
-        return;
-      }
-      streamingText.value = "";
-      if (shouldReloadPreviewOnEvent(event.type) && event.id !== lastPreviewEventId.value) {
-        lastPreviewEventId.value = event.id;
-        previewKey.value += 1;
-      }
-      void refresh();
+      ingestSessionEvent(event);
     };
   }
 
@@ -106,7 +111,7 @@ export function useStudio() {
     }
     if (meta && e.key === ".") {
       e.preventDefault();
-      void sendCommand({ type: "cancel" });
+      void cancelRun();
     }
     if (meta && e.key === "1") viewport.value = "mobile";
     if (meta && e.key === "2") viewport.value = "tablet";
@@ -177,9 +182,51 @@ export function useStudio() {
     () => connectSocket(),
   );
 
+  watch(
+    () => userMessageCount((data.value?.events ?? []) as SessionEvent[]),
+    (count) => {
+      const pending = pendingTurn.value;
+      if (pending?.status === "sending" && count >= pending.waitUntilCount) pendingTurn.value = null;
+    },
+  );
+
+  function ingestSessionEvent(event: SessionEvent) {
+    if (event.type === "assistant_delta") {
+      streamingText.value += event.text;
+      return;
+    }
+    streamingText.value = "";
+    if (data.value) {
+      data.value.events = upsertSessionEvent(data.value.events as SessionEvent[], event);
+      if (data.value.session) data.value.session.events = data.value.events;
+    }
+    if (shouldReloadPreviewOnEvent(event.type) && event.id !== lastPreviewEventId.value) {
+      lastPreviewEventId.value = event.id;
+      previewKey.value += 1;
+    }
+    if (event.type === "tool_call" && event.status === "running") return;
+    void refresh();
+  }
+
+  function persistedUserCount() {
+    return userMessageCount((data.value?.events ?? []) as SessionEvent[]);
+  }
+
+  function resetComposerFocus() {
+    if (!import.meta.client) return;
+    void nextTick(() => document.getElementById("composer")?.focus());
+  }
+
+  function clearRunState() {
+    sending.value = false;
+    workingSince.value = null;
+    streamingText.value = "";
+  }
+
+  let runGeneration = 0;
+
   async function sendCommand(command: ClientCommand) {
     if (!data.value?.session?.id) return;
-    sending.value = command.type === "prompt";
     try {
       await $fetch(`/api/sessions/${data.value.session.id}/command`, {
         method: "POST",
@@ -193,34 +240,111 @@ export function useStudio() {
       } else if (shouldReloadPreviewOnCommand(command.type)) {
         previewKey.value += 1;
       }
-    } catch {
+    } catch (error) {
+      if (command.type === "prompt") throw error;
       flash(t("chat.promptFailed"));
-    } finally {
-      sending.value = false;
     }
   }
 
+  type PromptDraft = {
+    text: string;
+    attachments: string[];
+    mentions: string[];
+    recipeId?: string;
+    mode: AgentMode;
+  };
+
   async function submit() {
+    if (spectator.value) return;
     const text = prompt.value.trim();
     if (!text && !recipeId.value) return;
     const mentions = [...text.matchAll(/@([\w./-]+)/g)].map((m) => m[1]!);
-    prompt.value = "";
-    const files = attachments.value.map((a) => a.path);
-    attachments.value = [];
-    await sendCommand({
-      type: "prompt",
+    const draft: PromptDraft = {
       text,
-      attachments: files,
+      attachments: attachments.value.map((file) => file.path),
       mentions,
       recipeId: recipeId.value || undefined,
       mode: mode.value,
-    });
+    };
+    prompt.value = "";
+    attachments.value = [];
     recipeId.value = "";
+    resetComposerFocus();
+    if (sending.value) {
+      queue.value = [...queue.value, { id: `queue-${crypto.randomUUID()}`, ...draft }];
+      return;
+    }
+    await runPromptDraft(draft);
+  }
+
+  async function runPromptDraft(draft: PromptDraft) {
+    const generation = ++runGeneration;
+    pendingTurn.value = {
+      id: `pending-${crypto.randomUUID()}`,
+      text: draft.text,
+      at: new Date().toISOString(),
+      attachments: draft.attachments,
+      mentions: draft.mentions,
+      waitUntilCount: persistedUserCount() + 1,
+      status: "sending",
+    };
+    sending.value = true;
+    workingSince.value = Date.now();
+    try {
+      await sendCommand({
+        type: "prompt",
+        text: draft.text,
+        attachments: draft.attachments,
+        mentions: draft.mentions,
+        recipeId: draft.recipeId,
+        mode: draft.mode,
+      });
+      if (generation !== runGeneration) return;
+      if (pendingTurn.value && persistedUserCount() >= pendingTurn.value.waitUntilCount) {
+        pendingTurn.value = null;
+      }
+    } catch {
+      if (generation !== runGeneration) return;
+      if (pendingTurn.value) pendingTurn.value = { ...pendingTurn.value, status: "failed" };
+      flash(t("chat.promptFailed"));
+    } finally {
+      if (generation !== runGeneration) return;
+      const next = queue.value[0];
+      if (next && pendingTurn.value?.status !== "failed") {
+        queue.value = queue.value.slice(1);
+        await runPromptDraft(next);
+        return;
+      }
+      sending.value = false;
+      if (pendingTurn.value?.status !== "failed") workingSince.value = null;
+    }
+  }
+
+  async function cancelRun() {
+    runGeneration += 1;
+    queue.value = [];
+    clearRunState();
+    await sendCommand({ type: "cancel" });
+  }
+
+  function dropQueue() {
+    queue.value = [];
+  }
+
+  async function retryFailed() {
+    const pending = pendingTurn.value;
+    if (!pending || pending.status !== "failed") return;
+    await runPromptDraft({
+      text: pending.text,
+      attachments: pending.attachments,
+      mentions: pending.mentions,
+      mode: mode.value,
+    });
   }
 
   const commands = computed(() => [
     { id: "prompt", label: t("command.prompt"), keys: "⌘K", run: () => document.getElementById("composer")?.focus() },
-    { id: "cancel", label: t("command.cancel"), keys: "⌘.", run: () => sendCommand({ type: "cancel" }) },
+    { id: "cancel", label: t("command.cancel"), keys: "⌘.", run: () => cancelRun() },
     {
       id: "accept",
       label: t("command.acceptHunk"),
@@ -255,7 +379,15 @@ export function useStudio() {
     commands.value.filter((c) => c.label.toLowerCase().includes(paletteQuery.value.toLowerCase())),
   );
 
+  function resetConversationUi() {
+    runGeneration += 1;
+    pendingTurn.value = null;
+    queue.value = [];
+    clearRunState();
+  }
+
   async function newSession() {
+    resetConversationUi();
     const created = await $fetch<{ id: string }>("/api/sessions", {
       method: "POST",
       body: { workspaceId: workspaceId.value, provider: data.value?.preferredProvider ?? data.value?.session?.provider ?? "cursor" },
@@ -266,6 +398,7 @@ export function useStudio() {
 
   async function selectSession(id: string) {
     if (!data.value) return;
+    resetConversationUi();
     data.value.session = data.value.sessions.find((s) => s.id === id) ?? data.value.session;
     await refresh();
   }
@@ -344,6 +477,12 @@ export function useStudio() {
     flash(t("rules.saved"));
   }
 
+  async function saveUserEnv(payload: { env?: Record<string, string>; raw?: string }) {
+    if (!data.value) return;
+    data.value.userEnv = await $fetch("/api/me/env", { method: "PUT", body: payload });
+    await refresh();
+  }
+
   async function patchFlags(next: Record<string, boolean>) {
     if (!data.value) return;
     data.value.flags = await $fetch("/api/flags", { method: "PATCH", body: next });
@@ -415,6 +554,11 @@ export function useStudio() {
     toast,
     streamingText,
     sending,
+    queue,
+    workingSince,
+    showWorking,
+    failedEventId,
+    enterEventId,
     previewBusy,
     previewKey,
     toolMode,
@@ -438,6 +582,9 @@ export function useStudio() {
     refresh,
     sendCommand,
     submit,
+    cancelRun,
+    dropQueue,
+    retryFailed,
     newSession,
     selectSession,
     copyLink,
@@ -446,6 +593,7 @@ export function useStudio() {
     toggleSpectator,
     setProvider,
     saveRules,
+    saveUserEnv,
     patchFlags,
     hibernate,
     resume,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Eye, GitBranch, MonitorSmartphone, Share2, Sparkles, Workflow } from "@lucide/vue";
+import { ArrowRight, ChevronDown, Eye, GitBranch, MonitorSmartphone, Share2, Sparkles, Workflow } from "@lucide/vue";
 
 const { t, locale, setLocale } = useI18n();
 const login = ref("studio");
@@ -83,15 +83,19 @@ const features = computed(() => [
       <UiLogo :size="20" />
       <p class="text-[13px] font-medium text-ink-950">{{ t("app.name") }}</p>
       <span class="hidden text-[12px] text-ink-400 sm:inline">{{ t("app.product") }}</span>
-      <select
-        class="ml-auto h-[26px] rounded-[6px] border border-line bg-white/[0.03] px-2 text-[11px] text-ink-600 outline-none"
-        :value="locale"
-        :aria-label="t('auth.localeLabel')"
-        @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
-      >
-        <option value="pt-BR">{{ t("auth.portuguese") }}</option>
-        <option value="en">{{ t("auth.english") }}</option>
-      </select>
+      <!-- appearance-none keeps the native widget from painting its own light chrome. -->
+      <span class="relative ml-auto inline-flex items-center">
+        <select
+          class="h-[26px] appearance-none rounded-[6px] border border-line bg-white/[0.03] pl-2 pr-6 text-[11px] text-ink-600 outline-none hover:text-ink-950"
+          :value="locale"
+          :aria-label="t('auth.localeLabel')"
+          @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
+        >
+          <option value="pt-BR">{{ t("auth.portuguese") }}</option>
+          <option value="en">{{ t("auth.english") }}</option>
+        </select>
+        <ChevronDown class="pointer-events-none absolute right-1.5 h-3 w-3 text-ink-400" />
+      </span>
     </header>
 
     <div class="flex flex-1 items-center justify-center px-4 py-10">
@@ -138,7 +142,7 @@ const features = computed(() => [
               <ArrowRight v-if="!loading" class="h-3.5 w-3.5" />
             </UiButton>
             <div v-if="me.sessions?.length" class="mt-3">
-              <p class="cx-nav-group px-1">{{ t("nav.sessions") }}</p>
+              <p class="cx-nav-group">{{ t("nav.sessions") }}</p>
               <p v-for="session in me.sessions" :key="session.id" class="cx-session-row">
                 <span class="cx-session-dot" aria-hidden="true" />
                 <span class="min-w-0 flex-1 truncate">{{ session.title || t("chat.untitled") }}</span>

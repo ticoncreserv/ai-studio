@@ -88,10 +88,10 @@ onMounted(async () => {
         <h1 class="mt-4 text-[15px] font-semibold text-ink-950">{{ t("setup.github.title") }}</h1>
         <p class="mt-1 text-[12px] leading-relaxed text-ink-500">{{ t("setup.github.lede") }}</p>
 
-        <p v-if="created || (setup?.configured && reused)" class="cx-panel mt-3 border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-2 text-[12px] text-emerald-100/90">
+        <p v-if="created || (setup?.configured && reused)" class="cx-panel cx-panel-ok mt-3 px-3 py-2 text-[12px] text-emerald-100/90">
           {{ reused ? t("setup.github.already") : t("setup.github.saved") }}
         </p>
-        <p v-else-if="setup?.configured && route.query.error" class="cx-panel mt-3 border-emerald-400/20 bg-emerald-400/[0.08] px-3 py-2 text-[12px] text-emerald-100/90">
+        <p v-else-if="setup?.configured && route.query.error" class="cx-panel cx-panel-ok mt-3 px-3 py-2 text-[12px] text-emerald-100/90">
           {{ t("setup.github.already") }}
         </p>
         <p v-if="errorKey" class="mt-3 text-[12px] text-red-400">{{ t(errorKey) }}</p>
@@ -122,7 +122,7 @@ onMounted(async () => {
               <UiButton variant="outline" class="w-full" type="button">{{ t("setup.github.install") }}</UiButton>
             </a>
             <p class="text-[11px] leading-relaxed text-ink-400">{{ t("setup.github.installHint") }}</p>
-            <div class="cx-panel bg-white/[0.02] p-3">
+            <div class="cx-panel cx-panel-sunken p-3">
               <p class="text-[12px] text-ink-400">{{ t("setup.github.accessedUrlsTitle") }}</p>
               <p class="mt-1.5 text-[11px] leading-relaxed text-ink-400">{{ t("setup.github.accessedUrlsHint") }}</p>
               <p class="mt-3 text-[12px] text-ink-400">{{ t("setup.github.listenOriginsTitle") }}</p>
@@ -157,7 +157,7 @@ onMounted(async () => {
               </UiButton>
             </form>
             <p class="text-[11px] leading-relaxed text-ink-400">{{ t("setup.github.envHint", { path: setup.storePath }) }}</p>
-            <div v-if="setup.webhook" class="cx-panel bg-white/[0.02] p-3">
+            <div v-if="setup.webhook" class="cx-panel cx-panel-sunken p-3">
               <p class="text-[12px] text-ink-400">{{ t("setup.github.webhookTitle") }}</p>
               <p class="mt-1.5 text-[11px] leading-relaxed text-ink-400">{{ t("setup.github.webhookHint") }}</p>
               <p class="mt-2 font-mono text-[11px] text-ink-800">{{ setup.webhook.url }}</p>

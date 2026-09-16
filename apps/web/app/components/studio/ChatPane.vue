@@ -5,6 +5,10 @@ import { ChevronDown, Plus, Search } from "@lucide/vue";
 const props = defineProps<{
   events: SessionEvent[];
   sending: boolean;
+  showWorking: boolean;
+  workingSince: number | null;
+  failedEventId: string;
+  enterEventId: string;
   spectator: boolean;
   spectatorEnabled: boolean;
   query: string;
@@ -19,12 +23,15 @@ const emit = defineEmits<{
   create: [];
   suggestion: [text: string];
   fork: [];
+  retry: [];
   "toggle-spectator": [];
 }>();
 
 const { t } = useI18n();
 const scroller = ref<HTMLElement | null>(null);
 const bottom = ref<HTMLElement | null>(null);
+const elapsed = ref(0);
+let timer: ReturnType<typeof setInterval> | undefined;
 
 function scrollToBottom(behavior: ScrollBehavior = "auto") {
   const el = scroller.value;
@@ -40,17 +47,47 @@ async function stickToBottom(behavior: ScrollBehavior = "auto") {
 }
 
 watch(
-  () => [props.events.length, props.events.at(-1)?.id, props.events.at(-1)?.type, props.sending] as const,
+  () =>
+    [
+      props.events.length,
+      props.events.at(-1)?.id,
+      props.events.at(-1)?.type,
+      props.sending,
+      props.showWorking,
+      props.enterEventId,
+    ] as const,
   () => {
     void stickToBottom();
   },
+);
+
+watch(
+  () => props.workingSince,
+  (since) => {
+    if (timer) clearInterval(timer);
+    elapsed.value = 0;
+    if (!since) return;
+    const tick = () => {
+      elapsed.value = Math.max(0, Math.floor((Date.now() - since) / 1000));
+    };
+    tick();
+    timer = setInterval(tick, 250);
+  },
+  { immediate: true },
 );
 
 onMounted(() => {
   void stickToBottom();
 });
 
+onBeforeUnmount(() => {
+  if (timer) clearInterval(timer);
+});
+
 const suggestions = computed(() => [t("chat.suggestion1"), t("chat.suggestion2"), t("chat.suggestion3")]);
+const workingLabel = computed(() =>
+  elapsed.value > 0 ? t("chat.workingElapsed", { seconds: elapsed.value }) : t("chat.working"),
+);
 </script>
 
 <template>
@@ -92,14 +129,17 @@ const suggestions = computed(() => [t("chat.suggestion1"), t("chat.suggestion2")
         v-for="event in events"
         :key="event.id + event.type"
         :event="event"
+        :enter="event.id === enterEventId"
+        :failed="event.id === failedEventId"
         @command="emit('command', $event)"
         @reuse="emit('suggestion', $event)"
         @fork="emit('fork')"
+        @retry="emit('retry')"
       />
 
-      <p v-if="sending" class="cx-summary">
-        <UiSpinner size="sm" :label="t('chat.thinking')" />
-        {{ t("chat.thinking") }}
+      <p v-if="showWorking" class="cx-working" aria-live="polite">
+        <span class="cx-working-dots" aria-hidden="true"><i /><i /><i /></span>
+        <span>{{ workingLabel }}</span>
       </p>
       <div ref="bottom" class="h-px w-full shrink-0" aria-hidden="true" />
     </div>
@@ -120,7 +160,7 @@ const suggestions = computed(() => [t("chat.suggestion1"), t("chat.suggestion2")
         {{ spectator ? t("workspace.watching") : t("workspace.editor") }}
       </button>
       <span class="ml-auto flex h-3.5 w-3.5 shrink-0 items-center justify-center">
-        <UiSpinner v-if="sending" size="sm" :label="t('chat.thinking')" />
+        <UiSpinner v-if="sending" size="sm" :label="t('chat.working')" />
       </span>
     </div>
   </section>

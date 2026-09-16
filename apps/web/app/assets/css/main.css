@@ -541,6 +541,27 @@ option {
   color: var(--color-ink-950);
 }
 
+.cx-turn-enter {
+  animation: cx-turn-in 180ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cx-turn-enter {
+    animation: none;
+  }
+}
+
+@keyframes cx-turn-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Long prompts collapse behind a fade until the reader expands them. */
 .cx-turn-clamp {
   max-height: 112px;
@@ -582,6 +603,72 @@ option {
 
 .cx-summary:hover {
   color: var(--color-ink-600);
+}
+
+.cx-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  padding: 2px 2px 4px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--color-ink-500);
+}
+
+.cx-working-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.cx-working-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: cx-dot 1s ease-in-out infinite;
+}
+
+.cx-working-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.cx-working-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes cx-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cx-working-dots i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+.cx-queue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--cx-radius-panel);
+  background: var(--color-paper);
+  font-size: 12px;
+  color: var(--color-ink-500);
 }
 
 /* Composer shell and the palette panel above it: both sit on the card tone so
@@ -772,6 +859,53 @@ option {
 
 .cx-address::placeholder {
   color: var(--color-ink-400);
+}
+
+/* The cx-* rules live outside Tailwind's layers, so they win over utilities for
+   the same property. These helpers cover the overrides the studio needs. */
+.cx-muted {
+  color: var(--color-ink-400);
+}
+
+.cx-warn {
+  color: rgb(253 230 138 / 0.72);
+}
+
+/* Rail heading, indented to the label column of the list it heads. */
+.cx-rail-group {
+  padding: 16px 8px 4px 29px;
+}
+
+/* Rows that continue a list: aligned with the labels above them. */
+.cx-session-row-sub {
+  padding-left: 21px;
+}
+
+.cx-menu-row-sub {
+  padding-left: 29px;
+}
+
+/* Menu row that carries wrapping copy instead of a single line. */
+.cx-menu-row-tall {
+  height: auto;
+  min-height: 26px;
+  padding-block: 4px;
+}
+
+/* Panel tones. Same reason as above: .cx-panel sets border and background, so a
+   tint has to come from a rule rather than a utility. */
+.cx-panel-warn {
+  border-color: rgb(251 191 36 / 0.22);
+  background: rgb(251 191 36 / 0.07);
+}
+
+.cx-panel-ok {
+  border-color: rgb(52 211 153 / 0.22);
+  background: rgb(52 211 153 / 0.08);
+}
+
+.cx-panel-sunken {
+  background: rgb(255 255 255 / 0.02);
 }
 
 /* ---------- admin settings ---------- */

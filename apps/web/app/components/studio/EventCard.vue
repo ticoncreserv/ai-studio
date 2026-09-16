@@ -18,23 +18,53 @@ import {
 } from "@lucide/vue";
 import { renderMarkdown, splitDiffLines } from "~/utils/markdown";
 
-const props = defineProps<{ event: SessionEvent }>();
+const props = defineProps<{ event: SessionEvent; enter?: boolean; failed?: boolean }>();
 const emit = defineEmits<{
   command: [payload: { type: string; [key: string]: unknown }];
   reuse: [text: string];
   fork: [];
+  retry: [];
 }>();
 
 const { t } = useI18n();
-const rel = useRelativeTime();
 const open = ref(props.event.type === "diff" || props.event.type === "plan");
 const copied = ref(false);
 const rating = ref<"up" | "down" | "">("");
+const promptOpen = ref(false);
+
+/* Cursor clamps long prompts behind a fade instead of letting them push the
+   conversation down. */
+const clampPrompt = computed(() => {
+  if (props.event.type !== "user_message" || promptOpen.value) return false;
+  const { text } = props.event;
+  return text.length > 220 || text.split("\n").length > 5;
+});
+
+/* Tool names arrive with markdown backticks around their arguments; the summary
+   line is already monospace-free, so drop them. */
+const toolName = computed(() =>
+  props.event.type === "tool_call" ? props.event.name.replaceAll("`", "") : "",
+);
+
+/* The feedback row uses the compact age Cursor shows ("1h ago"), not a phrase. */
+function ago(at: string) {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(at).getTime()) / 60_000));
+  if (minutes < 1) return t("time.justNow");
+  const value =
+    minutes < 60
+      ? t("time.shortMinutes", { count: minutes })
+      : minutes < 60 * 24
+        ? t("time.shortHours", { count: Math.floor(minutes / 60) })
+        : t("time.shortDays", { count: Math.floor(minutes / (60 * 24)) });
+  return t("time.agoShort", { value });
+}
 
 const html = computed(() => {
   if (props.event.type === "assistant_message" || props.event.type === "assistant_delta") {
     return renderMarkdown(props.event.text);
   }
+  /* Permission titles arrive with the command in backticks; render the chip. */
+  if (props.event.type === "permission") return renderMarkdown(props.event.title);
   return "";
 });
 
@@ -73,7 +103,11 @@ function isImage(path: string) {
 
 <template>
   <article>
-    <div v-if="event.type === 'user_message'" class="cx-turn-user group relative">
+    <div
+      v-if="event.type === 'user_message'"
+      class="cx-turn-user group relative"
+      :class="enter && 'cx-turn-enter'"
+    >
       <div v-if="event.attachments?.length" class="mb-2 flex flex-wrap gap-1.5">
         <!-- Uploads live on the worktree filesystem, so there is no URL to preview. -->
         <span
@@ -86,9 +120,23 @@ function isImage(path: string) {
           <FileText v-else class="h-4 w-4" />
         </span>
       </div>
-      <p class="whitespace-pre-wrap pr-5">{{ event.text }}</p>
+      <p class="whitespace-pre-wrap pr-5" :class="clampPrompt && 'cx-turn-clamp'">{{ event.text }}</p>
+      <button
+        v-if="clampPrompt || promptOpen"
+        type="button"
+        class="cx-turn-more"
+        @click="promptOpen = !promptOpen"
+      >
+        {{ promptOpen ? t("chat.showLess") : t("chat.showMore") }}
+      </button>
       <p v-if="event.mentions?.length" class="mt-1.5 font-mono text-[11px] text-ink-400">
         {{ event.mentions.map((name) => `#${name}`).join(" ") }}
+      </p>
+      <p v-if="failed" class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-amber-200/80">
+        <span>{{ t("chat.promptFailedHint") }}</span>
+        <button type="button" class="text-coral-400 hover:text-coral-300" @click="emit('retry')">
+          {{ t("chat.retryPrompt") }}
+        </button>
       </p>
       <button
         type="button"
@@ -127,7 +175,7 @@ function isImage(path: string) {
         <UiIconButton :label="t('chat.fork')" size="sm" @click="emit('fork')">
           <GitBranch class="h-3 w-3" />
         </UiIconButton>
-        <span class="ml-1 text-[11px] text-ink-400">{{ rel(event.at) }}</span>
+        <span class="ml-1 text-[11px] text-ink-400">{{ ago(event.at) }}</span>
       </div>
     </div>
 
@@ -138,7 +186,7 @@ function isImage(path: string) {
           :class="event.status === 'running' ? 'bg-coral-400' : event.status === 'failed' ? 'bg-red-400' : 'bg-ink-300'"
         />
         <span class="min-w-0 truncate">
-          {{ event.status === "running" ? t("chat.toolRunning", { name: event.name }) : t("chat.toolDone", { name: event.name }) }}
+          {{ event.status === "running" ? t("chat.toolRunning", { name: toolName }) : t("chat.toolDone", { name: toolName }) }}
         </span>
         <ChevronDown v-if="event.output" class="h-3 w-3 shrink-0 transition-transform" :class="open && 'rotate-180'" />
       </button>
@@ -213,7 +261,7 @@ function isImage(path: string) {
       </p>
     </div>
 
-    <div v-else-if="event.type === 'runtime_error'" class="cx-panel border-amber-400/20 bg-amber-400/[0.07] p-2.5">
+    <div v-else-if="event.type === 'runtime_error'" class="cx-panel cx-panel-warn p-2.5">
       <div class="flex items-start gap-2 text-[12.5px] leading-relaxed text-amber-100/90">
         <TriangleAlert class="mt-[2px] h-3.5 w-3.5 shrink-0" />
         <p class="min-w-0 flex-1">{{ event.message }}</p>
@@ -235,7 +283,7 @@ function isImage(path: string) {
       <p class="inline-flex items-center gap-1.5 text-[11px] text-ink-400">
         <Shield class="h-3.5 w-3.5" /> {{ t("chat.permissionTitle") }}
       </p>
-      <p class="mt-1.5 text-[13px] text-ink-950">{{ event.title }}</p>
+      <div class="markdown-body mt-1.5 text-ink-950" v-html="html" />
       <div v-if="event.outcome === 'pending'" class="mt-3 flex flex-wrap justify-end gap-1.5">
         <UiButton size="sm" variant="outline" @click="emit('command', { type: 'decide_permission', outcome: 'reject-once' })">{{ t("chat.rejectOnce") }}</UiButton>
         <UiButton size="sm" variant="soft" @click="emit('command', { type: 'decide_permission', outcome: 'allow-once' })">{{ t("chat.allowOnce") }}</UiButton>
@@ -248,10 +296,10 @@ function isImage(path: string) {
       <span class="min-w-0">{{ t("chat.migrationBy", { author: event.author, name: event.name, branch: event.branch }) }}</span>
     </p>
 
-    <p v-else-if="event.type === 'dropped_context'" class="cx-summary text-amber-200/70">
+    <p v-else-if="event.type === 'dropped_context'" class="cx-summary cx-warn">
       {{ t("chat.droppedContext", { count: event.omitted.length }) }}
     </p>
-    <p v-else-if="event.type === 'budget'" class="cx-summary text-amber-200/70">{{ t("chat.budget") }}</p>
+    <p v-else-if="event.type === 'budget'" class="cx-summary cx-warn">{{ t("chat.budget") }}</p>
     <p v-else-if="event.type === 'conflict'" class="cx-summary">{{ t("chat.conflict") }} · {{ event.message }}</p>
   </article>
 </template>

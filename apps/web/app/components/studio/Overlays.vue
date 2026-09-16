@@ -127,7 +127,7 @@ function submitQuestion() {
 
 <template>
   <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length || data.lock" class="pointer-events-none absolute inset-x-0 top-10 z-20 flex flex-col gap-1.5 px-3">
-    <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length" class="cx-panel pointer-events-auto border-amber-400/25 bg-amber-400/[0.08] px-3 py-2 text-[12px] leading-relaxed text-amber-100/90">
+    <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length" class="cx-panel cx-panel-warn pointer-events-auto px-3 py-2 text-[12px] leading-relaxed text-amber-100/90">
       <p class="font-medium">{{ t("workspace.divergence") }}</p>
       <p v-if="data.divergence.pendingInBranch.length">{{ t("workspace.pendingMigrations", { count: data.divergence.pendingInBranch.length }) }}</p>
       <p v-if="data.divergence.extraInDatabase.length">{{ t("workspace.extraMigrations", { count: data.divergence.extraInDatabase.length }) }}</p>
@@ -154,7 +154,7 @@ function submitQuestion() {
       </div>
       <div class="cx-divider mx-2 my-1" />
       <ul class="thin-scroll max-h-[50vh] overflow-y-auto">
-        <li v-if="!filteredCommands.length" class="cx-menu-row text-ink-400">{{ t("command.empty") }}</li>
+        <li v-if="!filteredCommands.length" class="cx-menu-row cx-muted">{{ t("command.empty") }}</li>
         <li v-for="cmd in filteredCommands" :key="cmd.id">
           <button type="button" class="cx-menu-row" @click="runPaletteCommand(cmd)">
             <span class="min-w-0 flex-1 truncate">{{ cmd.label }}</span>

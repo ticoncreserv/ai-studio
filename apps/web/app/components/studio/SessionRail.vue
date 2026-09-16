@@ -85,7 +85,7 @@ function age(at: string) {
       />
     </div>
 
-    <p class="cx-nav-group px-3 pt-4">{{ t("nav.sessions") }}</p>
+    <p class="cx-nav-group cx-rail-group">{{ t("nav.sessions") }}</p>
 
     <div class="thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
       <p v-if="!sessions.length" class="px-2 py-3 text-[12px] text-ink-400">{{ t("workspace.noSessions") }}</p>
@@ -102,7 +102,7 @@ function age(at: string) {
         <span class="min-w-0 flex-1 truncate">{{ session.title || t("chat.untitled") }}</span>
         <span class="cx-age">{{ age(session.createdAt) }}</span>
       </button>
-      <button v-if="hasMore" type="button" class="cx-session-row pl-[21px] text-ink-400" @click="expanded = true">
+      <button v-if="hasMore" type="button" class="cx-session-row cx-session-row-sub cx-muted" @click="expanded = true">
         {{ t("nav.more") }}
       </button>
     </div>

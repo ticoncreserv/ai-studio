@@ -17,6 +17,11 @@ const {
   spectator,
   toast,
   sending,
+  queue,
+  workingSince,
+  showWorking,
+  failedEventId,
+  enterEventId,
   previewBusy,
   previewKey,
   toolMode,
@@ -39,6 +44,9 @@ const {
   refresh,
   sendCommand,
   submit,
+  cancelRun,
+  dropQueue,
+  retryFailed,
   newSession,
   selectSession,
   copyLink,
@@ -151,6 +159,10 @@ function onFixDebug() {
         <StudioChatPane
           :events="events"
           :sending="sending"
+          :show-working="showWorking"
+          :working-since="workingSince"
+          :failed-event-id="failedEventId"
+          :enter-event-id="enterEventId"
           :spectator="spectator"
           :spectator-enabled="!!data?.flags?.spectator"
           :query="query"
@@ -162,6 +174,7 @@ function onFixDebug() {
           @create="newSession"
           @suggestion="useSuggestion"
           @fork="newSession"
+          @retry="retryFailed"
           @toggle-spectator="toggleSpectator"
         >
           <p v-if="data.agent?.error" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ t("chat.cursorRequired") }}</p>
@@ -176,17 +189,19 @@ function onFixDebug() {
             :sending="sending"
             :provider="data.session?.provider ?? data.preferredProvider"
             :attachments="attachments"
-            :placeholder="events.length ? t('chat.followUp') : t('chat.placeholder')"
+            :placeholder="sending || events.length ? t('chat.followUp') : t('chat.placeholder')"
             :mentions-open="mentionsOpen"
             :mention-hits="mentionHits"
+            :queue="queue"
             @update:mode="mode = $event"
             @update:recipe-id="recipeId = $event"
             @submit="submit"
-            @cancel="sendCommand({ type: 'cancel' })"
+            @cancel="cancelRun"
             @mention="insertMention"
             @attach="attachFiles"
             @remove-attachment="attachments = attachments.filter((a) => a.path !== $event)"
             @toggle-spectator="toggleSpectator"
+            @drop-queue="dropQueue"
           />
         </StudioChatPane>
       </div>
