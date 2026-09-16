@@ -23,6 +23,7 @@ export function useStudio() {
   const toast = ref("");
   const streamingText = ref("");
   const sending = ref(false);
+  const previewBusy = ref(false);
   const previewKey = ref(0);
   const toolMode = ref<PreviewTool>("select");
   const mode = ref<AgentMode>("agent");
@@ -340,8 +341,13 @@ export function useStudio() {
   }
 
   async function resume() {
-    await $fetch(`/api/workspace/${workspaceId.value}/resume`, { method: "POST" });
-    await refresh();
+    previewBusy.value = true;
+    try {
+      await $fetch(`/api/workspace/${workspaceId.value}/resume`, { method: "POST" });
+      await refresh();
+    } finally {
+      previewBusy.value = false;
+    }
   }
 
   async function signOut() {
@@ -394,6 +400,7 @@ export function useStudio() {
     toast,
     streamingText,
     sending,
+    previewBusy,
     previewKey,
     toolMode,
     mode,

@@ -1,4 +1,5 @@
 import { VITE_PREVIEW_SEGMENT } from "@atelier/supervisor";
+import { injectPreviewWait } from "./preview-wait";
 
 const PREVIEW_MOUNT_RE = /^(\/-\/p\/[^/]+)/;
 
@@ -127,7 +128,7 @@ export function rewritePreviewDocument(body: string, artisanPort: number, prefix
   if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
     return rewriteInertiaPageJson(rewritten, mount);
   }
-  return injectPreviewScopeScript(rewriteInertiaDataPageScripts(rewritten, mount), mount);
+  return injectPreviewWait(injectPreviewScopeScript(rewriteInertiaDataPageScripts(rewritten, mount), mount));
 }
 
 export function rewriteViteBareImports(code: string, vitePrefix: string): string {

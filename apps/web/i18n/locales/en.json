@@ -88,7 +88,8 @@
     "publish": "Publish to dev",
     "publishSoon": "Publish is a later phase. The flag is off.",
     "account": "Account",
-    "home": "Home"
+    "home": "Home",
+    "working": "Working…"
   },
   "workspace": {
     "warming": "Warming the workspace to ready…",
@@ -124,6 +125,7 @@
     "resumeHint": "Resume starts php artisan serve and Vite in dev mode so assets compile on demand.",
     "people": "People in this workspace",
     "loading": "Opening the studio…",
+    "loadingHint": "Reading the workspace and waking the Laravel preview.",
     "loadError": "The workspace could not be loaded.",
     "retry": "Try again",
     "editor": "Editing",
@@ -222,7 +224,20 @@
     "debugEmpty": "No preview metrics yet. Laravel can postMessage atelier-preview-metrics when it has numbers.",
     "debugFix": "Ask the agent to fix the last preview error",
     "longQueryTitle": "ERP query in progress",
-    "fit": "Fit"
+    "fit": "Fit",
+    "waitResuming": "Starting Laravel…",
+    "waitResumingHint": "Booting artisan serve and Vite on this branch. The iframe stays empty until /up answers.",
+    "waitProvisioning": "Preparing the workspace…",
+    "waitProvisioningHint": "Cloning the branch and installing PHP and Node dependencies.",
+    "waitIframe": "Opening the page…",
+    "waitIframeHint": "The preview URL answered. Waiting for HTML from Laravel.",
+    "waitHydrating": "The page arrived. Mounting the interface…",
+    "waitHydratingHint": "Vue and Inertia are hydrating. This can take a few seconds while Vite compiles.",
+    "waitNavigating": "Opening the next screen…",
+    "waitSlow": "Still working. Vite may be compiling the Vue files.",
+    "waitSlowDb": "This is taking a while. Homologation database queries can take a few minutes.",
+    "loadFailed": "The preview page failed to load.",
+    "loadFailedHint": "The iframe did not finish loading. Resume the preview or refresh."
   },
   "command": {
     "placeholder": "Type a command…",
@@ -273,7 +288,8 @@
     "expired": "This share link has expired.",
     "copy": "Copy link",
     "expires": "Link expires in 24 hours",
-    "openStudio": "Open in Atelier"
+    "openStudio": "Open in Atelier",
+    "loading": "Opening the shared preview…"
   },
   "connections": {
     "title": "External connections",

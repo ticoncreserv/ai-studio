@@ -110,8 +110,9 @@ const features = computed(() => [
             </label>
             <p v-if="error" class="text-sm text-red-400">{{ error }}</p>
             <UiButton class="w-full" size="lg" :disabled="loading" @click="signIn">
-              {{ t("auth.dev") }}
-              <ArrowRight class="h-4 w-4" />
+              <UiSpinner v-if="loading" size="sm" :label="t('nav.working')" />
+              {{ loading ? t("nav.working") : t("auth.dev") }}
+              <ArrowRight v-if="!loading" class="h-4 w-4" />
             </UiButton>
             <div class="flex items-center gap-3 text-[11px] uppercase tracking-[0.16em] text-ink-300">
               <span class="h-px flex-1 bg-white/10" />
@@ -135,8 +136,9 @@ const features = computed(() => [
           <h2 class="mt-2 text-2xl font-semibold tracking-tight">{{ me.user.login }}</h2>
           <p class="mt-2 text-sm text-ink-500">{{ t("workspace.ready") }}</p>
           <UiButton class="mt-6 w-full" size="lg" :disabled="loading" @click="openWorkspace">
-            {{ t("nav.openWorkspace") }}
-            <ArrowRight class="h-4 w-4" />
+            <UiSpinner v-if="loading" size="sm" :label="t('nav.working')" />
+            {{ loading ? t("workspace.loading") : t("nav.openWorkspace") }}
+            <ArrowRight v-if="!loading" class="h-4 w-4" />
           </UiButton>
           <ul v-if="me.sessions?.length" class="mt-5 space-y-1.5">
             <li v-for="session in me.sessions" :key="session.id" class="rounded-[10px] bg-white/5 px-3 py-2 text-[13px] text-ink-600">

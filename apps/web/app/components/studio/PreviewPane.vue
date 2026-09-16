@@ -23,6 +23,7 @@ const props = defineProps<{
   debugOpen: boolean;
   debug?: PreviewDebug | null;
   lastError?: string;
+  resuming?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -55,6 +56,134 @@ const frame = computed(() => {
   };
 });
 
+const documentLoaded = ref(false);
+const iframeFailed = ref(false);
+const docPhase = ref<"boot" | "hydrate" | "nav" | "ready" | null>(null);
+const waitClock = ref(0);
+let waitTimer: ReturnType<typeof setInterval> | undefined;
+let hideStudioOverlay: ReturnType<typeof setTimeout> | undefined;
+
+const waiting = computed(() => {
+  if (props.resuming) return true;
+  if (props.status === "provisioning" || props.status === "ready") return true;
+  if (props.status === "running" && !documentLoaded.value && !iframeFailed.value) return true;
+  return false;
+});
+
+const waitTitle = computed(() => {
+  if (iframeFailed.value) return t("preview.loadFailed");
+  if (props.resuming || props.status === "ready") return t("preview.waitResuming");
+  if (props.status === "provisioning") return t("preview.waitProvisioning");
+  if (docPhase.value === "nav") return t("preview.waitNavigating");
+  if (docPhase.value === "hydrate") return t("preview.waitHydrating");
+  return t("preview.waitIframe");
+});
+
+const waitHint = computed(() => {
+  if (iframeFailed.value) return props.lastError || t("preview.loadFailedHint");
+  if (props.resuming || props.status === "ready") return t("preview.waitResumingHint");
+  if (props.status === "provisioning") return t("preview.waitProvisioningHint");
+  if (waitClock.value >= 12) return t("preview.waitSlowDb");
+  if (waitClock.value >= 4) return t("preview.waitSlow");
+  if (docPhase.value === "hydrate") return t("preview.waitHydratingHint");
+  return t("preview.waitIframeHint");
+});
+
+const elapsed = computed(() => {
+  const seconds = waitClock.value;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+});
+
+const addressLabel = computed(() => {
+  if (waiting.value) return waitTitle.value;
+  if (props.status === "running") return props.src || t("preview.home");
+  return props.src || t("preview.home");
+});
+
+const liveDot = computed(() => {
+  if (props.status === "error" || iframeFailed.value) return "bg-red-400";
+  if (props.status === "running" && documentLoaded.value && !props.resuming) return "bg-emerald-400 pulse-dot";
+  return "bg-amber-400";
+});
+
+function resetDocument() {
+  documentLoaded.value = false;
+  iframeFailed.value = false;
+  docPhase.value = props.status === "running" ? "boot" : null;
+}
+
+function startWaitClock() {
+  waitClock.value = 0;
+  clearInterval(waitTimer);
+  waitTimer = setInterval(() => {
+    waitClock.value += 1;
+  }, 1000);
+}
+
+watch(
+  () => [props.src, props.previewKey, props.status, props.resuming] as const,
+  () => {
+    resetDocument();
+    if (waiting.value || props.resuming || props.status === "running") startWaitClock();
+  },
+  { immediate: true },
+);
+
+watch(waiting, (busy) => {
+  if (busy) startWaitClock();
+  else {
+    clearInterval(waitTimer);
+    waitClock.value = 0;
+  }
+});
+
+function onIframeLoad(event: Event) {
+  const frame = event.target as HTMLIFrameElement;
+  try {
+    const href = frame.contentDocument?.location.href ?? "";
+    if (!href || href === "about:blank") return;
+  } catch {
+    // cross-origin: treat as delivered
+  }
+  iframeFailed.value = false;
+  documentLoaded.value = true;
+  if (docPhase.value === "boot" || docPhase.value == null) docPhase.value = "hydrate";
+  clearTimeout(hideStudioOverlay);
+  hideStudioOverlay = setTimeout(() => {
+    if (docPhase.value !== "nav") docPhase.value = "ready";
+  }, 12_000);
+}
+
+function onIframeError() {
+  iframeFailed.value = true;
+  documentLoaded.value = false;
+}
+
+function onPreviewMessage(event: MessageEvent) {
+  const payload = event.data as { type?: string; phase?: string; source?: string };
+  if (payload?.source !== "atelier-preview") return;
+  if (payload.type === "atelier-preview-loading") {
+    documentLoaded.value = true;
+    iframeFailed.value = false;
+    if (payload.phase === "nav" || payload.phase === "hydrate" || payload.phase === "boot") {
+      docPhase.value = payload.phase;
+    }
+    return;
+  }
+  if (payload.type === "atelier-preview-ready") {
+    documentLoaded.value = true;
+    iframeFailed.value = false;
+    docPhase.value = "ready";
+  }
+}
+
+onMounted(() => window.addEventListener("message", onPreviewMessage));
+onBeforeUnmount(() => {
+  window.removeEventListener("message", onPreviewMessage);
+  clearInterval(waitTimer);
+  clearTimeout(hideStudioOverlay);
+});
+
 function onOverlayClick(e: MouseEvent) {
   if (props.toolMode === "select") return;
   const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -62,6 +191,9 @@ function onOverlayClick(e: MouseEvent) {
   const y = Math.round(((e.clientY - box.top) / box.height) * 100);
   emit("note", `Preview ${props.toolMode} at ${x}%, ${y}%: `);
 }
+
+const showIframe = computed(() => props.status === "running" && !props.resuming);
+const showIdlePanel = computed(() => !showIframe.value && !waiting.value);
 </script>
 
 <template>
@@ -79,15 +211,15 @@ function onOverlayClick(e: MouseEvent) {
         </UiIconButton>
       </div>
       <div class="hidden min-w-0 flex-1 items-center gap-2 rounded-[9px] border border-line bg-black/30 px-3 py-1 text-[12px] text-ink-500 sm:flex">
-        <span class="h-1.5 w-1.5 rounded-full" :class="status === 'running' ? 'bg-emerald-400' : 'bg-amber-400'" />
-        <span class="truncate font-mono text-[11px]" :title="t('preview.address')">{{ src || t("preview.home") }}</span>
+        <span class="h-1.5 w-1.5 rounded-full" :class="liveDot" />
+        <span class="truncate font-mono text-[11px]" :title="t('preview.address')">{{ addressLabel }}</span>
       </div>
       <div class="ml-auto flex items-center gap-1">
         <UiIconButton v-if="viewport !== 'desktop'" :label="t('preview.rotate')" @click="emit('update:rotated', !rotated)">
           <RotateCw class="h-4 w-4" />
         </UiIconButton>
-        <UiIconButton :label="t('preview.refresh')" @click="emit('refresh')">
-          <RefreshCw class="h-4 w-4" />
+        <UiIconButton :label="t('preview.refresh')" :disabled="resuming" @click="emit('refresh')">
+          <RefreshCw class="h-4 w-4" :class="waiting ? 'atelier-spin-icon' : undefined" />
         </UiIconButton>
         <a :href="src" target="_blank">
           <UiIconButton :label="t('preview.openTab')">
@@ -99,13 +231,31 @@ function onOverlayClick(e: MouseEvent) {
 
     <div class="preview-dots relative m-2 flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[12px] border border-line">
       <div
-        v-if="status === 'running'"
+        v-if="showIframe"
         class="relative overflow-hidden bg-white shadow-float"
         :class="viewport === 'desktop' ? 'h-full w-full rounded-[10px]' : 'rounded-[28px] border-[8px] border-black'"
         :style="frame"
       >
         <div v-if="viewport !== 'desktop'" class="absolute left-1/2 top-2 z-10 h-3 w-16 -translate-x-1/2 rounded-full bg-black/70" />
-        <iframe :key="previewKey" :src="src" :title="t('preview.title')" class="h-full w-full bg-white" />
+        <iframe
+          :key="previewKey"
+          :src="src"
+          :title="t('preview.title')"
+          class="h-full w-full bg-white"
+          @load="onIframeLoad"
+          @error="onIframeError"
+        />
+        <div
+          v-if="!documentLoaded || iframeFailed"
+          class="absolute inset-0 z-20 flex items-center justify-center bg-[#0b0d13]/95"
+        >
+          <StudioPreviewWait
+            :title="waitTitle"
+            :hint="waitHint"
+            :elapsed="elapsed"
+            :tone="iframeFailed ? 'error' : 'wait'"
+          />
+        </div>
         <button
           v-if="toolMode !== 'select'"
           type="button"
@@ -114,12 +264,19 @@ function onOverlayClick(e: MouseEvent) {
           @click="onOverlayClick"
         />
       </div>
-      <div v-else class="max-w-sm px-6 text-center">
-        <p class="font-display text-3xl text-ink-950">
-          {{ status === "hibernated" ? t("preview.hibernated") : status === "error" ? t("preview.error") : t("preview.booting") }}
-        </p>
-        <p class="mt-2 text-sm text-ink-500">{{ lastError || t("workspace.resumeHint") }}</p>
-        <UiButton class="mt-4" size="sm" @click="emit('resume')">{{ t("workspace.resume") }}</UiButton>
+
+      <div v-else-if="waiting" class="z-10">
+        <StudioPreviewWait :title="waitTitle" :hint="waitHint" :elapsed="elapsed" />
+      </div>
+
+      <div v-else-if="showIdlePanel" class="z-10">
+        <StudioPreviewWait
+          :title="status === 'hibernated' ? t('preview.hibernated') : status === 'error' ? t('preview.error') : t('preview.down')"
+          :hint="lastError || t('workspace.resumeHint')"
+          tone="error"
+        >
+          <UiButton class="mt-4" size="sm" @click="emit('resume')">{{ t("workspace.resume") }}</UiButton>
+        </StudioPreviewWait>
       </div>
 
       <div class="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[11px] border border-line bg-black/45 p-1 shadow-float backdrop-blur-xl">

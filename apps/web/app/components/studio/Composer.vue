@@ -125,7 +125,8 @@ const modeHint = computed(() => {
             class="flex h-8 w-8 items-center justify-center rounded-[9px] bg-coral-500 text-[#061018] shadow-glow transition hover:bg-coral-400 disabled:opacity-40"
             :aria-label="t('chat.send')"
           >
-            <ArrowUp class="h-4 w-4" />
+            <UiSpinner v-if="sending" size="sm" :label="t('chat.thinking')" />
+            <ArrowUp v-else class="h-4 w-4" />
           </button>
         </div>
       </div>

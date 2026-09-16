@@ -17,6 +17,7 @@ const {
   spectator,
   toast,
   sending,
+  previewBusy,
   previewKey,
   toolMode,
   mode,
@@ -78,8 +79,10 @@ function onFixDebug() {
 
   <div v-else-if="!data" class="flex h-screen items-center justify-center bg-canvas">
     <div class="text-center">
-      <UiLogo :size="40" />
+      <UiSpinner size="lg" :label="t('workspace.loading')" />
+      <UiLogo class="mt-5" :size="40" />
       <p class="mt-4 text-sm text-ink-500">{{ t("workspace.loading") }}</p>
+      <p class="mt-1 text-[12px] text-ink-300">{{ t("workspace.loadingHint") }}</p>
     </div>
   </div>
 
@@ -173,6 +176,7 @@ function onFixDebug() {
           :debug-open="debugOpen"
           :debug="previewDebug"
           :last-error="data.workspace.lastError"
+          :resuming="previewBusy"
           @update:viewport="viewport = $event"
           @update:rotated="rotated = $event"
           @update:tool-mode="toolMode = $event"

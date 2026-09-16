@@ -6,6 +6,7 @@ const props = withDefaults(
     label: string;
     active?: boolean;
     size?: "sm" | "md";
+    disabled?: boolean;
   }>(),
   { size: "md" },
 );
@@ -16,10 +17,11 @@ const props = withDefaults(
     type="button"
     :aria-label="label"
     :title="label"
+    :disabled="disabled"
     :class="
       cn(
         'inline-flex items-center justify-center rounded-[9px] text-ink-500 transition duration-150',
-        'hover:bg-white/10 hover:text-ink-950',
+        'hover:bg-white/10 hover:text-ink-950 disabled:pointer-events-none disabled:opacity-40',
         props.size === 'sm' ? 'h-7 w-7' : 'h-8 w-8',
         props.active && 'bg-white/15 text-ink-950 hover:bg-white/20 hover:text-ink-950',
       )

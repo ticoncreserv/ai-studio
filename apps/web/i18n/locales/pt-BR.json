@@ -88,7 +88,8 @@
     "publish": "Publicar em dev",
     "publishSoon": "Publicar é uma fase seguinte. A flag está desligada.",
     "account": "Conta",
-    "home": "Início"
+    "home": "Início",
+    "working": "Aguarde…"
   },
   "workspace": {
     "warming": "Aquecendo o workspace até ready…",
@@ -124,6 +125,7 @@
     "resumeHint": "Retomar sobe php artisan serve e o Vite em modo dev, compilando os assets na hora.",
     "people": "Pessoas neste workspace",
     "loading": "Abrindo o estúdio…",
+    "loadingHint": "Lendo o workspace e acordando o preview Laravel.",
     "loadError": "Não foi possível carregar o workspace.",
     "retry": "Tentar de novo",
     "editor": "Editando",
@@ -222,7 +224,20 @@
     "debugEmpty": "Ainda não há métricas do preview. O Laravel pode enviar postMessage atelier-preview-metrics quando tiver números.",
     "debugFix": "Pedir ao agente para corrigir o último erro do preview",
     "longQueryTitle": "Consulta ao ERP em andamento",
-    "fit": "Ajustar"
+    "fit": "Ajustar",
+    "waitResuming": "Subindo o Laravel…",
+    "waitResumingHint": "Ligando artisan serve e o Vite nesta branch. O iframe fica vazio até o /up responder.",
+    "waitProvisioning": "Preparando o workspace…",
+    "waitProvisioningHint": "Clonando a branch e instalando dependências PHP e Node.",
+    "waitIframe": "Abrindo a página…",
+    "waitIframeHint": "A URL do preview respondeu. Aguardando o HTML do Laravel.",
+    "waitHydrating": "A página chegou. Montando a interface…",
+    "waitHydratingHint": "O Vue e o Inertia estão hidratando. Pode levar alguns segundos enquanto o Vite compila.",
+    "waitNavigating": "Abrindo a próxima tela…",
+    "waitSlow": "Ainda trabalhando. O Vite pode estar compilando os arquivos Vue.",
+    "waitSlowDb": "Isso está demorando. Consultas ao banco de homologação podem levar alguns minutos.",
+    "loadFailed": "A página do preview não carregou.",
+    "loadFailedHint": "O iframe não terminou de carregar. Retome o preview ou atualize."
   },
   "command": {
     "placeholder": "Digite um comando…",
@@ -273,7 +288,8 @@
     "expired": "Este link de compartilhamento expirou.",
     "copy": "Copiar link",
     "expires": "O link expira em 24 horas",
-    "openStudio": "Abrir no Atelier"
+    "openStudio": "Abrir no Atelier",
+    "loading": "Abrindo o preview compartilhado…"
   },
   "connections": {
     "title": "Conexões externas",

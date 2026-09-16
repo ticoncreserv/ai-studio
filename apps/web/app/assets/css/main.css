@@ -167,6 +167,49 @@ body {
   }
 }
 
+.atelier-spinner {
+  display: inline-block;
+  border: 2px solid rgba(110, 168, 255, 0.22);
+  border-top-color: #6ea8ff;
+  border-radius: 999px;
+  animation: atelier-spin 0.7s linear infinite;
+}
+
+@keyframes atelier-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.atelier-wait-bar {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.atelier-wait-bar > i {
+  display: block;
+  height: 100%;
+  width: 42%;
+  border-radius: 999px;
+  background: #6ea8ff;
+  animation: atelier-wait-bar 1.1s ease-in-out infinite;
+}
+
+@keyframes atelier-wait-bar {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.atelier-spin-icon {
+  animation: atelier-spin 0.85s linear infinite;
+}
+
 .markdown-body p + p {
   margin-top: 0.65em;
 }

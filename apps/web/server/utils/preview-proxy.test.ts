@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { viteDevAssetPath } from "@atelier/supervisor";
+import { injectPreviewWait, PREVIEW_WAIT_ROOT } from "./preview-wait";
 import {
   rewriteLocation,
   rewritePreviewDocument,
@@ -67,5 +68,18 @@ describe("preview proxy rewrites", () => {
     expect(
       rewritePreviewDocument(`{"component":"auth/Login","props":{},"url":"\\/login","version":""}`, 45407, "/-/p/tok"),
     ).toContain('"/-/p/tok/login"');
+  });
+
+  it("injects a wait overlay into Laravel HTML so the iframe is not blank", () => {
+    const html = rewritePreviewDocument(
+      `<html><head></head><body><div id="app"></div></body></html>`,
+      45407,
+      "/-/p/tok",
+    );
+    expect(html).toContain(`id="${PREVIEW_WAIT_ROOT}"`);
+    expect(injectPreviewWait(html)).toBe(html);
+    expect(html).toContain("inertia:start");
+    expect(html).toContain("atelier-preview-ready");
+    expect(html).toContain("Carregando a tela");
   });
 });

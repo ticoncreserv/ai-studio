@@ -89,7 +89,10 @@ const suggestions = computed(() => [t("chat.suggestion1"), t("chat.suggestion2")
         @command="emit('command', $event)"
       />
 
-      <p v-if="sending" class="text-[12px] text-ink-300">{{ t("chat.thinking") }}</p>
+      <p v-if="sending" class="flex items-center gap-2 text-[12px] text-ink-300">
+        <UiSpinner size="sm" :label="t('chat.thinking')" />
+        {{ t("chat.thinking") }}
+      </p>
     </div>
 
     <slot />
