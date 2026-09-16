@@ -77,12 +77,34 @@ function writeMcpConfig(worktree: string): void {
   );
 }
 
+function commandExists(command: string): boolean {
+  const path = process.env.PATH ?? "";
+  return path.split(":").some((dir) => existsSync(join(dir, command)));
+}
+
+function assertPreviewToolchain(worktree: string): void {
+  if (!commandExists("php")) {
+    throw new Error(
+      "PHP 8.5 is not installed. Install php8.5-cli plus mbstring, xml, curl, zip, gd, intl, bcmath, and mysql. The cloned app requires php ^8.5.",
+    );
+  }
+  if (existsSync(join(worktree, "composer.json")) && !existsSync(join(worktree, "vendor"))) {
+    if (!commandExists("composer")) {
+      throw new Error("Composer is not installed and vendor/ is missing. Install Composer and run composer install in the worktree.");
+    }
+    throw new Error("vendor/ is missing. Run composer install in the workspace worktree.");
+  }
+}
+
 async function installDependencies(worktree: string): Promise<void> {
   if (existsSync(join(worktree, "composer.json")) && !existsSync(join(worktree, "vendor"))) {
+    if (!commandExists("php") || !commandExists("composer")) {
+      throw new Error("PHP 8.5 and Composer are required to install Laravel vendor/ for preview.");
+    }
     await execFileAsync("composer", ["install", "--no-interaction", "--prefer-dist"], {
       cwd: worktree,
-      timeout: 180_000,
-    }).catch(() => undefined);
+      timeout: 300_000,
+    });
   }
   if (existsSync(join(worktree, "package.json")) && !existsSync(join(worktree, "node_modules"))) {
     await execFileAsync("npm", ["install"], { cwd: worktree, timeout: 180_000 }).catch(() => undefined);
@@ -122,6 +144,7 @@ export class ProcessRuntime implements WorkspaceRuntime {
   async start(input: StartRequest): Promise<RuntimeHandle> {
     const existing = handles.get(input.workspaceId);
     if (existing) return existing;
+    assertPreviewToolchain(input.worktree);
     const port = await allocatePort();
     const env = mergeWorktreeEnv(input.worktree, {
       ...PREVIEW_SIDE_EFFECTS,
@@ -132,14 +155,23 @@ export class ProcessRuntime implements WorkspaceRuntime {
     const childEnv = { ...process.env, ...env, PORT: String(port), APP_URL: input.publicUrl };
     const children: ChildProcess[] = [];
     const artisan = join(input.worktree, "artisan");
+    let artisanLog = "";
     if (existsSync(artisan)) {
-      children.push(
-        spawn("php", ["artisan", "serve", "--host", "127.0.0.1", "--port", String(port)], {
-          cwd: input.worktree,
-          env: childEnv,
-          stdio: "pipe",
-        }),
-      );
+      const php = spawn("php", ["artisan", "serve", "--host", "127.0.0.1", "--port", String(port)], {
+        cwd: input.worktree,
+        env: childEnv,
+        stdio: "pipe",
+      });
+      php.stderr?.on("data", (chunk) => {
+        artisanLog += String(chunk);
+      });
+      php.stdout?.on("data", (chunk) => {
+        artisanLog += String(chunk);
+      });
+      php.on("error", (error) => {
+        artisanLog += error.message;
+      });
+      children.push(php);
     } else {
       throw new Error("This workspace is not a Laravel app (artisan missing). Reprovision from ticoncreserv/app.");
     }
@@ -179,7 +211,10 @@ export class ProcessRuntime implements WorkspaceRuntime {
     const healthy = await waitForHealth(`http://127.0.0.1:${port}${spec.healthCheck.path}`, spec.healthCheck.timeoutMs);
     if (!healthy) {
       await handle.stop();
-      throw new Error(`Preview did not become healthy on /up for workspace ${input.workspaceId}`);
+      const detail = artisanLog.trim().slice(-400);
+      throw new Error(
+        `Preview did not become healthy on /up for workspace ${input.workspaceId}${detail ? `: ${detail}` : ". Check that PHP 8.5 can boot artisan serve."}`,
+      );
     }
     return handle;
   }

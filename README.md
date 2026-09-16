@@ -31,7 +31,16 @@ Required in `.env` before opening a workspace:
 
 Locally the web app listens on [http://127.0.0.1:43123](http://127.0.0.1:43123). That port is only the current bind — production uses `ATELIER_PUBLIC_URL` as a dedicated https origin. `pnpm dev` also answers on `http://localhost` (port 80) and `http://localhost:8080` so local GitHub callbacks that omit the port do not 404.
 
-Without PHP on the host, Laravel preview fails with a real health-check error. Set `ATELIER_RUNTIME=docker` only when the daemon and `infra/workspace-php85.Dockerfile` image are available.
+The cloned app requires **PHP 8.5** (`php ^8.5` in `composer.json`). This host needs `php8.5-cli` plus `mbstring`, `xml`, `curl`, `zip`, `gd`, `intl`, `bcmath`, `mysql`, and Composer. On Ubuntu 24.04:
+
+```bash
+sudo add-apt-repository -y ppa:ondrej/php
+sudo apt-get install -y php8.5-cli php8.5-mbstring php8.5-xml php8.5-curl php8.5-zip \
+  php8.5-gd php8.5-intl php8.5-bcmath php8.5-mysql php8.5-ldap php8.5-sqlite3
+curl -sS https://getcomposer.org/installer | php -- --install-dir="$HOME/.local/bin" --filename=composer
+```
+
+Without PHP, preview fails on `GET /up` with a real error — not fixture HTML. Set `ATELIER_RUNTIME=docker` only when the daemon and `infra/workspace-php85.Dockerfile` image are available. Homologation databases in the cloned `.env` (`10.x`) are used as-is; `/up` does not need them, but login and screens will fail if those hosts are unreachable.
 
 ```bash
 pnpm test
