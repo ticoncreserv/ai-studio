@@ -4,7 +4,17 @@ import { dirname, join } from "node:path";
 export const VITE_PREVIEW_SEGMENT = "__vite";
 
 export function publicViteOrigin(publicUrl: string): string {
-  return `${publicUrl.replace(/\/$/, "")}/${VITE_PREVIEW_SEGMENT}`;
+  let path = publicUrl;
+  try {
+    path = new URL(publicUrl).pathname;
+  } catch {
+    const i = publicUrl.indexOf("/-/p/");
+    if (i >= 0) path = publicUrl.slice(i);
+  }
+  path = path.replace(/\/$/, "");
+  if (!path.startsWith("/")) path = `/${path}`;
+  if (path.endsWith(`/${VITE_PREVIEW_SEGMENT}`)) return path;
+  return `${path}/${VITE_PREVIEW_SEGMENT}`;
 }
 
 export function viteDevAssetPath(rest: string): string | null {
@@ -50,12 +60,12 @@ export default defineConfig(async (env) => {
   return {
     ...raw,
     plugins,
+    base: process.env.ATELIER_VITE_BASE || "/",
     server: {
       ...raw.server,
       host: "127.0.0.1",
       port: Number(process.env.ATELIER_VITE_PORT || 5173),
       strictPort: true,
-      origin: process.env.ATELIER_VITE_ORIGIN,
       hmr: false,
     },
   };

@@ -12,8 +12,9 @@ afterEach(() => {
 
 describe("vite preview urls", () => {
   it("scopes the public Vite origin under the preview token", () => {
-    expect(publicViteOrigin("http://127.0.0.1:43123/-/p/tok")).toBe("http://127.0.0.1:43123/-/p/tok/__vite");
-    expect(publicViteOrigin("http://127.0.0.1:43123/-/p/tok/")).toBe("http://127.0.0.1:43123/-/p/tok/__vite");
+    expect(publicViteOrigin("http://127.0.0.1:43123/-/p/tok")).toBe("/-/p/tok/__vite");
+    expect(publicViteOrigin("http://127.0.0.1:43123/-/p/tok/")).toBe("/-/p/tok/__vite");
+    expect(publicViteOrigin("https://studio.example/-/p/tok")).toBe("/-/p/tok/__vite");
   });
 
   it("strips the preview prefix before forwarding to Vite", () => {
@@ -32,7 +33,7 @@ describe("vite preview urls", () => {
     expect(readFileSync(join(dir, "public", "hot"), "utf8")).toBe("http://127.0.0.1:43123/-/p/tok/__vite");
     const config = writeViteAtelierConfig(dir);
     expect(readFileSync(config, "utf8")).toContain("@laravel/vite-plugin-wayfinder");
-    expect(readFileSync(config, "utf8")).toContain("ATELIER_VITE_ORIGIN");
+    expect(readFileSync(config, "utf8")).toContain("ATELIER_VITE_BASE");
     rmSync(join(dir, "public", "hot"));
     ensureViteHotFile(dir, "http://127.0.0.1:43123/-/p/tok/__vite");
     expect(readFileSync(join(dir, "public", "hot"), "utf8")).toBe("http://127.0.0.1:43123/-/p/tok/__vite");

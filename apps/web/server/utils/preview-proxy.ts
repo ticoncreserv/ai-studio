@@ -1,7 +1,7 @@
 import type { H3Event } from "h3";
 import { ensureViteHotFile, publicViteOrigin, viteDevAssetPath } from "@atelier/supervisor";
 import { platform } from "./platform";
-import { rewriteLocation, rewriteSetCookie } from "./preview-rewrite";
+import { rewriteLocation, rewritePreviewDocument, rewriteSetCookie, rewriteViteBareImports } from "./preview-rewrite";
 
 const FORWARD_HEADERS = ["cookie", "content-type", "accept", "x-xsrf-token", "x-requested-with", "authorization", "origin"];
 
@@ -53,7 +53,15 @@ export async function proxyPreview(event: H3Event, token: string, rest = "") {
     if (single) outgoing.set("set-cookie", rewriteSetCookie(single, prefix));
   }
 
-  const buf = Buffer.from(await res.arrayBuffer());
+  let buf = Buffer.from(await res.arrayBuffer());
+  const ctype = outgoing.get("content-type") ?? "";
+  if (vitePath && !/image|font|wasm|octet-stream/i.test(ctype)) {
+    buf = Buffer.from(rewriteViteBareImports(buf.toString("utf8"), `${prefix}/__vite`));
+    outgoing.delete("content-length");
+  } else if (!vitePath && /html|json/i.test(ctype)) {
+    buf = Buffer.from(rewritePreviewDocument(buf.toString("utf8"), ws.port, prefix));
+    outgoing.delete("content-length");
+  }
   setResponseStatus(event, res.status);
   for (const [key, value] of outgoing.entries()) {
     if (key === "transfer-encoding" || key === "content-encoding") continue;
