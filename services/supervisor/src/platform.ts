@@ -89,6 +89,7 @@ import {
   worktreeFingerprint,
 } from "./runtime/worktree-diff.js";
 import { formatAgentError } from "./acp/errors.js";
+import { PromptTextBuffer, shouldFlushAssistantText } from "./acp/prompt-text.js";
 import type { AcpPromptBlock } from "./acp/session.js";
 import type { ProviderRun } from "./providers/types.js";
 import {
@@ -119,6 +120,7 @@ export class Platform {
   private readonly runModes = new Map<string, "agent" | "plan" | "ask">();
   private readonly runFingerprints = new Map<string, string>();
   private readonly pendingPermissions = new Map<string, { rpcId: number; respond: ProviderRun["respondPermission"] }>();
+  private readonly promptText = new PromptTextBuffer();
 
   constructor(store = new JsonStore(join(repoRoot(), "var", "platform.json"))) {
     this.store = store;
@@ -475,6 +477,18 @@ export class Platform {
     bus.publish({ ...event, sessionId, workspaceId: session.workspaceId });
   }
 
+  private flushPromptText(sessionId: string): void {
+    const text = this.promptText.take(sessionId);
+    if (!text) return;
+    this.append(sessionId, {
+      type: "assistant_message",
+      id: randomUUID(),
+      at: new Date().toISOString(),
+      text,
+      streaming: false,
+    });
+  }
+
   snapshot(sessionId: string) {
     const session = this.store.read().sessions.find((s) => s.id === sessionId);
     if (!session) return foldEvents([]);
@@ -700,7 +714,6 @@ export class Platform {
     if (providerId !== session.provider) this.setSessionProvider(session.id, providerId);
     const mode = command.mode ?? "agent";
     const fingerprint = this.workspaceToolsFingerprint(ws);
-    let streamed = "";
     let run = this.runs.get(session.id);
     if (run && (this.runModes.get(session.id) !== mode || this.runFingerprints.get(session.id) !== fingerprint)) {
       run.stop();
@@ -710,6 +723,7 @@ export class Platform {
       run = undefined;
     }
     try {
+      this.promptText.reset(session.id);
       if (!run) {
         const provider = createProvider(providerId);
         run = await provider.start({
@@ -723,7 +737,9 @@ export class Platform {
             prefs: this.store.read().mcpPrefs,
           }),
           onEvent: (event) => {
-            if (event.type === "assistant_delta") streamed += event.text;
+            // The ACP process is reused across prompts, so this closure must
+            // write the session buffer — not a `let streamed` from the first start.
+            if (event.type === "assistant_delta") this.promptText.append(session.id, event.text);
             usage.toolCalls += event.type === "tool_call" ? 1 : 0;
             const reason = budgetExceeded(budget, usage);
             if (reason) {
@@ -737,9 +753,11 @@ export class Platform {
               void this.runs.get(session.id)?.cancel();
               return;
             }
+            if (shouldFlushAssistantText(event)) this.flushPromptText(session.id);
             this.append(session.id, event);
           },
           onPermission: (event, rpcId) => {
+            this.flushPromptText(session.id);
             this.append(session.id, event);
             this.pendingPermissions.set(session.id, {
               rpcId,
@@ -759,16 +777,9 @@ export class Platform {
       }
       const blocks: AcpPromptBlock[] = [{ type: "text", text: packed.text }, ...this.attachmentBlocks(command.attachments)];
       const fingerprintBefore = await worktreeFingerprint(ws.worktree);
+      this.promptText.reset(session.id);
       await run.prompt(blocks);
-      if (streamed.trim()) {
-        this.append(session.id, {
-          type: "assistant_message",
-          id: randomUUID(),
-          at: new Date().toISOString(),
-          text: streamed.trim(),
-          streaming: false,
-        });
-      }
+      this.flushPromptText(session.id);
       try {
         if ((await worktreeFingerprint(ws.worktree)) === fingerprintBefore) return;
         for (const event of await worktreeDiffEvents(ws.worktree)) this.append(session.id, event);
@@ -792,6 +803,7 @@ export class Platform {
         // or remount the preview when no app files changed.
       }
     } catch (error) {
+      this.flushPromptText(session.id);
       run?.stop();
       this.runs.delete(session.id);
       this.runModes.delete(session.id);
