@@ -9,7 +9,9 @@ export default defineEventHandler((event) => {
   const sessions = platform().sessions(id, getQuery(event).q?.toString());
   const sessionId = getQuery(event).session?.toString() ?? sessions[0]?.id;
   const session = sessions.find((s) => s.id === sessionId) ?? sessions[0];
+  const db = platform().store.read();
   return {
+    user,
     workspace,
     sessions,
     session,
@@ -17,15 +19,19 @@ export default defineEventHandler((event) => {
     events: session?.events ?? [],
     flags: platform().flags(),
     mentions: platform().mentionIndex(),
-    recipes: platform().store.read().recipes,
-    connections: platform().store.read().connections,
-    presence: platform().store.read().presence.filter((p) => p.workspaceId === id),
-    lock: platform().store.read().runLock[id] ?? null,
+    recipes: db.recipes,
+    connections: db.connections,
+    rules: platform().getRules(),
+    providers: platform().listProviders(),
+    presence: db.presence.filter((p) => p.workspaceId === id),
+    lock: db.runLock[id] ?? null,
     env: platform().envPreview(id),
     divergence: {
       pendingInBranch: ["2026_04_01_add_quote_window"],
       extraInDatabase: [],
     },
+    quota: { usedMb: Math.round((workspace.bytes ?? 386 * 1024 * 1024) / (1024 * 1024)), limitMb: 2048 },
+    migrationLog: db.migrationLog,
     previewPath: `/-/p/${workspace.previewToken}/`,
   };
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ tone?: "neutral" | "live" | "warn" }>();
+defineProps<{ tone?: "neutral" | "live" | "warn" | "info" }>();
 </script>
 
 <template>
@@ -8,7 +8,8 @@ defineProps<{ tone?: "neutral" | "live" | "warn" }>();
     :class="{
       'bg-ink-100 text-ink-600': (tone ?? 'neutral') === 'neutral',
       'bg-emerald-50 text-emerald-700': tone === 'live',
-      'bg-amber-50 text-amber-700': tone === 'warn',
+      'bg-amber-50 text-amber-800': tone === 'warn',
+      'bg-coral-50 text-coral-600': tone === 'info',
     }"
   >
     <span

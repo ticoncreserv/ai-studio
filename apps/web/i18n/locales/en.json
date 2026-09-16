@@ -2,7 +2,15 @@
   "app": {
     "name": "Atelier",
     "tagline": "Create screens on the Laravel repository with Cursor, a branch per person, and a live preview.",
-    "product": "Assisted creation for ticoncreserv/app"
+    "product": "Assisted creation for ticoncreserv/app",
+    "headline": "Ship Laravel screens from a conversation.",
+    "lede": "Each person gets a branch, Cursor in the loop, and a live preview of the portal — mobile, tablet, and desktop.",
+    "featureBranch": "A personal git branch",
+    "featurePreview": "Live preview in three viewports",
+    "featureRules": "Rules, {'@'}mentions, and recipes",
+    "featureDb": "Shared homologation databases",
+    "featureCollab": "Invite the team, share a preview link",
+    "featureSpectator": "Watch a session without taking the lock"
   },
   "auth": {
     "title": "Sign in to the studio",
@@ -15,7 +23,9 @@
     "english": "English",
     "portuguese": "Português (Brasil)",
     "error": "Sign-in failed. Try again.",
-    "welcomeBack": "Welcome back"
+    "welcomeBack": "Welcome back",
+    "or": "or",
+    "localHint": "Local login is only for this environment. Production signs in with GitHub and checks repository access."
   },
   "nav": {
     "sessions": "Sessions",
@@ -28,7 +38,13 @@
     "signOut": "Sign out",
     "openWorkspace": "Open workspace",
     "copied": "Link copied",
-    "more": "More"
+    "more": "More",
+    "settings": "Workspace",
+    "shortcuts": "Keyboard shortcuts",
+    "publish": "Publish to dev",
+    "publishSoon": "Publish is a later phase. The flag is off.",
+    "account": "Account",
+    "home": "Home"
   },
   "workspace": {
     "warming": "Warming the workspace to ready…",
@@ -49,7 +65,25 @@
     "diskQuota": "Disk quota",
     "presence": "{count} people here",
     "live": "Live",
-    "project": "ticoncreserv/app"
+    "project": "ticoncreserv/app",
+    "openChat": "Chat",
+    "openPreview": "Preview",
+    "sessionsTitle": "Sessions",
+    "noSessions": "No sessions match that search.",
+    "lockHeld": "The run lock is held by another session.",
+    "quotaUsed": "{used} MB of {limit} MB",
+    "role": "Role",
+    "provider": "Model",
+    "envIsolation": "Isolation env",
+    "migrationJournal": "Migration journal",
+    "noMigrations": "No migrations have been applied from this studio yet.",
+    "resumeHint": "Resume starts php-fpm and Caddy on this branch.",
+    "people": "People in this workspace",
+    "loading": "Opening the studio…",
+    "loadError": "The workspace could not be loaded.",
+    "retry": "Try again",
+    "editor": "Editing",
+    "watching": "Watching"
   },
   "chat": {
     "empty": "Describe the screen or change you want. Mention routes with {'@'} and attach files or a screenshot.",
@@ -83,7 +117,33 @@
     "modeAsk": "Ask",
     "attach": "Attach",
     "recipe": "Recipe",
-    "build": "Build"
+    "build": "Build",
+    "thinking": "The agent is working…",
+    "modeHintAgent": "Edit the worktree and run tools.",
+    "modeHintPlan": "Propose a plan before changing files.",
+    "modeHintAsk": "Answer questions without writing files.",
+    "recipeHint": "The recipe fills the prompt. Type the model or subject, then send.",
+    "recipeModel": "Model or subject",
+    "removeAttachment": "Remove attachment",
+    "mentionRoutes": "Routes",
+    "mentionModels": "Models",
+    "mentionPages": "Pages",
+    "noMentions": "No matches",
+    "pendingTodos": "Tasks",
+    "diffPending": "Pending review",
+    "diffAccepted": "Accepted",
+    "diffRejected": "Rejected",
+    "toolOutput": "Output",
+    "migrationBy": "{author} applied {name} on {branch}",
+    "planOverview": "Overview",
+    "emptyTitle": "What should we build?",
+    "emptyHint": "Start from a recipe, mention a route, or paste a screenshot.",
+    "suggestion1": "Add an Inertia page that lists quotes",
+    "suggestion2": "Add a status field to the Quote model",
+    "suggestion3": "Fix the last preview error",
+    "you": "You",
+    "agent": "Agent",
+    "now": "Now"
   },
   "preview": {
     "title": "Preview",
@@ -106,7 +166,14 @@
     "home": "Home",
     "select": "Select",
     "annotate": "Draw",
-    "comment": "Comment"
+    "comment": "Comment",
+    "address": "Preview address",
+    "inspectHint": "Click the preview to attach a note to the composer.",
+    "pinAdded": "Comment added to the composer",
+    "debugTitle": "Preview diagnostics",
+    "debugFix": "Ask the agent to fix N+1 and slow queries",
+    "longQueryTitle": "ERP query in progress",
+    "fit": "Fit"
   },
   "command": {
     "placeholder": "Type a command…",
@@ -118,7 +185,13 @@
     "viewportDesktop": "Viewport: desktop",
     "openPreview": "Open preview in a tab",
     "restore": "Restore last checkpoint",
-    "newSession": "Start a new session"
+    "newSession": "Start a new session",
+    "shortcuts": "Show shortcuts",
+    "sync": "Sync with base",
+    "hibernate": "Hibernate workspace",
+    "rules": "Open rules",
+    "share": "Share preview",
+    "empty": "No commands match."
   },
   "rules": {
     "title": "Rules",
@@ -126,7 +199,11 @@
     "project": "Project",
     "user": "User",
     "save": "Materialize into the worktree",
-    "hint": "Compiled rules become AGENTS.md and .cursor/rules. The agent language follows your locale; code stays in English."
+    "hint": "Compiled rules become AGENTS.md and .cursor/rules. The agent language follows your locale; code stays in English.",
+    "saved": "Rules materialized into the worktree",
+    "platformHint": "Applied to every workspace.",
+    "projectHint": "Concreserv conventions and Laravel Boost.",
+    "userHint": "Your personal preferences for this studio."
   },
   "invite": {
     "title": "Invite a teammate",
@@ -134,25 +211,43 @@
     "accept": "Accept invite",
     "pending": "You signed in, but GitHub does not yet grant access to the repository.",
     "revalidate": "Revalidate GitHub access",
-    "githubAccess": "Open repository access settings"
+    "githubAccess": "Open repository access settings",
+    "hint": "They sign in with GitHub. If the repo is not visible yet, they wait in pending access.",
+    "expires": "Expires in 7 days"
   },
   "share": {
     "title": "Shared preview",
     "hint": "Read-only. No GitHub account required.",
     "expired": "This share link has expired.",
-    "copy": "Copy link"
+    "copy": "Copy link",
+    "expires": "Link expires in 24 hours",
+    "openStudio": "Open in Atelier"
   },
   "connections": {
     "title": "External connections",
     "homologation": "Homologation",
     "erpReadOnly": "ERP connections are read-only.",
-    "appMigrate": "Forward migrations allowed on the portal connection, with a global lock."
+    "appMigrate": "Forward migrations allowed on the portal connection, with a global lock.",
+    "driver": "Driver",
+    "host": "Host",
+    "database": "Database",
+    "kindApp": "Portal",
+    "kindErp": "ERP",
+    "readOnly": "Read-only",
+    "migrateForward": "Forward migrate"
   },
   "flags": {
     "publish": "Publish",
     "multiProvider": "Multi-provider",
     "spectator": "Spectator",
-    "recipes": "Recipes"
+    "recipes": "Recipes",
+    "title": "Platform flags",
+    "hint": "Flip without a deploy. Publish and extra providers stay off until that phase."
+  },
+  "settings": {
+    "title": "Workspace",
+    "language": "Language",
+    "isolationHint": "QUEUE_NAME, CACHE_PREFIX, SESSION_COOKIE, and APP_URL are unique per workspace."
   },
   "errors": {
     "generic": "Something went wrong.",

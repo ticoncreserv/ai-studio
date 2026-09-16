@@ -22,7 +22,7 @@ import {
   transition,
 } from "@atelier/domain";
 import { bus } from "./bus.js";
-import { JsonStore, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
+import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
 import { createProvider, listProviders } from "./providers/index.js";
 import { fixtureAppDir, repoRoot } from "./paths.js";
 import { applyHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
@@ -84,7 +84,7 @@ export class Platform {
       sourceDir,
       user: { name: user.name, email: user.email },
     });
-    this.materializeRules(worktree, user.locale);
+    this.materializeRules(worktree, user.locale, this.getRules());
     ws = {
       id,
       projectId: "concreserv",
@@ -164,6 +164,16 @@ export class Platform {
     if (!query) return list;
     const q = query.toLowerCase();
     return list.filter((s) => s.title.toLowerCase().includes(q) || s.events.some((e) => "text" in e && String(e.text).toLowerCase().includes(q)));
+  }
+
+  setSessionProvider(sessionId: string, provider: ProviderId): SessionRecord {
+    this.store.update((d) => {
+      const session = d.sessions.find((s) => s.id === sessionId);
+      if (session) session.provider = provider;
+    });
+    const session = this.store.read().sessions.find((s) => s.id === sessionId);
+    if (!session) throw new Error("Session not found");
+    return session;
   }
 
   createSession(workspaceId: string, provider: ProviderId = "mock"): SessionRecord {
@@ -326,7 +336,16 @@ export class Platform {
     const recipe = command.recipeId
       ? this.store.read().recipes.find((r) => r.id === command.recipeId)
       : undefined;
-    const userText = recipe ? recipe.template.replaceAll("{{model}}", command.text) : command.text;
+    const filled = recipe
+      ? recipe.template.replaceAll("{{model}}", command.text)
+      : command.text;
+    const prefix =
+      command.mode === "plan"
+        ? "Create a plan only. Do not edit files.\n\n"
+        : command.mode === "ask"
+          ? "Answer only. Do not edit files.\n\n"
+          : "";
+    const userText = `${prefix}${filled}`;
 
     if (session.events.length === 0) {
       this.store.update((d) => {
@@ -344,7 +363,7 @@ export class Platform {
       mentions: command.mentions,
     });
 
-    const rules = compileRules(platformRules(), user.locale);
+    const rules = compileRules(this.getRules(), user.locale);
     const packed = packPrompt(
       [
         { id: "user", kind: "user", text: userText, tokens: estimateTokens(userText), priority: 0 },
@@ -471,6 +490,17 @@ export class Platform {
     });
   }
 
+  getRules(): RuleRecord[] {
+    return this.store.read().rules;
+  }
+
+  saveRules(layers: RuleRecord[], locale: "en" | "pt-BR", worktree?: string) {
+    this.store.update((d) => {
+      d.rules = layers;
+    });
+    if (worktree) this.materializeRules(worktree, locale, layers);
+  }
+
   mentionIndex() {
     return {
       routes: ["quotes", "customers", "deliveries", "login"],
@@ -496,8 +526,8 @@ export class Platform {
     return ws;
   }
 
-  private materializeRules(worktree: string, locale: "en" | "pt-BR") {
-    const compiled = compileRules(platformRules(), locale);
+  private materializeRules(worktree: string, locale: "en" | "pt-BR", layers = this.getRules()) {
+    const compiled = compileRules(layers, locale);
     for (const file of compiled.files) {
       const target = join(worktree, file.path);
       mkdirSync(dirname(target), { recursive: true });
@@ -507,29 +537,6 @@ export class Platform {
     mkdirSync(join(worktree, "var"), { recursive: true });
     writeFileSync(provenance, JSON.stringify(compiled.provenance, null, 2));
   }
-}
-
-function platformRules() {
-  return [
-    {
-      id: "platform",
-      level: "platform" as const,
-      title: "Platform",
-      body: "Never run migrate:fresh, db:wipe, or write to ERP connections. Do not read .env files.",
-    },
-    {
-      id: "project",
-      level: "project" as const,
-      title: "Concreserv",
-      body: "Follow Inertia + Vue page conventions. Keep Laravel Boost MCP available. Workaround comments are normative.",
-    },
-    {
-      id: "user",
-      level: "user" as const,
-      title: "User",
-      body: "Prefer small, reviewable diffs and explain each file change.",
-    },
-  ];
 }
 
 let singleton: Platform | null = null;

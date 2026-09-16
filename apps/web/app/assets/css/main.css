@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -12,8 +12,8 @@ html,
 body,
 #__nuxt {
   min-height: 100%;
-  background: #f4f0ea;
-  color: #161310;
+  background: #efe8de;
+  color: #1a1612;
 }
 
 body {
@@ -23,16 +23,20 @@ body {
 }
 
 ::selection {
-  background: #ffd9ce;
-  color: #161310;
+  background: #ffd4c6;
+  color: #1a1612;
+}
+
+.font-display {
+  font-family: "Instrument Serif", ui-serif, Georgia, serif;
 }
 
 .mesh {
   background:
-    radial-gradient(1200px 600px at 12% -10%, rgba(255, 90, 54, 0.16), transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, rgba(255, 196, 140, 0.28), transparent 50%),
-    radial-gradient(700px 400px at 50% 110%, rgba(255, 90, 54, 0.08), transparent 55%),
-    #f4f0ea;
+    radial-gradient(1100px 520px at 8% -8%, rgba(255, 90, 54, 0.2), transparent 58%),
+    radial-gradient(800px 420px at 92% 4%, rgba(255, 186, 120, 0.32), transparent 52%),
+    radial-gradient(640px 360px at 48% 108%, rgba(255, 90, 54, 0.08), transparent 55%),
+    #efe8de;
 }
 
 .grain {
@@ -40,13 +44,28 @@ body {
 }
 
 .preview-dots {
-  background-image: radial-gradient(rgba(22, 19, 16, 0.08) 1px, transparent 1px);
-  background-size: 18px 18px;
+  background-color: #e8dfd3;
+  background-image: radial-gradient(rgba(26, 22, 18, 0.07) 1px, transparent 1px);
+  background-size: 16px 16px;
 }
 
 .no-scrollbar::-webkit-scrollbar {
   width: 0;
   height: 0;
+}
+
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: rgba(26, 22, 18, 0.14);
+  border-radius: 999px;
+}
+
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .pulse-dot {
@@ -58,4 +77,43 @@ body {
   70% {
     box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
   }
+}
+
+.markdown-body p + p {
+  margin-top: 0.65em;
+}
+
+.markdown-body code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.86em;
+  background: #f3ece4;
+  border-radius: 6px;
+  padding: 0.1em 0.35em;
+}
+
+.markdown-body pre {
+  margin: 0.75rem 0;
+  overflow: auto;
+  border-radius: 12px;
+  background: #17130f;
+  color: #efe6da;
+  padding: 0.85rem 1rem;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.markdown-body ul {
+  margin: 0.5rem 0 0.5rem 1.1rem;
+  list-style: disc;
+}
+
+.markdown-body ol {
+  margin: 0.5rem 0 0.5rem 1.1rem;
+  list-style: decimal;
 }

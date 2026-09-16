@@ -24,6 +24,8 @@ pnpm dev
 
 The web app listens on [http://127.0.0.1:43123](http://127.0.0.1:43123). Sign in with a local GitHub handle, open a workspace, and send a prompt. The mock agent proposes an Inertia quotes page; accept a hunk to write it into the worktree.
 
+The studio exposes the product surfaces from the plan: session rail and search, agent/plan/ask modes, recipes, attachments, @-mentions, hunk/file review, plan/question/permission cards, rules editor, homologation connection catalog, schema-divergence banner, spectator mode, share/invite dialogs, feature flags, disk quota, and a three-viewport preview with inspect notes and a diagnostics overlay.
+
 ```bash
 pnpm test
 pnpm i18n:check

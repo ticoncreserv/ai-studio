@@ -73,6 +73,50 @@ function defaultEvents(): SessionEvent[] {
       gitSha: "fixture",
       label: "After quotes page",
     },
+    {
+      type: "plan",
+      id: "p1",
+      at: new Date().toISOString(),
+      name: "Quotes page",
+      overview: "Add an Inertia quotes list and register the route.",
+      plan: "1. Create the page\n2. Register the route",
+      todos: [],
+      outcome: "pending",
+    },
+    {
+      type: "question",
+      id: "q1",
+      at: new Date().toISOString(),
+      title: "Which quote columns should the table show?",
+      questions: [
+        {
+          id: "cols",
+          prompt: "Columns",
+          options: [
+            { id: "customer", label: "Customer" },
+            { id: "total", label: "Total" },
+          ],
+          allowMultiple: true,
+        },
+      ],
+      outcome: "pending",
+    },
+    {
+      type: "permission",
+      id: "perm1",
+      at: new Date().toISOString(),
+      toolCallId: "call_2",
+      title: "Run php artisan route:list --json",
+      options: ["allow-once", "allow-always", "reject-once"],
+      outcome: "pending",
+    },
+    {
+      type: "runtime_error",
+      id: "e1",
+      at: new Date().toISOString(),
+      source: "preview",
+      message: "N+1 on Quote::customer while rendering /quotes",
+    },
   ];
 }
 

@@ -7,6 +7,7 @@ export default defineEventHandler((event) => {
   return {
     user,
     workspace: ws ?? null,
+    sessions: ws ? platform().sessions(ws.id).slice(0, 6) : [],
     flags: platform().flags(),
     providers: platform().listProviders(),
     mentions: platform().mentionIndex(),

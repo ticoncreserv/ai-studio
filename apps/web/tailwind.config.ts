@@ -5,16 +5,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        canvas: "#F4F0EA",
-        paper: "#FFFcf7",
-        line: "#E7E0D6",
+        canvas: "#EFE8DE",
+        paper: "#FFFBF5",
+        line: "#E4DACD",
         ink: {
-          950: "#161310",
-          800: "#2A2420",
-          600: "#5C544C",
-          500: "#7A7268",
-          300: "#B8AFA4",
-          100: "#F2EBE3",
+          950: "#1A1612",
+          800: "#2C261F",
+          600: "#5A5249",
+          500: "#746C62",
+          300: "#B3A89C",
+          100: "#F1E9DF",
         },
         coral: {
           50: "#FFF1EC",

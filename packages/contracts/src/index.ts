@@ -179,7 +179,14 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
 export type SessionEvent = z.infer<typeof SessionEventSchema>;
 
 export const ClientCommandSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("prompt"), text: z.string(), attachments: z.array(z.string()).default([]), mentions: z.array(z.string()).default([]), recipeId: z.string().optional() }),
+  z.object({
+    type: z.literal("prompt"),
+    text: z.string(),
+    attachments: z.array(z.string()).default([]),
+    mentions: z.array(z.string()).default([]),
+    recipeId: z.string().optional(),
+    mode: AgentModeSchema.optional(),
+  }),
   z.object({ type: z.literal("cancel") }),
   z.object({ type: z.literal("accept_hunk"), hunkId: z.string() }),
   z.object({ type: z.literal("reject_hunk"), hunkId: z.string() }),

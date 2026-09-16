@@ -70,6 +70,13 @@ export interface RecipeRecord {
   variables: string[];
 }
 
+export interface RuleRecord {
+  id: string;
+  level: "platform" | "project" | "user";
+  title: string;
+  body: string;
+}
+
 interface DbShape {
   users: UserRecord[];
   workspaces: WorkspaceRecord[];
@@ -78,6 +85,7 @@ interface DbShape {
   shares: PreviewShare[];
   connections: ConnectionRecord[];
   recipes: RecipeRecord[];
+  rules: RuleRecord[];
   members: Array<{ userId: string; projectId: string; role: Role }>;
   flags: Record<string, boolean>;
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
@@ -93,7 +101,10 @@ const emptyDb = (): DbShape => ({
   shares: [],
   connections: [
     { id: "portal", name: "Portal (homologation)", kind: "app", env: "homologation", driver: "mariadb", host: "10.0.128.112", database: "PortalCliente" },
+    { id: "sqlsrv", name: "sqlsrv", kind: "erp", env: "homologation", driver: "sqlsrv", host: "10.10.0.211", database: "Protheus" },
     { id: "beton-test", name: "betonTeste", kind: "erp", env: "homologation", driver: "sqlsrv", host: "10.10.0.211", database: "betonMIXProducao_Portal" },
+    { id: "beton-interface", name: "betonInterfaceTeste", kind: "erp", env: "homologation", driver: "sqlsrv", host: "10.10.0.212", database: "betonInterface" },
+    { id: "despacho", name: "betonDESPACHO", kind: "erp", env: "homologation", driver: "sqlsrv", host: "10.10.0.11", database: "Despacho" },
   ],
   recipes: [
     {
@@ -101,6 +112,38 @@ const emptyDb = (): DbShape => ({
       title: "Inertia CRUD for model",
       template: "Create an Inertia Vue page that lists, creates, and edits the {{model}} model. Follow existing Pages conventions. Write code in English.",
       variables: ["model"],
+    },
+    {
+      id: "add-field",
+      title: "Add a model field",
+      template: "Add a {{model}} field across the migration, model, Form Request, and Inertia form. Do not run migrate:fresh.",
+      variables: ["model"],
+    },
+    {
+      id: "fix-preview",
+      title: "Fix last preview error",
+      template: "Investigate the latest preview/runtime error and fix it with a small, reviewable diff.",
+      variables: [],
+    },
+  ],
+  rules: [
+    {
+      id: "platform",
+      level: "platform",
+      title: "Platform",
+      body: "Never run migrate:fresh, db:wipe, or write to ERP connections. Do not read .env files.",
+    },
+    {
+      id: "project",
+      level: "project",
+      title: "Concreserv",
+      body: "Follow Inertia + Vue page conventions. Keep Laravel Boost MCP available. Workaround comments are normative.",
+    },
+    {
+      id: "user",
+      level: "user",
+      title: "User",
+      body: "Prefer small, reviewable diffs and explain each file change.",
     },
   ],
   members: [],
@@ -117,7 +160,25 @@ export class JsonStore {
   }
 
   read(): DbShape {
-    return JSON.parse(readFileSync(this.file, "utf8")) as DbShape;
+    const raw = JSON.parse(readFileSync(this.file, "utf8")) as Partial<DbShape>;
+    const base = emptyDb();
+    return {
+      ...base,
+      ...raw,
+      connections: raw.connections?.length ? raw.connections : base.connections,
+      recipes: raw.recipes?.length ? raw.recipes : base.recipes,
+      rules: raw.rules?.length ? raw.rules : base.rules,
+      flags: { ...base.flags, ...raw.flags },
+      users: raw.users ?? [],
+      workspaces: raw.workspaces ?? [],
+      sessions: raw.sessions ?? [],
+      invites: raw.invites ?? [],
+      shares: raw.shares ?? [],
+      members: raw.members ?? [],
+      presence: raw.presence ?? [],
+      runLock: raw.runLock ?? {},
+      migrationLog: raw.migrationLog ?? [],
+    };
   }
 
   write(db: DbShape): void {
