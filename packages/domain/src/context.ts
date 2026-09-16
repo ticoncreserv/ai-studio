@@ -49,8 +49,24 @@ export function resolveMentions(query: string, index: MentionIndex): string[] {
   );
 }
 
+const PLAN_PROMPT_PREFIX = "Create a plan only. Do not edit files.\n\n";
+const ASK_PROMPT_PREFIX = "Answer only. Do not edit files.\n\n";
+
+export function promptPrefixForMode(mode?: string): string {
+  if (mode === "plan") return PLAN_PROMPT_PREFIX;
+  if (mode === "ask") return ASK_PROMPT_PREFIX;
+  return "";
+}
+
+/** Mode instructions are for the agent only — never show them as the user's turn. */
+export function visiblePromptText(text: string): string {
+  if (text.startsWith(PLAN_PROMPT_PREFIX)) return text.slice(PLAN_PROMPT_PREFIX.length);
+  if (text.startsWith(ASK_PROMPT_PREFIX)) return text.slice(ASK_PROMPT_PREFIX.length);
+  return text;
+}
+
 export function titleFromPrompt(text: string): string {
-  const cleaned = text.replace(/\s+/g, " ").trim();
+  const cleaned = visiblePromptText(text).replace(/\s+/g, " ").trim();
   if (!cleaned) return "Untitled session";
   return cleaned.length > 64 ? `${cleaned.slice(0, 61)}...` : cleaned;
 }

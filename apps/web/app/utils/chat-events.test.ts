@@ -25,8 +25,8 @@ const pending: PendingUserTurn = {
 describe("chat events", () => {
   it("shows the optimistic user turn until the server event lands", () => {
     expect(mergePendingTurn([], pending)).toEqual([user("pending-1", "Add a quotes page")]);
-    expect(mergePendingTurn([user("srv", "Create a plan only. Do not edit files.\n\nAdd a quotes page")], pending)).toEqual([
-      user("srv", "Create a plan only. Do not edit files.\n\nAdd a quotes page"),
+    expect(mergePendingTurn([user("srv", "Add a quotes page")], pending)).toEqual([
+      user("srv", "Add a quotes page"),
     ]);
   });
 

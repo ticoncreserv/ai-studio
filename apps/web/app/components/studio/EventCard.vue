@@ -16,6 +16,7 @@ import {
   TriangleAlert,
   X,
 } from "@lucide/vue";
+import { visiblePromptText } from "@atelier/domain";
 import { renderMarkdown, splitDiffLines } from "~/utils/markdown";
 
 const props = defineProps<{ event: SessionEvent; enter?: boolean; failed?: boolean }>();
@@ -37,7 +38,8 @@ const promptOpen = ref(false);
 const clampPrompt = computed(() => {
   if (props.event.type !== "user_message" || promptOpen.value) return false;
   const { text } = props.event;
-  return text.length > 220 || text.split("\n").length > 5;
+  const visible = visiblePromptText(text);
+  return visible.length > 220 || visible.split("\n").length > 5;
 });
 
 /* Tool names arrive with markdown backticks around their arguments; the summary
@@ -120,7 +122,7 @@ function isImage(path: string) {
           <FileText v-else class="h-4 w-4" />
         </span>
       </div>
-      <p class="whitespace-pre-wrap pr-5" :class="clampPrompt && 'cx-turn-clamp'">{{ event.text }}</p>
+      <p class="whitespace-pre-wrap pr-5" :class="clampPrompt && 'cx-turn-clamp'">{{ visiblePromptText(event.text) }}</p>
       <button
         v-if="clampPrompt || promptOpen"
         type="button"
@@ -143,7 +145,7 @@ function isImage(path: string) {
         class="absolute bottom-1.5 right-1.5 text-ink-400 opacity-0 transition-opacity hover:text-ink-950 group-hover:opacity-100 focus-visible:opacity-100"
         :title="t('chat.reuse')"
         :aria-label="t('chat.reuse')"
-        @click="emit('reuse', event.text)"
+        @click="emit('reuse', visiblePromptText(event.text))"
       >
         <CornerUpLeft class="h-3.5 w-3.5" />
       </button>

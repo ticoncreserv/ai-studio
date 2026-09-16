@@ -22,6 +22,7 @@ import {
   isPlatformAdmin as matchPlatformAdmin,
   mapGitHubPermission,
   packPrompt,
+  promptPrefixForMode,
   estimateTokens,
   reduceSession,
   shouldCollect,
@@ -609,18 +610,12 @@ export class Platform {
     const filled = recipe
       ? recipe.template.replaceAll("{{model}}", command.text)
       : command.text;
-    const prefix =
-      command.mode === "plan"
-        ? "Create a plan only. Do not edit files.\n\n"
-        : command.mode === "ask"
-          ? "Answer only. Do not edit files.\n\n"
-          : "";
-    const userText = `${prefix}${filled}`;
+    const agentText = `${promptPrefixForMode(command.mode)}${filled}`;
 
     if (session.events.length === 0) {
       this.store.update((d) => {
         const s = d.sessions.find((x) => x.id === session.id)!;
-        s.title = titleFromPrompt(userText);
+        s.title = titleFromPrompt(filled);
       });
     }
 
@@ -628,7 +623,7 @@ export class Platform {
       type: "user_message",
       id: randomUUID(),
       at: new Date().toISOString(),
-      text: userText,
+      text: filled,
       attachments: command.attachments,
       mentions: command.mentions,
     });
@@ -636,7 +631,7 @@ export class Platform {
     const rules = compileRules(this.getRules(), user.locale);
     const packed = packPrompt(
       [
-        { id: "user", kind: "user", text: userText, tokens: estimateTokens(userText), priority: 0 },
+        { id: "user", kind: "user", text: agentText, tokens: estimateTokens(agentText), priority: 0 },
         { id: "rules", kind: "rules", text: rules.markdown, tokens: estimateTokens(rules.markdown), priority: 1 },
         ...command.mentions.map((m, i) => ({
           id: m,
@@ -726,14 +721,14 @@ export class Platform {
       try {
         if ((await worktreeFingerprint(ws.worktree)) === fingerprintBefore) return;
         for (const event of await worktreeDiffEvents(ws.worktree)) this.append(session.id, event);
-        const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(userText));
+        const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(filled));
         if (sha) {
           this.append(session.id, {
             type: "checkpoint",
             id: randomUUID(),
             at: new Date().toISOString(),
             gitSha: sha,
-            label: titleFromPrompt(userText),
+            label: titleFromPrompt(filled),
           });
         }
         const bytes = await worktreeBytes(ws.worktree);

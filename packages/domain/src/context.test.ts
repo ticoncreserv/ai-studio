@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateTokens, packPrompt, titleFromPrompt } from "./context.js";
+import { estimateTokens, packPrompt, promptPrefixForMode, titleFromPrompt, visiblePromptText } from "./context.js";
 
 describe("prompt envelope", () => {
   it("omits lower-priority blocks when over budget", () => {
@@ -17,6 +17,8 @@ describe("prompt envelope", () => {
 
   it("titles a session from the first prompt", () => {
     expect(titleFromPrompt("Create an Inertia page for quotes")).toBe("Create an Inertia page for quotes");
+    expect(titleFromPrompt(`${promptPrefixForMode("ask")}pong`)).toBe("pong");
+    expect(visiblePromptText(`${promptPrefixForMode("plan")}Add a quotes page`)).toBe("Add a quotes page");
     expect(estimateTokens("abcd")).toBe(1);
   });
 });

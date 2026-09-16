@@ -327,7 +327,7 @@ onBeforeUnmount(() => recognition?.stop());
           :title="t('chat.stop')"
           @click="emit('cancel')"
         >
-          <span class="h-2.5 w-2.5 rounded-[2px] bg-current" />
+          <span class="h-[9px] w-[9px] rounded-[1.5px] bg-current" />
         </button>
         <button
           v-else
