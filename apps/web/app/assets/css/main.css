@@ -818,17 +818,6 @@ option {
   color: var(--color-ink-950);
 }
 
-/* Status strip under the composer and under the preview chrome. */
-.cx-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 28px;
-  padding: 0 10px;
-  font-size: 11px;
-  color: var(--color-ink-400);
-}
-
 /* Browser chrome above the preview. */
 .cx-browser-tab {
   display: inline-flex;
