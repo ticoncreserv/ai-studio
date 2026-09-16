@@ -7,7 +7,7 @@ This repository is the **platform**. The target app stays in its own repo. Until
 ## Stack
 
 - Node 24 LTS (see `.nvmrc`)
-- `apps/web` — Nuxt 4 + Nitro + Vue 3 + Tailwind + i18n (`en`, `pt-BR`)
+- `apps/web` — Nuxt 4 + Nitro + Vue 3 + Tailwind CSS v4 + i18n (`en`, `pt-BR`)
 - `services/supervisor` — ACP sessions, workspace runtime, reconciler
 - `packages/contracts` — Zod events and commands
 - `packages/domain` — pure reducer, FSM, rules, permissions, schema guard

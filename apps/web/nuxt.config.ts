@@ -1,11 +1,15 @@
 import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
   devtools: { enabled: false },
   telemetry: false,
-  modules: ["@nuxtjs/tailwindcss", "@nuxtjs/i18n"],
+  modules: ["@nuxtjs/i18n"],
   css: ["~/assets/css/main.css"],
+  vite: {
+    plugins: [tailwindcss()],
+  },
   alias: {
     "@atelier/supervisor": fileURLToPath(new URL("../../services/supervisor/src/index.ts", import.meta.url)),
     "@atelier/domain": fileURLToPath(new URL("../../packages/domain/src/index.ts", import.meta.url)),
