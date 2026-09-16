@@ -9,6 +9,7 @@ import {
   githubAppCreateAction,
   githubAppInstallUrl,
   githubAppManifest,
+  redeemGitHubAppCode,
   saveGitHubAppCredentials,
   loadGitHubAppCredentials,
 } from "./github-app.js";
@@ -75,5 +76,28 @@ describe("github app manifest", () => {
     process.env.GITHUB_CLIENT_ID = "keep-env";
     applyGitHubAppCredentials(creds);
     expect(process.env.GITHUB_CLIENT_ID).toBe("keep-env");
+  });
+
+  it("keeps stored credentials when GitHub rejects a used code", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-gh-"));
+    const path = join(dir, "github-app.json");
+    saveGitHubAppCredentials(
+      {
+        appId: "1",
+        clientId: "Iv1.keep",
+        clientSecret: "keep",
+        privateKey: "pem",
+        webhookSecret: "",
+        slug: "atelier-keep",
+      },
+      path,
+    );
+    const result = await redeemGitHubAppCode(
+      "used-code",
+      async () => new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
+      path,
+    );
+    expect(result.reused).toBe(true);
+    expect(result.creds.clientId).toBe("Iv1.keep");
   });
 });

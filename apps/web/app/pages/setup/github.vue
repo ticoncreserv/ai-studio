@@ -16,13 +16,16 @@ const { data: setup, error: loadError } = await useAsyncData("github-setup", () 
 );
 
 const created = computed(() => route.query.created === "1");
+const reused = computed(() => route.query.reused === "1");
 const redeemCode = ref(String(route.query.code ?? ""));
 const redeeming = ref(false);
 const redeemError = ref("");
 const errorKey = computed(() => {
+  if (setup.value?.configured) return "";
   const code = String(route.query.error ?? "");
   if (code === "blocked") return "setup.github.blocked";
-  if (code === "state" || code === "code" || code === "convert") return "setup.github.error";
+  if (code === "convert") return "setup.github.used";
+  if (code === "state" || code === "code") return "setup.github.used";
   return "";
 });
 
@@ -56,8 +59,11 @@ onMounted(async () => {
         <h1 class="font-display mt-6 text-4xl leading-tight text-ink-950">{{ t("setup.github.title") }}</h1>
         <p class="mt-3 text-sm leading-relaxed text-ink-500">{{ t("setup.github.lede") }}</p>
 
-        <p v-if="created" class="mt-4 rounded-[10px] border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[13px] text-emerald-100">
-          {{ t("setup.github.saved") }}
+        <p v-if="created || (setup?.configured && reused)" class="mt-4 rounded-[10px] border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[13px] text-emerald-100">
+          {{ reused ? t("setup.github.already") : t("setup.github.saved") }}
+        </p>
+        <p v-else-if="setup?.configured && route.query.error" class="mt-4 rounded-[10px] border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-[13px] text-emerald-100">
+          {{ t("setup.github.already") }}
         </p>
         <p v-if="errorKey" class="mt-4 text-sm text-red-400">{{ t(errorKey) }}</p>
         <p v-if="loadError" class="mt-4 text-sm text-red-400">{{ t("setup.github.error") }}</p>

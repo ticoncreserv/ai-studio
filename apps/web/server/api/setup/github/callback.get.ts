@@ -1,10 +1,4 @@
-import {
-  applyStoredGitHubAppCredentials,
-  canSetupGitHubApp,
-  convertGitHubAppManifest,
-  matchGitHubAppSetupState,
-  saveGitHubAppCredentials,
-} from "@atelier/supervisor";
+import { canSetupGitHubApp, hasGitHubOAuth, redeemGitHubAppCode } from "@atelier/supervisor";
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event);
@@ -12,21 +6,16 @@ export default defineEventHandler(async (event) => {
     sendRedirect(event, error ? `/setup/github?error=${encodeURIComponent(error)}` : "/setup/github?created=1");
 
   if (!canSetupGitHubApp()) return redirect("blocked");
+  if (hasGitHubOAuth() && !query.code) return redirect();
 
-  const state = String(query.state ?? "");
-  const cookie = getCookie(event, "atelier_github_app_state");
-  if (!state || (cookie !== state && !matchGitHubAppSetupState(state))) return redirect("state");
-
-  const code = String(query.code ?? "");
-  if (!code) return redirect("code");
+  const code = String(query.code ?? "").trim();
+  if (!code) return redirect(hasGitHubOAuth() ? undefined : "code");
 
   try {
-    const creds = await convertGitHubAppManifest(code);
-    saveGitHubAppCredentials(creds);
-    applyStoredGitHubAppCredentials();
+    const result = await redeemGitHubAppCode(code);
     deleteCookie(event, "atelier_github_app_state", { path: "/" });
-    return redirect();
+    return sendRedirect(event, result.reused ? "/setup/github?created=1&reused=1" : "/setup/github?created=1");
   } catch {
-    return redirect("convert");
+    return redirect(hasGitHubOAuth() ? undefined : "convert");
   }
 });

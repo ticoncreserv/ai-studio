@@ -231,6 +231,26 @@ export function credentialsFromManifestResponse(body: Record<string, unknown>): 
   };
 }
 
+export async function redeemGitHubAppCode(
+  code: string,
+  fetchImpl: typeof fetch = fetch,
+  storePath = githubAppStorePath(),
+): Promise<{ creds: GitHubAppCredentials; reused: boolean }> {
+  const existing = loadGitHubAppCredentials(storePath);
+  try {
+    const creds = await convertGitHubAppManifest(code, fetchImpl);
+    saveGitHubAppCredentials(creds, storePath);
+    applyGitHubAppCredentials(creds);
+    return { creds, reused: false };
+  } catch (error) {
+    if (existing) {
+      applyGitHubAppCredentials(existing);
+      return { creds: existing, reused: true };
+    }
+    throw error;
+  }
+}
+
 export async function convertGitHubAppManifest(
   code: string,
   fetchImpl: typeof fetch = fetch,

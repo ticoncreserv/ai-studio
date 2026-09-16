@@ -48,6 +48,8 @@
       "cursorHint": "O GitHub App não autentica o Cursor. Enquanto um token de usuário do Cursor não funcionar, o estúdio usa o MockProvider.",
       "blocked": "A criação do GitHub App está desligada neste ambiente.",
       "error": "O GitHub não devolveu as credenciais do app. Tente de novo.",
+      "used": "Esse code do callback vale uma vez só. Se o app já foi criado, as credenciais estão nesta máquina — instale o app em seguida.",
+      "already": "As credenciais deste GitHub App já estão nesta máquina. Instale o app em ticoncreserv/app.",
       "pasteHint": "Se o GitHub abrir http://localhost sem porta, isso é a sua máquina, não este estúdio. Copie o code da URL e cole aqui.",
       "pasteLabel": "Code do manifesto",
       "pastePlaceholder": "code da URL de callback",

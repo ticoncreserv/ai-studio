@@ -16,6 +16,7 @@ export {
   atelierPublicUrl,
   canSetupGitHubApp,
   convertGitHubAppManifest,
+  redeemGitHubAppCode,
   githubAppCreateAction,
   githubAppInstallUrl,
   githubAppManifest,
