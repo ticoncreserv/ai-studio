@@ -25,7 +25,31 @@
     "error": "Falha no acesso. Tente de novo.",
     "welcomeBack": "Bem-vindo de volta",
     "or": "ou",
-    "localHint": "O login local vale só neste ambiente. Em produção o GitHub autentica e verifica o acesso ao repositório."
+    "localHint": "O login local vale só neste ambiente. Em produção o GitHub autentica e verifica o acesso ao repositório.",
+    "createApp": "Criar o GitHub App"
+  },
+  "setup": {
+    "github": {
+      "title": "Credenciais do GitHub App",
+      "lede": "Crie um GitHub App na organização ticoncreserv. O GitHub devolve o client id, o secret e a chave privada para este estúdio.",
+      "create": "Criar GitHub App em ticoncreserv",
+      "hint": "É preciso ser owner da organização. O GitHub abre uma página de revisão e redireciona para cá com as credenciais.",
+      "configured": "O login com GitHub está configurado neste processo.",
+      "saved": "O GitHub criou o app e guardou os segredos nesta máquina. Instale-o no repositório de destino em seguida.",
+      "install": "Instalar o app em ticoncreserv/app",
+      "installHint": "Instale só nesse repositório. Não conceda Administration.",
+      "envHint": "Os segredos ficam em {path} (fora do git). Copie-os para o .env para sobreviver a um restart ou outro host.",
+      "manualTitle": "Ou crie na mão",
+      "callback": "URL de callback de autorização",
+      "homepage": "URL da homepage",
+      "permissions": "Permissões: contents leitura e escrita, metadata leitura, pull requests leitura e escrita, email addresses leitura. Sem Administration.",
+      "oauthHint": "Um OAuth App do GitHub também cobre o login. Use o mesmo callback e defina GITHUB_CLIENT_ID e GITHUB_CLIENT_SECRET.",
+      "cursorTitle": "O ACP do Cursor é outra credencial",
+      "cursorHint": "O GitHub App não autentica o Cursor. Enquanto um token de usuário do Cursor não funcionar, o estúdio usa o MockProvider.",
+      "blocked": "A criação do GitHub App está desligada neste ambiente.",
+      "error": "O GitHub não devolveu as credenciais do app. Tente de novo.",
+      "back": "Voltar ao estúdio"
+    }
   },
   "nav": {
     "sessions": "Sessões",

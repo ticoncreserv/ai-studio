@@ -10,12 +10,19 @@ const me = ref<null | {
   workspace: { id: string } | null;
   sessions?: Array<{ id: string; title: string }>;
 }>(null);
+const githubReady = ref(false);
 
 onMounted(async () => {
   try {
     me.value = await $fetch("/api/me");
   } catch {
     me.value = null;
+  }
+  try {
+    const setup = await $fetch<{ configured: boolean }>("/api/setup/github");
+    githubReady.value = setup.configured;
+  } catch {
+    githubReady.value = false;
   }
 });
 
@@ -117,6 +124,9 @@ const features = computed(() => [
                 {{ t("auth.github") }}
               </UiButton>
             </a>
+            <NuxtLink v-if="!githubReady" to="/setup/github" class="block text-center text-[13px] font-medium text-coral-400">
+              {{ t("auth.createApp") }}
+            </NuxtLink>
             <p class="text-[12px] leading-relaxed text-ink-300">{{ t("auth.localHint") }}</p>
           </div>
         </template>

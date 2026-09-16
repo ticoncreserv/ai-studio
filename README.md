@@ -36,6 +36,31 @@ pnpm eval
 
 Production uses a GitHub App (user-to-server token, no `Administration` scope). Access is `GET /repos/ticoncreserv/app` with that token. Without `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, local login is used.
 
+### Create the GitHub App
+
+You need to be an owner of the `ticoncreserv` organization. The studio can create the app through GitHub’s manifest flow:
+
+1. Open [http://127.0.0.1:43123/setup/github](http://127.0.0.1:43123/setup/github) while the studio is running.
+2. Click **Create GitHub App on ticoncreserv**. GitHub shows the pre-filled manifest (homepage, callback, permissions).
+3. Confirm the app. GitHub redirects back; Atelier stores `client_id`, `client_secret`, App ID, private key, and webhook secret in `var/github-app.json` (gitignored) and loads them into the current process.
+4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`.
+5. Copy the values into `.env` if you want them to survive a restart or another host (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`).
+
+Manual path: GitHub → Organization settings → Developer settings → GitHub Apps → New GitHub App.
+
+| Field | Value |
+| --- | --- |
+| Homepage URL | `http://127.0.0.1:43123` (or `ATELIER_PUBLIC_URL`) |
+| Callback URL | `{origin}/api/auth/github/callback` |
+| Setup URL | `{origin}/setup/github` |
+| Permissions | `contents` read/write, `metadata` read, `pull requests` read/write, `email addresses` read |
+| Webhook | optional until the studio has a public URL |
+| Where can this GitHub App be installed | Only on this account |
+
+A GitHub OAuth App also covers login. Same callback URL; only `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are required.
+
+Cursor ACP is a different credential. The GitHub App does not authenticate `cursor-agent`. Until a Cursor user token works, the studio uses `MockProvider`.
+
 Commits in a workspace set `user.name` / `user.email` and `commit.gpgsign=false` per invocation. The agent is recorded as `Co-authored-by`.
 
 ## Preview

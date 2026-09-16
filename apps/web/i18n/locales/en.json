@@ -25,7 +25,31 @@
     "error": "Sign-in failed. Try again.",
     "welcomeBack": "Welcome back",
     "or": "or",
-    "localHint": "Local login is only for this environment. Production signs in with GitHub and checks repository access."
+    "localHint": "Local login is only for this environment. Production signs in with GitHub and checks repository access.",
+    "createApp": "Create the GitHub App"
+  },
+  "setup": {
+    "github": {
+      "title": "GitHub App credentials",
+      "lede": "Create a GitHub App on the ticoncreserv organization. GitHub sends the client id, secret, and private key back to this studio.",
+      "create": "Create GitHub App on ticoncreserv",
+      "hint": "You need to be an organization owner. GitHub opens a review page, then redirects here with the credentials.",
+      "configured": "GitHub login is configured for this process.",
+      "saved": "GitHub created the app and stored the secrets on this machine. Install it on the target repository next.",
+      "install": "Install the app on ticoncreserv/app",
+      "installHint": "Install only on that repository. Do not grant Administration.",
+      "envHint": "Secrets live in {path} (gitignored). Copy them into .env so they survive a restart or another host.",
+      "manualTitle": "Or create it by hand",
+      "callback": "Authorization callback URL",
+      "homepage": "Homepage URL",
+      "permissions": "Permissions: contents read and write, metadata read, pull requests read and write, email addresses read. No Administration.",
+      "oauthHint": "A GitHub OAuth App also covers login. Use the same callback URL and set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.",
+      "cursorTitle": "Cursor ACP is a separate credential",
+      "cursorHint": "The GitHub App does not authenticate Cursor. Until a Cursor user token works, this studio uses MockProvider.",
+      "blocked": "GitHub App setup is disabled in this environment.",
+      "error": "GitHub did not return app credentials. Try again.",
+      "back": "Back to the studio"
+    }
   },
   "nav": {
     "sessions": "Sessions",

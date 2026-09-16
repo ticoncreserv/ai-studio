@@ -9,8 +9,23 @@ export type { AgentProvider, ProviderRun } from "./providers/types.js";
 export { ProcessRuntime, DockerRuntime, applyHunkToWorktree } from "./runtime/process.js";
 export type { WorkspaceRuntime, RuntimeHandle } from "./runtime/process.js";
 export { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
-export { LocalAuthProvider, GitHubAuthProvider, createAuthProvider } from "./auth.js";
+export { LocalAuthProvider, GitHubAuthProvider, createAuthProvider, signState, verifyState } from "./auth.js";
 export type { AuthProvider, AuthIdentity } from "./auth.js";
+export {
+  applyStoredGitHubAppCredentials,
+  atelierPublicUrl,
+  canSetupGitHubApp,
+  convertGitHubAppManifest,
+  githubAppCreateAction,
+  githubAppInstallUrl,
+  githubAppManifest,
+  githubAppOrg,
+  githubAppRepo,
+  hasGitHubOAuth,
+  loadGitHubAppCredentials,
+  saveGitHubAppCredentials,
+} from "./github-app.js";
+export type { GitHubAppCredentials, GitHubAppManifest } from "./github-app.js";
 export { Reconciler } from "./reconciler.js";
 export { startSpan, recordUsage } from "./otel.js";
 export { signSession, verifySession } from "./session-cookie.js";

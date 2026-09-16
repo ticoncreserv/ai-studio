@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { mapGitHubPermission } from "@atelier/domain";
 import type { Role } from "@atelier/contracts";
+import { hasGitHubOAuth } from "./github-app.js";
 
 export interface AuthIdentity {
   login: string;
@@ -124,7 +125,7 @@ export class GitHubAuthProvider implements AuthProvider {
 }
 
 export function createAuthProvider(): AuthProvider {
-  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+  if (hasGitHubOAuth()) {
     return new GitHubAuthProvider();
   }
   return new LocalAuthProvider();
