@@ -74,7 +74,7 @@
   "nav": {
     "sessions": "Sessões",
     "newSession": "Nova sessão",
-    "search": "Buscar sessões",
+    "search": "Buscar",
     "invite": "Convidar",
     "share": "Compartilhar preview",
     "rules": "Regras",
@@ -90,7 +90,11 @@
     "account": "Conta",
     "home": "Início",
     "working": "Aguarde…",
-    "admin": "Admin"
+    "admin": "Admin",
+    "searchSessions": "Buscar sessões",
+    "toggleRail": "Alternar barra lateral",
+    "previousSession": "Sessão anterior",
+    "nextSession": "Próxima sessão"
   },
   "workspace": {
     "warming": "Aquecendo o workspace até ready…",
@@ -194,7 +198,20 @@
     "suggestion3": "Corrigir o último erro do preview",
     "you": "Você",
     "agent": "Agente",
-    "now": "Agora"
+    "now": "Agora",
+    "followUp": "Enviar acompanhamento",
+    "palette": "Habilidades e contexto",
+    "paletteSearch": "Buscar habilidades, contexto, conversas…",
+    "model": "Modelo",
+    "recipeNone": "Sem receita",
+    "dictate": "Ditar",
+    "reuse": "Editar no compositor",
+    "helpful": "Útil",
+    "notHelpful": "Não ajudou",
+    "copy": "Copiar resposta",
+    "fork": "Ramificar em nova sessão",
+    "planAccepted": "Plano aceito",
+    "planRejected": "Plano recusado"
   },
   "preview": {
     "title": "Preview",
@@ -238,7 +255,9 @@
     "waitSlow": "Ainda trabalhando. O Vite pode estar compilando os arquivos Vue.",
     "waitSlowDb": "Isso está demorando. Consultas ao banco de homologação podem levar alguns minutos.",
     "loadFailed": "A página do preview não carregou.",
-    "loadFailedHint": "O iframe não terminou de carregar. Retome o preview ou atualize."
+    "loadFailedHint": "O iframe não terminou de carregar. Retome o preview ou atualize.",
+    "back": "Voltar",
+    "forward": "Avançar"
   },
   "command": {
     "placeholder": "Digite um comando…",
@@ -350,7 +369,10 @@
   "time": {
     "justNow": "agora",
     "minutesAgo": "há {count} min",
-    "hoursAgo": "há {count} h"
+    "hoursAgo": "há {count} h",
+    "shortMinutes": "{count}min",
+    "shortHours": "{count}h",
+    "shortDays": "{count}d"
   },
   "admin": {
     "title": "Admin da plataforma",

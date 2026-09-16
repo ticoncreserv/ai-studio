@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { Plus, Search } from "@lucide/vue";
+import { BookOpen, MessageSquarePlus, Search, Settings, SlidersHorizontal } from "@lucide/vue";
 import type { StudioSession } from "~/types/studio";
 
-defineProps<{
+const props = defineProps<{
   sessions: StudioSession[];
   activeId?: string;
   query: string;
+  login: string;
 }>();
 
 const emit = defineEmits<{
@@ -13,42 +14,105 @@ const emit = defineEmits<{
   select: [id: string];
   create: [];
   search: [];
+  rules: [];
+  settings: [];
 }>();
 
 const { t } = useI18n();
-const rel = useRelativeTime();
+
+const searchOpen = ref(false);
+const expanded = ref(false);
+const searchField = ref<HTMLInputElement | null>(null);
+const collapsedCount = 12;
+
+const visible = computed(() =>
+  expanded.value ? props.sessions : props.sessions.slice(0, collapsedCount),
+);
+const hasMore = computed(() => !expanded.value && props.sessions.length > collapsedCount);
+
+async function toggleSearch() {
+  searchOpen.value = !searchOpen.value;
+  if (!searchOpen.value) {
+    if (props.query) {
+      emit("update:query", "");
+      emit("search");
+    }
+    return;
+  }
+  await nextTick();
+  searchField.value?.focus();
+}
+
+/* Cursor shows a coarse age ("1h", "2d") rather than a full phrase. */
+function age(at: string) {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(at).getTime()) / 60_000));
+  if (minutes < 60) return t("time.shortMinutes", { count: minutes });
+  if (minutes < 60 * 24) return t("time.shortHours", { count: Math.floor(minutes / 60) });
+  return t("time.shortDays", { count: Math.floor(minutes / (60 * 24)) });
+}
 </script>
 
 <template>
-  <aside class="flex h-full min-h-0 w-full flex-col">
-    <div class="flex items-center gap-2 px-3 pt-3">
-      <div class="relative flex-1">
-        <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-300" />
-        <input
-          :value="query"
-          :placeholder="t('nav.search')"
-          class="h-8 w-full rounded-[9px] border border-line bg-white/5 pl-8 pr-2 text-[12px] outline-none placeholder:text-ink-300 focus:border-coral-500/40"
-          @input="emit('update:query', ($event.target as HTMLInputElement).value)"
-          @change="emit('search')"
-        />
-      </div>
-      <UiIconButton :label="t('nav.newSession')" size="sm" @click="emit('create')">
-        <Plus class="h-4 w-4" />
-      </UiIconButton>
+  <aside class="cx-rail min-h-0 flex-col">
+    <div class="px-2 pt-1.5">
+      <button type="button" class="cx-nav-item" @click="emit('create')">
+        <MessageSquarePlus class="h-3.5 w-3.5" />
+        {{ t("nav.newSession") }}
+      </button>
+      <button type="button" class="cx-nav-item" :data-active="searchOpen || undefined" @click="toggleSearch">
+        <Search class="h-3.5 w-3.5" />
+        {{ t("nav.search") }}
+      </button>
+      <button type="button" class="cx-nav-item" @click="emit('rules')">
+        <BookOpen class="h-3.5 w-3.5" />
+        {{ t("nav.rules") }}
+      </button>
+      <button type="button" class="cx-nav-item" @click="emit('settings')">
+        <SlidersHorizontal class="h-3.5 w-3.5" />
+        {{ t("nav.settings") }}
+      </button>
     </div>
-    <div class="thin-scroll min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-      <p v-if="!sessions.length" class="px-2 py-6 text-center text-[12px] text-ink-300">{{ t("workspace.noSessions") }}</p>
+
+    <div v-if="searchOpen" class="cx-search mx-2 mt-2">
+      <Search class="h-3.5 w-3.5 shrink-0 text-ink-400" />
+      <input
+        ref="searchField"
+        :value="query"
+        :placeholder="t('nav.searchSessions')"
+        @input="emit('update:query', ($event.target as HTMLInputElement).value)"
+        @change="emit('search')"
+        @keydown.enter.prevent="emit('search')"
+      />
+    </div>
+
+    <p class="cx-nav-group px-3 pt-4">{{ t("nav.sessions") }}</p>
+
+    <div class="thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <p v-if="!sessions.length" class="px-2 py-3 text-[12px] text-ink-400">{{ t("workspace.noSessions") }}</p>
       <button
-        v-for="session in sessions"
+        v-for="session in visible"
         :key="session.id"
         type="button"
-        class="w-full rounded-[10px] px-2.5 py-2 text-left transition"
-        :class="session.id === activeId ? 'bg-white/10 text-ink-950' : 'hover:bg-white/5'"
+        class="cx-session-row"
+        :data-active="session.id === activeId || undefined"
+        :title="session.title || t('chat.untitled')"
         @click="emit('select', session.id)"
       >
-        <p class="truncate text-[13px] font-medium">{{ session.title || t("chat.untitled") }}</p>
-        <p class="mt-0.5 truncate text-[11px] text-ink-300">{{ rel(session.createdAt) }} · {{ session.provider }}</p>
+        <span class="cx-session-dot" aria-hidden="true" />
+        <span class="min-w-0 flex-1 truncate">{{ session.title || t("chat.untitled") }}</span>
+        <span class="cx-age">{{ age(session.createdAt) }}</span>
       </button>
+      <button v-if="hasMore" type="button" class="cx-session-row pl-[21px] text-ink-400" @click="expanded = true">
+        {{ t("nav.more") }}
+      </button>
+    </div>
+
+    <div class="cx-rail-account">
+      <UiAvatar :name="login" size="sm" />
+      <span class="min-w-0 flex-1 truncate text-[12px] text-ink-700" :title="login">{{ login }}</span>
+      <UiIconButton :label="t('nav.settings')" size="sm" @click="emit('settings')">
+        <Settings class="h-3.5 w-3.5" />
+      </UiIconButton>
     </div>
   </aside>
 </template>

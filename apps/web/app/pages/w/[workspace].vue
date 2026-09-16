@@ -56,6 +56,19 @@ const {
   useSuggestion,
 } = studio;
 
+const railOpen = ref(true);
+
+const conversationTitle = computed(() => data.value?.session?.title || t("workspace.project"));
+const sessionIndex = computed(() =>
+  data.value?.sessions.findIndex((session) => session.id === data.value?.session?.id) ?? -1,
+);
+
+function stepSession(delta: number) {
+  const list = data.value?.sessions ?? [];
+  const next = list[sessionIndex.value + delta];
+  if (next) void selectSession(next.id);
+}
+
 function onCommand(payload: { type: string; [key: string]: unknown }) {
   void sendCommand(payload as ClientCommand);
 }
@@ -69,133 +82,156 @@ function onFixDebug() {
 </script>
 
 <template>
-  <div v-if="loadError" class="mesh flex min-h-screen items-center justify-center px-6">
-    <div class="glass-window w-full max-w-md p-8">
-      <UiLogo />
-      <h1 class="mt-6 font-display text-4xl">{{ t("workspace.loadError") }}</h1>
-      <UiButton class="mt-6" @click="refresh">{{ t("workspace.retry") }}</UiButton>
+  <div v-if="loadError" class="flex min-h-screen items-center justify-center bg-canvas px-6">
+    <div class="cx-panel w-full max-w-sm p-6">
+      <UiLogo :size="24" />
+      <h1 class="mt-4 text-[15px] font-semibold text-ink-950">{{ t("workspace.loadError") }}</h1>
+      <UiButton class="mt-4" size="sm" @click="refresh">{{ t("workspace.retry") }}</UiButton>
     </div>
   </div>
 
   <div v-else-if="!data" class="flex h-screen items-center justify-center bg-canvas">
-    <div class="text-center">
-      <UiSpinner size="lg" :label="t('workspace.loading')" />
-      <UiLogo class="mt-5" :size="40" />
-      <p class="mt-4 text-sm text-ink-500">{{ t("workspace.loading") }}</p>
-      <p class="mt-1 text-[12px] text-ink-300">{{ t("workspace.loadingHint") }}</p>
+    <div class="flex flex-col items-center">
+      <UiSpinner size="md" :label="t('workspace.loading')" />
+      <p class="mt-3 text-[13px] font-medium text-ink-950">{{ t("workspace.loading") }}</p>
+      <p class="mt-1 text-[12px] text-ink-400">{{ t("workspace.loadingHint") }}</p>
     </div>
   </div>
 
-  <div v-else class="os-desktop flex h-screen flex-col overflow-hidden">
-    <StudioHeader
-      :project="t('workspace.project')"
-      :branch="data.workspace.branch"
-      :status="data.workspace.status"
-      :status-label="statusLabel(data.workspace.status)"
-      :status-tone="statusTone(data.workspace.status)"
-      :login="data.user.login"
-      :presence-count="data.presence.length"
-      :presence-label="t('workspace.presence', { count: data.presence.length })"
-      :publish-enabled="!!data?.flags?.publish"
-      :platform-admin="!!data.user.platformAdmin"
-      @invite="dialog = 'invite'"
-      @share="dialog = 'share'"
-      @rules="sheet = 'rules'"
-      @connections="sheet = 'connections'"
-      @settings="sheet = 'settings'"
-      @sign-out="signOut"
-    />
+  <div v-else class="flex h-screen flex-col overflow-hidden bg-canvas lg:flex-row">
+    <div
+      class="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-none"
+      :class="[
+        railOpen ? 'lg:w-[555px]' : 'lg:w-[340px]',
+        mobileTab === 'preview' ? 'hidden lg:flex' : 'flex',
+      ]"
+    >
+      <StudioHeader
+        :title="conversationTitle"
+        :branch="data.workspace.branch"
+        :status-label="statusLabel(data.workspace.status)"
+        :status-tone="statusTone(data.workspace.status)"
+        :show-status="data.workspace.status !== 'running'"
+        :login="data.user.login"
+        :presence-count="data.presence.length"
+        :presence-label="t('workspace.presence', { count: data.presence.length })"
+        :publish-enabled="!!data?.flags?.publish"
+        :platform-admin="!!data.user.platformAdmin"
+        :rail-open="railOpen"
+        :can-go-prev="sessionIndex > 0"
+        :can-go-next="sessionIndex >= 0 && sessionIndex < data.sessions.length - 1"
+        @invite="dialog = 'invite'"
+        @share="dialog = 'share'"
+        @rules="sheet = 'rules'"
+        @connections="sheet = 'connections'"
+        @settings="sheet = 'settings'"
+        @shortcuts="dialog = 'shortcuts'"
+        @sign-out="signOut"
+        @toggle-rail="railOpen = !railOpen"
+        @prev="stepSession(-1)"
+        @next="stepSession(1)"
+      />
 
-    <div class="flex min-h-0 flex-1 gap-3 p-3">
-      <UiWindow :title="t('workspace.sessionsTitle')" class="hidden w-[228px] shrink-0 lg:flex">
+      <div class="flex min-h-0 min-w-0 flex-1">
         <StudioSessionRail
+          v-if="railOpen"
+          class="hidden w-[215px] shrink-0 lg:flex"
           :sessions="data.sessions"
           :active-id="data.session?.id"
           :query="query"
+          :login="data.user.login"
           @update:query="query = $event"
           @search="refresh"
           @select="selectSession"
           @create="newSession"
+          @rules="sheet = 'rules'"
+          @settings="sheet = 'settings'"
         />
-      </UiWindow>
 
-      <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3 lg:flex-row">
-        <UiWindow
-          :title="t('workspace.openChat')"
-          class="min-h-0 w-full lg:w-[440px] lg:shrink-0"
-          :class="mobileTab === 'preview' ? 'hidden lg:flex' : 'flex'"
+        <StudioChatPane
+          :events="events"
+          :sending="sending"
+          :spectator="spectator"
+          :spectator-enabled="!!data?.flags?.spectator"
+          :query="query"
+          :branch="data.workspace.branch"
+          :runner="data.session?.provider ?? data.preferredProvider"
+          @command="onCommand"
+          @update:query="query = $event"
+          @search="refresh"
+          @create="newSession"
+          @suggestion="useSuggestion"
+          @fork="newSession"
+          @toggle-spectator="toggleSpectator"
         >
-          <StudioChatPane
-            :events="events"
-            :sending="sending"
+          <p v-if="data.agent?.error" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ t("chat.cursorRequired") }}</p>
+          <StudioComposer
+            v-model="prompt"
+            :mode="mode"
+            :recipe-id="recipeId"
+            :recipes="data.recipes"
+            :recipes-enabled="!!data?.flags?.recipes"
             :spectator="spectator"
             :spectator-enabled="!!data?.flags?.spectator"
-            :query="query"
-            @command="onCommand"
-            @update:query="query = $event"
-            @search="refresh"
-            @create="newSession"
-            @suggestion="useSuggestion"
+            :sending="sending"
+            :provider="data.session?.provider ?? data.preferredProvider"
+            :attachments="attachments"
+            :placeholder="events.length ? t('chat.followUp') : t('chat.placeholder')"
+            :mentions-open="mentionsOpen"
+            :mention-hits="mentionHits"
+            @update:mode="mode = $event"
+            @update:recipe-id="recipeId = $event"
+            @submit="submit"
+            @cancel="sendCommand({ type: 'cancel' })"
+            @mention="insertMention"
+            @attach="attachFiles"
+            @remove-attachment="attachments = attachments.filter((a) => a.path !== $event)"
             @toggle-spectator="toggleSpectator"
-          >
-            <StudioComposer
-              v-model="prompt"
-              :mode="mode"
-              :recipe-id="recipeId"
-              :recipes="data.recipes"
-              :recipes-enabled="!!data?.flags?.recipes"
-              :spectator="spectator"
-              :sending="sending"
-              :provider="data.session?.provider ?? data.preferredProvider"
-              :attachments="attachments"
-              :mentions-open="mentionsOpen"
-              :mention-hits="mentionHits"
-              @update:mode="mode = $event"
-              @update:recipe-id="recipeId = $event"
-              @submit="submit"
-              @cancel="sendCommand({ type: 'cancel' })"
-              @mention="insertMention"
-              @attach="attachFiles"
-              @remove-attachment="attachments = attachments.filter((a) => a.path !== $event)"
-            />
-          </StudioChatPane>
-        </UiWindow>
-
-        <UiWindow
-          :title="t('preview.title')"
-          class="min-h-0 min-w-0 flex-1"
-          :class="mobileTab === 'chat' ? 'hidden lg:flex' : 'flex'"
-        >
-        <p v-if="data.agent?.error" class="px-4 py-2 text-[12px] text-amber-100">{{ t("chat.cursorRequired") }}</p>
-        <StudioPreviewPane
-          :src="previewSrc"
-          :status="data.workspace.status"
-          :viewport="viewport"
-          :rotated="rotated"
-          :preview-key="previewKey"
-          :tool-mode="toolMode"
-          :debug-open="debugOpen"
-          :debug="previewDebug"
-          :last-error="data.workspace.lastError"
-          :resuming="previewBusy"
-          @update:viewport="viewport = $event"
-          @update:rotated="rotated = $event"
-          @update:tool-mode="toolMode = $event"
-          @update:debug-open="debugOpen = $event"
-          @refresh="previewKey += 1"
-          @note="addPreviewNote"
-          @resume="resume"
-          @fix-debug="onFixDebug"
-        />
-        </UiWindow>
+          />
+        </StudioChatPane>
       </div>
     </div>
 
-    <nav class="grid grid-cols-2 border-t border-line bg-black/40 lg:hidden">
-      <button type="button" class="py-3 text-[13px] font-semibold" :class="mobileTab === 'chat' ? 'text-ink-950' : 'text-ink-300'" @click="mobileTab = 'chat'">
+    <StudioPreviewPane
+      class="min-w-0 flex-1"
+      :class="mobileTab === 'chat' ? 'hidden lg:flex' : 'flex'"
+      :src="previewSrc"
+      :status="data.workspace.status"
+      :title="t('workspace.project')"
+      :viewport="viewport"
+      :rotated="rotated"
+      :preview-key="previewKey"
+      :tool-mode="toolMode"
+      :debug-open="debugOpen"
+      :debug="previewDebug"
+      :last-error="data.workspace.lastError"
+      :resuming="previewBusy"
+      @update:viewport="viewport = $event"
+      @update:rotated="rotated = $event"
+      @update:tool-mode="toolMode = $event"
+      @update:debug-open="debugOpen = $event"
+      @refresh="previewKey += 1"
+      @note="addPreviewNote"
+      @resume="resume"
+      @fix-debug="onFixDebug"
+      @toggle-rail="railOpen = !railOpen"
+    />
+
+    <nav class="grid shrink-0 grid-cols-2 border-t border-line bg-surface lg:hidden">
+      <button
+        type="button"
+        class="py-2.5 text-[12px]"
+        :class="mobileTab === 'chat' ? 'text-ink-950' : 'text-ink-400'"
+        @click="mobileTab = 'chat'"
+      >
         {{ t("workspace.openChat") }}
       </button>
-      <button type="button" class="py-3 text-[13px] font-semibold" :class="mobileTab === 'preview' ? 'text-ink-950' : 'text-ink-300'" @click="mobileTab = 'preview'">
+      <button
+        type="button"
+        class="py-2.5 text-[12px]"
+        :class="mobileTab === 'preview' ? 'text-ink-950' : 'text-ink-400'"
+        @click="mobileTab = 'preview'"
+      >
         {{ t("workspace.openPreview") }}
       </button>
     </nav>

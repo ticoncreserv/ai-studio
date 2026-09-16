@@ -13,12 +13,12 @@ async function signOut() {
 </script>
 
 <template>
-  <main class="mesh flex min-h-screen items-center justify-center px-6">
-    <div class="glass-window w-full max-w-md p-8">
-      <UiLogo />
-      <h1 class="font-display mt-6 text-4xl leading-tight">{{ t("admin.disabledTitle") }}</h1>
-      <p class="mt-3 text-sm leading-relaxed text-ink-500">{{ t("admin.disabledBody") }}</p>
-      <UiButton class="mt-6" :disabled="leaving" @click="signOut">
+  <main class="flex min-h-screen items-center justify-center bg-canvas px-4">
+    <div class="cx-panel w-full max-w-[400px] p-5">
+      <UiLogo :size="22" />
+      <h1 class="mt-4 text-[15px] font-semibold text-ink-950">{{ t("admin.disabledTitle") }}</h1>
+      <p class="mt-1 text-[12px] leading-relaxed text-ink-500">{{ t("admin.disabledBody") }}</p>
+      <UiButton class="mt-4" variant="outline" :disabled="leaving" @click="signOut">
         {{ t("admin.signOut") }}
       </UiButton>
     </div>

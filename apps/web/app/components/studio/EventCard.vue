@@ -1,147 +1,257 @@
 <script setup lang="ts">
 import type { SessionEvent } from "@atelier/contracts";
-import { Check, ChevronDown, Database, GitCommit, Shield, TriangleAlert, X } from "@lucide/vue";
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  CornerUpLeft,
+  Database,
+  FileImage,
+  FileText,
+  GitBranch,
+  GitCommit,
+  Shield,
+  ThumbsDown,
+  ThumbsUp,
+  TriangleAlert,
+  X,
+} from "@lucide/vue";
 import { renderMarkdown, splitDiffLines } from "~/utils/markdown";
 
 const props = defineProps<{ event: SessionEvent }>();
 const emit = defineEmits<{
   command: [payload: { type: string; [key: string]: unknown }];
+  reuse: [text: string];
+  fork: [];
 }>();
 
 const { t } = useI18n();
 const rel = useRelativeTime();
 const open = ref(props.event.type === "diff" || props.event.type === "plan");
+const copied = ref(false);
+const rating = ref<"up" | "down" | "">("");
+
 const html = computed(() => {
   if (props.event.type === "assistant_message" || props.event.type === "assistant_delta") {
     return renderMarkdown(props.event.text);
   }
   return "";
 });
+
+const ratingKey = computed(() => `atelier:rating:${props.event.id}`);
+
+onMounted(() => {
+  if (props.event.type !== "assistant_message") return;
+  const stored = localStorage.getItem(ratingKey.value);
+  if (stored === "up" || stored === "down") rating.value = stored;
+});
+
+function rate(value: "up" | "down") {
+  rating.value = rating.value === value ? "" : value;
+  if (rating.value) localStorage.setItem(ratingKey.value, rating.value);
+  else localStorage.removeItem(ratingKey.value);
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 1400);
+  } catch {
+    /* clipboard is unavailable outside a secure context */
+  }
+}
+
+function fileName(path: string) {
+  return path.split("/").pop() || path;
+}
+
+function isImage(path: string) {
+  return /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(path);
+}
 </script>
 
 <template>
   <article>
-    <div v-if="event.type === 'user_message'" class="flex justify-end">
-      <div class="max-w-[92%] rounded-[14px] rounded-br-md bg-gradient-to-br from-coral-400 to-coral-600 px-4 py-3 text-[14px] leading-relaxed text-[#061018] shadow-glow">
-        <p class="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#061018]/55">{{ t("chat.you") }}</p>
-        {{ event.text }}
-        <p v-if="event.mentions?.length" class="mt-2 text-[11px] text-[#061018]/60">{{ event.mentions.map((m) => `@${m}`).join(" ") }}</p>
+    <div v-if="event.type === 'user_message'" class="cx-turn-user group relative">
+      <div v-if="event.attachments?.length" class="mb-2 flex flex-wrap gap-1.5">
+        <!-- Uploads live on the worktree filesystem, so there is no URL to preview. -->
+        <span
+          v-for="path in event.attachments"
+          :key="path"
+          class="cx-thumb flex items-center justify-center text-ink-500"
+          :title="fileName(path)"
+        >
+          <FileImage v-if="isImage(path)" class="h-4 w-4" />
+          <FileText v-else class="h-4 w-4" />
+        </span>
+      </div>
+      <p class="whitespace-pre-wrap pr-5">{{ event.text }}</p>
+      <p v-if="event.mentions?.length" class="mt-1.5 font-mono text-[11px] text-ink-400">
+        {{ event.mentions.map((name) => `#${name}`).join(" ") }}
+      </p>
+      <button
+        type="button"
+        class="absolute bottom-1.5 right-1.5 text-ink-400 opacity-0 transition-opacity hover:text-ink-950 group-hover:opacity-100 focus-visible:opacity-100"
+        :title="t('chat.reuse')"
+        :aria-label="t('chat.reuse')"
+        @click="emit('reuse', event.text)"
+      >
+        <CornerUpLeft class="h-3.5 w-3.5" />
+      </button>
+    </div>
+
+    <div v-else-if="event.type === 'assistant_message' || event.type === 'assistant_delta'">
+      <div class="markdown-body text-ink-800" v-html="html" />
+      <div v-if="event.type === 'assistant_message'" class="mt-1.5 flex items-center gap-0.5">
+        <UiIconButton
+          :label="t('chat.helpful')"
+          size="sm"
+          :active="rating === 'up'"
+          @click="rate('up')"
+        >
+          <ThumbsUp class="h-3 w-3" />
+        </UiIconButton>
+        <UiIconButton
+          :label="t('chat.notHelpful')"
+          size="sm"
+          :active="rating === 'down'"
+          @click="rate('down')"
+        >
+          <ThumbsDown class="h-3 w-3" />
+        </UiIconButton>
+        <UiIconButton :label="copied ? t('nav.copied') : t('chat.copy')" size="sm" @click="copyText(event.text)">
+          <Check v-if="copied" class="h-3 w-3" />
+          <Copy v-else class="h-3 w-3" />
+        </UiIconButton>
+        <UiIconButton :label="t('chat.fork')" size="sm" @click="emit('fork')">
+          <GitBranch class="h-3 w-3" />
+        </UiIconButton>
+        <span class="ml-1 text-[11px] text-ink-400">{{ rel(event.at) }}</span>
       </div>
     </div>
 
-    <div v-else-if="event.type === 'assistant_message' || event.type === 'assistant_delta'" class="mr-2">
-      <p class="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("chat.agent") }}</p>
-      <div class="markdown-body text-[14.5px] leading-[1.65] text-ink-800" v-html="html" />
+    <div v-else-if="event.type === 'tool_call'">
+      <button type="button" class="cx-summary" @click="open = !open">
+        <span
+          class="h-1 w-1 shrink-0 rounded-full"
+          :class="event.status === 'running' ? 'bg-coral-400' : event.status === 'failed' ? 'bg-red-400' : 'bg-ink-300'"
+        />
+        <span class="min-w-0 truncate">
+          {{ event.status === "running" ? t("chat.toolRunning", { name: event.name }) : t("chat.toolDone", { name: event.name }) }}
+        </span>
+        <ChevronDown v-if="event.output" class="h-3 w-3 shrink-0 transition-transform" :class="open && 'rotate-180'" />
+      </button>
+      <pre
+        v-if="open && event.output"
+        class="thin-scroll mt-1 max-h-52 overflow-auto rounded-[6px] border border-line bg-surface p-2 font-mono text-[11px] leading-[1.5] text-ink-600"
+      >{{ event.output }}</pre>
     </div>
 
-    <button
-      v-else-if="event.type === 'tool_call'"
-      type="button"
-      class="flex w-full items-center gap-2 rounded-xl border border-line bg-canvas/70 px-3 py-2 text-left text-[12px] text-ink-600"
-      @click="open = !open"
-    >
-      <span class="h-1.5 w-1.5 rounded-full" :class="event.status === 'running' ? 'bg-coral-500' : event.status === 'failed' ? 'bg-red-500' : 'bg-emerald-500'" />
-      <span class="flex-1 font-medium">
-        {{ event.status === "running" ? t("chat.toolRunning", { name: event.name }) : t("chat.toolDone", { name: event.name }) }}
-      </span>
-      <ChevronDown class="h-3.5 w-3.5" :class="open && 'rotate-180'" />
-    </button>
-    <pre v-if="event.type === 'tool_call' && open && event.output" class="mt-1 overflow-auto rounded-xl bg-[#17130f] p-3 font-mono text-[11px] text-emerald-200">{{ event.output }}</pre>
-
-    <div v-else-if="event.type === 'diff'" class="overflow-hidden rounded-[12px] border border-line bg-white/5">
-      <div class="flex items-center justify-between gap-2 border-b border-line bg-white/5 px-3 py-2">
-        <p class="truncate font-mono text-[11px] text-ink-600">{{ event.filePath }}</p>
-        <div class="flex items-center gap-1">
-          <UiBadge v-for="hunk in event.hunks" :key="hunk.id" :tone="hunk.status === 'accepted' ? 'live' : hunk.status === 'rejected' ? 'warn' : 'neutral'">
-            {{ hunk.status === "accepted" ? t("chat.diffAccepted") : hunk.status === "rejected" ? t("chat.diffRejected") : t("chat.diffPending") }}
-          </UiBadge>
-          <UiIconButton :label="t('chat.acceptFile')" size="sm" @click="emit('command', { type: 'accept_file', filePath: event.filePath })">
-            <Check class="h-3.5 w-3.5" />
-          </UiIconButton>
-          <UiIconButton :label="t('chat.rejectFile')" size="sm" @click="emit('command', { type: 'reject_file', filePath: event.filePath })">
-            <X class="h-3.5 w-3.5" />
-          </UiIconButton>
-        </div>
+    <div v-else-if="event.type === 'diff'" class="cx-panel">
+      <div class="flex items-center gap-1 border-b border-line px-2 py-1.5">
+        <p class="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-600" :title="event.filePath">{{ event.filePath }}</p>
+        <UiBadge
+          v-if="event.hunks.some((hunk) => hunk.status === 'pending')"
+          tone="neutral"
+        >
+          {{ t("chat.diffPending") }}
+        </UiBadge>
+        <UiIconButton :label="t('chat.acceptFile')" size="sm" @click="emit('command', { type: 'accept_file', filePath: event.filePath })">
+          <Check class="h-3.5 w-3.5" />
+        </UiIconButton>
+        <UiIconButton :label="t('chat.rejectFile')" size="sm" @click="emit('command', { type: 'reject_file', filePath: event.filePath })">
+          <X class="h-3.5 w-3.5" />
+        </UiIconButton>
       </div>
       <div v-for="hunk in event.hunks" :key="hunk.id" class="border-b border-line last:border-0">
-        <div class="max-h-64 overflow-auto font-mono text-[11px] leading-5">
+        <div class="thin-scroll max-h-60 overflow-auto font-mono text-[11px] leading-[1.55]">
           <div
             v-for="(line, i) in splitDiffLines(hunk.oldLines, hunk.newLines)"
             :key="i"
             class="flex"
-            :class="line.kind === 'add' ? 'bg-emerald-400/10 text-emerald-200' : line.kind === 'del' ? 'bg-red-400/10 text-red-300' : 'text-ink-500'"
+            :class="line.kind === 'add' ? 'bg-emerald-400/8 text-emerald-300/90' : line.kind === 'del' ? 'bg-red-400/8 text-red-300/90' : 'text-ink-500'"
           >
-            <span class="w-6 shrink-0 text-center opacity-50">{{ line.kind === "add" ? "+" : line.kind === "del" ? "−" : " " }}</span>
+            <span class="w-5 shrink-0 text-center text-ink-300">{{ line.kind === "add" ? "+" : line.kind === "del" ? "−" : " " }}</span>
             <pre class="flex-1 whitespace-pre-wrap">{{ line.text }}</pre>
           </div>
         </div>
-        <div v-if="hunk.status === 'pending'" class="flex justify-end gap-2 px-3 py-2">
+        <div v-if="hunk.status === 'pending'" class="flex justify-end gap-1.5 px-2 py-1.5">
           <UiButton size="sm" variant="outline" @click="emit('command', { type: 'reject_hunk', hunkId: hunk.id })">{{ t("chat.rejectHunk") }}</UiButton>
           <UiButton size="sm" @click="emit('command', { type: 'accept_hunk', hunkId: hunk.id })">{{ t("chat.acceptHunk") }}</UiButton>
         </div>
+        <p v-else class="px-2 py-1 text-[11px] text-ink-400">
+          {{ hunk.status === "accepted" ? t("chat.diffAccepted") : t("chat.diffRejected") }}
+        </p>
       </div>
     </div>
 
-    <ul v-else-if="event.type === 'todos'" class="space-y-1.5 rounded-2xl border border-line bg-canvas/70 px-3 py-3">
-      <li class="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("chat.pendingTodos") }}</li>
-      <li v-for="todo in event.todos" :key="todo.id" class="flex items-center gap-2 text-[13px] text-ink-700">
+    <ul v-else-if="event.type === 'todos'" class="space-y-1">
+      <li class="cx-summary">{{ t("chat.pendingTodos") }}</li>
+      <li v-for="todo in event.todos" :key="todo.id" class="flex items-start gap-2 text-[12.5px] text-ink-700">
         <span
-          class="flex h-4 w-4 items-center justify-center rounded-full border border-line text-[9px]"
-          :class="todo.status === 'completed' ? 'bg-ink-950 text-white' : todo.status === 'in_progress' ? 'border-coral-400 text-coral-500' : ''"
+          class="mt-[3px] flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border border-line"
+          :class="todo.status === 'completed' ? 'border-transparent bg-white/10 text-ink-950' : todo.status === 'in_progress' ? 'border-coral-500/60' : ''"
         >
-          <Check v-if="todo.status === 'completed'" class="h-3 w-3" />
+          <Check v-if="todo.status === 'completed'" class="h-2.5 w-2.5" />
         </span>
-        <span :class="todo.status === 'completed' && 'text-ink-300 line-through'">{{ todo.content }}</span>
+        <span :class="todo.status === 'completed' && 'text-ink-400 line-through'">{{ todo.content }}</span>
       </li>
     </ul>
 
-    <div v-else-if="event.type === 'plan'" class="rounded-[12px] border border-line bg-white/5 p-4">
-      <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-coral-600">{{ t("chat.planTitle") }}</p>
-      <h3 class="mt-1 text-[15px] font-semibold">{{ event.name }}</h3>
-      <p class="mt-1 text-sm text-ink-500">{{ event.overview }}</p>
-      <pre class="mt-3 whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-ink-700">{{ event.plan }}</pre>
-      <div v-if="event.outcome === 'pending'" class="mt-3 flex justify-end gap-2">
+    <div v-else-if="event.type === 'plan'" class="cx-panel p-3">
+      <p class="text-[11px] text-coral-400">{{ t("chat.planTitle") }}</p>
+      <h3 v-if="event.name" class="mt-1 text-[13px] font-medium text-ink-950">{{ event.name }}</h3>
+      <p v-if="event.overview" class="mt-1 text-[12px] leading-relaxed text-ink-500">{{ event.overview }}</p>
+      <pre class="mt-2 whitespace-pre-wrap font-sans text-[12.5px] leading-[1.6] text-ink-700">{{ event.plan }}</pre>
+      <div v-if="event.outcome === 'pending'" class="mt-3 flex justify-end gap-1.5">
         <UiButton size="sm" variant="outline" @click="emit('command', { type: 'decide_plan', outcome: 'rejected' })">{{ t("chat.rejectPlan") }}</UiButton>
         <UiButton size="sm" @click="emit('command', { type: 'decide_plan', outcome: 'accepted' })">{{ t("chat.acceptPlan") }}</UiButton>
       </div>
+      <p v-else class="mt-2 text-[11px] text-ink-400">
+        {{ event.outcome === "accepted" ? t("chat.planAccepted") : t("chat.planRejected") }}
+      </p>
     </div>
 
-    <div v-else-if="event.type === 'runtime_error'" class="flex items-start justify-between gap-3 rounded-[12px] border border-amber-400/20 bg-amber-400/10 px-3 py-3 text-sm text-amber-100">
-      <div class="flex gap-2">
-        <TriangleAlert class="mt-0.5 h-4 w-4 shrink-0" />
-        <p>{{ event.message }}</p>
+    <div v-else-if="event.type === 'runtime_error'" class="cx-panel border-amber-400/20 bg-amber-400/[0.07] p-2.5">
+      <div class="flex items-start gap-2 text-[12.5px] leading-relaxed text-amber-100/90">
+        <TriangleAlert class="mt-[2px] h-3.5 w-3.5 shrink-0" />
+        <p class="min-w-0 flex-1">{{ event.message }}</p>
       </div>
-      <UiButton size="sm" @click="emit('command', { type: 'fix_error', eventId: event.id })">{{ t("chat.fixThis") }}</UiButton>
+      <div class="mt-2 flex justify-end">
+        <UiButton size="sm" variant="outline" @click="emit('command', { type: 'fix_error', eventId: event.id })">{{ t("chat.fixThis") }}</UiButton>
+      </div>
     </div>
 
-    <div v-else-if="event.type === 'checkpoint'" class="flex items-center justify-between rounded-xl bg-canvas px-3 py-2 text-[12px] text-ink-500">
-      <span class="inline-flex items-center gap-1.5">
-        <GitCommit class="h-3.5 w-3.5" />
-        {{ t("chat.checkpoint") }} · {{ event.label }}
-      </span>
-      <button class="font-medium text-coral-600" @click="emit('command', { type: 'restore_checkpoint', checkpointId: event.id })">{{ t("chat.restore") }}</button>
+    <div v-else-if="event.type === 'checkpoint'" class="cx-summary">
+      <GitCommit class="h-3 w-3 shrink-0" />
+      <span class="min-w-0 truncate">{{ t("chat.checkpoint") }} · {{ event.label }}</span>
+      <button type="button" class="ml-auto shrink-0 text-coral-400 hover:text-coral-300" @click="emit('command', { type: 'restore_checkpoint', checkpointId: event.id })">
+        {{ t("chat.restore") }}
+      </button>
     </div>
 
-    <div v-else-if="event.type === 'permission'" class="rounded-[12px] border border-line bg-white/5 p-4">
-      <p class="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">
+    <div v-else-if="event.type === 'permission'" class="cx-panel p-3">
+      <p class="inline-flex items-center gap-1.5 text-[11px] text-ink-400">
         <Shield class="h-3.5 w-3.5" /> {{ t("chat.permissionTitle") }}
       </p>
-      <p class="mt-2 text-sm text-ink-800">{{ event.title }}</p>
-      <div v-if="event.outcome === 'pending'" class="mt-3 flex flex-wrap gap-2">
+      <p class="mt-1.5 text-[13px] text-ink-950">{{ event.title }}</p>
+      <div v-if="event.outcome === 'pending'" class="mt-3 flex flex-wrap justify-end gap-1.5">
         <UiButton size="sm" variant="outline" @click="emit('command', { type: 'decide_permission', outcome: 'reject-once' })">{{ t("chat.rejectOnce") }}</UiButton>
         <UiButton size="sm" variant="soft" @click="emit('command', { type: 'decide_permission', outcome: 'allow-once' })">{{ t("chat.allowOnce") }}</UiButton>
         <UiButton size="sm" @click="emit('command', { type: 'decide_permission', outcome: 'allow-always' })">{{ t("chat.allowAlways") }}</UiButton>
       </div>
     </div>
 
-    <div v-else-if="event.type === 'migration'" class="flex items-start gap-2 rounded-xl border border-line bg-canvas/80 px-3 py-2 text-[12px] text-ink-600">
-      <Database class="mt-0.5 h-3.5 w-3.5" />
-      <p>{{ t("chat.migrationBy", { author: event.author, name: event.name, branch: event.branch }) }}</p>
-    </div>
+    <p v-else-if="event.type === 'migration'" class="cx-summary">
+      <Database class="h-3 w-3 shrink-0" />
+      <span class="min-w-0">{{ t("chat.migrationBy", { author: event.author, name: event.name, branch: event.branch }) }}</span>
+    </p>
 
-    <p v-else-if="event.type === 'dropped_context'" class="text-[12px] text-amber-800">{{ t("chat.droppedContext", { count: event.omitted.length }) }}</p>
-    <p v-else-if="event.type === 'budget'" class="text-[12px] text-amber-800">{{ t("chat.budget") }}</p>
-    <p v-else-if="event.type === 'conflict'" class="text-[12px] text-ink-600">{{ t("chat.conflict") }} · {{ event.message }}</p>
-    <p v-else-if="event.type !== 'question' && event.type !== 'plan'" class="mt-1 text-[11px] text-ink-300">{{ rel(event.at) }}</p>
+    <p v-else-if="event.type === 'dropped_context'" class="cx-summary text-amber-200/70">
+      {{ t("chat.droppedContext", { count: event.omitted.length }) }}
+    </p>
+    <p v-else-if="event.type === 'budget'" class="cx-summary text-amber-200/70">{{ t("chat.budget") }}</p>
+    <p v-else-if="event.type === 'conflict'" class="cx-summary">{{ t("chat.conflict") }} · {{ event.message }}</p>
   </article>
 </template>

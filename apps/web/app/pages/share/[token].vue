@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ExternalLink } from "@lucide/vue";
+import { Globe, Maximize2 } from "@lucide/vue";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -41,36 +41,37 @@ onBeforeUnmount(() => window.removeEventListener("message", onPreviewMessage));
 </script>
 
 <template>
-  <main class="os-desktop flex h-screen flex-col">
-    <header class="menubar flex h-11 items-center gap-3 px-5">
-      <span class="traffic" aria-hidden="true">
+  <main class="flex h-screen flex-col overflow-hidden bg-canvas">
+    <header class="window-titlebar shrink-0">
+      <span class="traffic hidden sm:flex" aria-hidden="true">
         <span class="tl-close" />
         <span class="tl-min" />
         <span class="tl-max" />
       </span>
-      <UiLogo :size="22" />
-      <div class="min-w-0 flex-1">
-        <h1 class="text-sm font-semibold tracking-tight">{{ t("share.title") }}</h1>
-        <p class="truncate text-[12px] text-ink-500">{{ t("share.hint") }}</p>
+      <span class="cx-browser-tab min-w-0">
+        <Globe class="h-3.5 w-3.5 shrink-0 text-ink-500" />
+        <span class="min-w-0 truncate font-medium">{{ t("share.title") }}</span>
+      </span>
+      <p class="hidden min-w-0 truncate text-[12px] text-ink-400 sm:block">{{ t("share.hint") }}</p>
+      <div class="ml-auto flex shrink-0 items-center gap-1.5">
+        <NuxtLink to="/" class="text-[12px] text-ink-500 hover:text-ink-950">{{ t("share.openStudio") }}</NuxtLink>
+        <a v-if="data" :href="data.previewPath" target="_blank" rel="noreferrer" class="inline-flex">
+          <UiIconButton :label="t('preview.openTab')" size="sm">
+            <Maximize2 class="h-3.5 w-3.5" />
+          </UiIconButton>
+        </a>
       </div>
-      <NuxtLink to="/" class="text-[13px] font-medium text-ink-600">{{ t("share.openStudio") }}</NuxtLink>
-      <a v-if="data" :href="data.previewPath" target="_blank">
-        <UiIconButton :label="t('preview.openTab')">
-          <ExternalLink class="h-4 w-4" />
-        </UiIconButton>
-      </a>
     </header>
-    <div v-if="expired" class="flex flex-1 items-center justify-center p-8">
+
+    <div v-if="expired" class="flex flex-1 items-center justify-center">
       <StudioPreviewWait :title="t('share.expired')" tone="error" />
     </div>
     <div v-else-if="!data" class="flex flex-1 items-center justify-center">
       <StudioPreviewWait :title="t('share.loading')" :hint="t('preview.waitIframeHint')" :elapsed="elapsed" />
     </div>
-    <div v-else class="relative m-3 min-h-0 flex-1">
-      <UiWindow :title="documentLoaded ? t('preview.title') : t('preview.waitIframe')" class="h-full">
-        <iframe :src="data.previewPath" class="h-full w-full bg-white" :title="t('preview.title')" @load="onFrameLoad" />
-      </UiWindow>
-      <div v-if="!documentLoaded" class="absolute inset-0 z-10 flex items-center justify-center rounded-[14px] bg-[#0b0d13]/92">
+    <div v-else class="relative min-h-0 flex-1">
+      <iframe :src="data.previewPath" class="h-full w-full bg-white" :title="t('preview.title')" @load="onFrameLoad" />
+      <div v-if="!documentLoaded" class="absolute inset-0 z-10 flex items-center justify-center bg-canvas">
         <StudioPreviewWait :title="t('preview.waitIframe')" :hint="waitHint" :elapsed="elapsed" />
       </div>
     </div>

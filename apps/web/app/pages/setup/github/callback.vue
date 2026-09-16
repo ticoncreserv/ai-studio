@@ -25,7 +25,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="mesh flex min-h-screen items-center justify-center px-6">
-    <p class="text-sm text-ink-500">{{ error ? error : "…" }}</p>
+  <main class="flex min-h-screen items-center justify-center bg-canvas px-6">
+    <p class="text-[12px] text-ink-500">{{ error ? error : "…" }}</p>
   </main>
 </template>

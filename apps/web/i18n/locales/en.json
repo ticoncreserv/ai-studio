@@ -74,7 +74,7 @@
   "nav": {
     "sessions": "Sessions",
     "newSession": "New session",
-    "search": "Search sessions",
+    "search": "Search",
     "invite": "Invite",
     "share": "Share preview",
     "rules": "Rules",
@@ -90,7 +90,11 @@
     "account": "Account",
     "home": "Home",
     "working": "Working…",
-    "admin": "Admin"
+    "admin": "Admin",
+    "searchSessions": "Search sessions",
+    "toggleRail": "Toggle sidebar",
+    "previousSession": "Previous session",
+    "nextSession": "Next session"
   },
   "workspace": {
     "warming": "Warming the workspace to ready…",
@@ -194,7 +198,20 @@
     "suggestion3": "Fix the last preview error",
     "you": "You",
     "agent": "Agent",
-    "now": "Now"
+    "now": "Now",
+    "followUp": "Send follow-up",
+    "palette": "Skills and context",
+    "paletteSearch": "Search skills, context, chats…",
+    "model": "Model",
+    "recipeNone": "No recipe",
+    "dictate": "Dictate",
+    "reuse": "Edit in composer",
+    "helpful": "Helpful",
+    "notHelpful": "Not helpful",
+    "copy": "Copy reply",
+    "fork": "Branch into a new session",
+    "planAccepted": "Plan accepted",
+    "planRejected": "Plan rejected"
   },
   "preview": {
     "title": "Preview",
@@ -238,7 +255,9 @@
     "waitSlow": "Still working. Vite may be compiling the Vue files.",
     "waitSlowDb": "This is taking a while. Homologation database queries can take a few minutes.",
     "loadFailed": "The preview page failed to load.",
-    "loadFailedHint": "The iframe did not finish loading. Resume the preview or refresh."
+    "loadFailedHint": "The iframe did not finish loading. Resume the preview or refresh.",
+    "back": "Back",
+    "forward": "Forward"
   },
   "command": {
     "placeholder": "Type a command…",
@@ -350,7 +369,10 @@
   "time": {
     "justNow": "just now",
     "minutesAgo": "{count} min ago",
-    "hoursAgo": "{count} h ago"
+    "hoursAgo": "{count} h ago",
+    "shortMinutes": "{count}m",
+    "shortHours": "{count}h",
+    "shortDays": "{count}d"
   },
   "admin": {
     "title": "Platform admin",

@@ -1,6 +1,17 @@
 <script setup lang="ts">
 import type { AgentMode } from "@atelier/contracts";
-import { ArrowUp, Paperclip, X } from "@lucide/vue";
+import {
+  ArrowUp,
+  ChevronRight,
+  Cpu,
+  ListTodo,
+  MessageCircle,
+  Mic,
+  Paperclip,
+  Plus,
+  Wrench,
+  X,
+} from "@lucide/vue";
 import type { StudioAttachment } from "~/types/studio";
 
 const props = defineProps<{
@@ -10,8 +21,10 @@ const props = defineProps<{
   recipes: Array<{ id: string; title: string }>;
   recipesEnabled: boolean;
   spectator: boolean;
+  spectatorEnabled: boolean;
   sending: boolean;
   provider: string;
+  placeholder: string;
   attachments: StudioAttachment[];
   mentionsOpen: boolean;
   mentionHits: Array<{ item: string; kind: string }>;
@@ -26,111 +39,310 @@ const emit = defineEmits<{
   mention: [name: string];
   attach: [files: FileList];
   "remove-attachment": [path: string];
+  "toggle-spectator": [];
 }>();
 
 const { t } = useI18n();
 const fileInput = ref<HTMLInputElement | null>(null);
+const field = ref<HTMLTextAreaElement | null>(null);
+const paletteOpen = ref(false);
+const paletteQuery = ref("");
+const paletteFilter = ref<HTMLInputElement | null>(null);
+const recipesOpen = ref(false);
+const cursor = ref(0);
+const listening = ref(false);
+const dictationSupported = ref(false);
 
-function onPaste(e: ClipboardEvent) {
-  const files = [...(e.clipboardData?.files ?? [])];
-  if (files.length) {
-    e.preventDefault();
-    const list = e.clipboardData!.files;
-    emit("attach", list);
+type Recognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+};
+
+let recognition: Recognition | null = null;
+
+const modes = computed(() => [
+  { id: "agent" as AgentMode, icon: Wrench, tint: "text-coral-400", label: t("chat.modeAgent"), desc: t("chat.modeHintAgent") },
+  { id: "plan" as AgentMode, icon: ListTodo, tint: "text-amber-300/80", label: t("chat.modePlan"), desc: t("chat.modeHintPlan") },
+  { id: "ask" as AgentMode, icon: MessageCircle, tint: "text-emerald-300/80", label: t("chat.modeAsk"), desc: t("chat.modeHintAsk") },
+]);
+
+const providerLabel = computed(() =>
+  props.provider === "cursor" ? t("chat.usingCursor") : props.provider === "mock" ? t("chat.usingMock") : props.provider,
+);
+
+const activeRecipe = computed(() => props.recipes.find((recipe) => recipe.id === props.recipeId));
+
+const visibleModes = computed(() => {
+  const needle = paletteQuery.value.trim().toLowerCase();
+  if (!needle) return modes.value;
+  return modes.value.filter((item) => `${item.label} ${item.desc}`.toLowerCase().includes(needle));
+});
+
+function resize() {
+  const el = field.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+}
+
+watch(() => props.modelValue, () => nextTick(resize));
+onMounted(() => {
+  resize();
+  const ctor = (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown });
+  dictationSupported.value = Boolean(ctor.SpeechRecognition || ctor.webkitSpeechRecognition);
+});
+
+async function togglePalette() {
+  paletteOpen.value = !paletteOpen.value;
+  if (!paletteOpen.value) return;
+  paletteQuery.value = "";
+  recipesOpen.value = false;
+  cursor.value = 0;
+  await nextTick();
+  paletteFilter.value?.focus();
+}
+
+function closePalette() {
+  paletteOpen.value = false;
+  field.value?.focus();
+}
+
+function pickMode(value: AgentMode) {
+  emit("update:mode", value);
+  closePalette();
+}
+
+function pickRecipe(id: string) {
+  emit("update:recipeId", id);
+  closePalette();
+}
+
+function movePalette(delta: number) {
+  const total = visibleModes.value.length;
+  if (!total) return;
+  cursor.value = (cursor.value + delta + total) % total;
+}
+
+function runHighlighted() {
+  const target = visibleModes.value[cursor.value];
+  if (target) pickMode(target.id);
+}
+
+function onPaste(event: ClipboardEvent) {
+  const files = event.clipboardData?.files;
+  if (files?.length) {
+    event.preventDefault();
+    emit("attach", files);
   }
 }
 
-const modeHint = computed(() => {
-  if (props.mode === "plan") return t("chat.modeHintPlan");
-  if (props.mode === "ask") return t("chat.modeHintAsk");
-  return t("chat.modeHintAgent");
-});
+function toggleDictation() {
+  if (listening.value) {
+    recognition?.stop();
+    return;
+  }
+  const global = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
+  const Ctor = global.SpeechRecognition ?? global.webkitSpeechRecognition;
+  if (!Ctor) return;
+  recognition = new Ctor();
+  recognition.lang = document.documentElement.lang || "en";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.onresult = (event) => {
+    const transcript = [...Array.from({ length: event.results.length }, (_, i) => event.results[i]![0]!.transcript)].join(" ").trim();
+    if (transcript) emit("update:modelValue", props.modelValue ? `${props.modelValue} ${transcript}` : transcript);
+  };
+  recognition.onend = () => (listening.value = false);
+  recognition.onerror = () => (listening.value = false);
+  listening.value = true;
+  recognition.start();
+}
+
+onBeforeUnmount(() => recognition?.stop());
 </script>
 
 <template>
-  <form class="relative border-t border-line p-3" @submit.prevent="emit('submit')">
-    <div v-if="mentionsOpen" class="absolute inset-x-3 bottom-full z-10 mb-1 overflow-hidden rounded-xl border border-line bg-paper shadow-float">
-      <p v-if="!mentionHits.length" class="px-3 py-2 text-[12px] text-ink-300">{{ t("chat.noMentions") }}</p>
+  <form class="relative shrink-0 px-2.5 pb-1.5" @submit.prevent="emit('submit')">
+    <div v-if="mentionsOpen" class="cx-menu absolute inset-x-2.5 bottom-full z-20 mb-1 p-1 shadow-float">
+      <p v-if="!mentionHits.length" class="cx-menu-row text-ink-400">{{ t("chat.noMentions") }}</p>
       <button
         v-for="hit in mentionHits"
         :key="hit.kind + hit.item"
         type="button"
-        class="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-canvas"
+        class="cx-menu-row"
         @click="emit('mention', hit.item)"
       >
-        <span class="font-mono">{{ hit.item }}</span>
-        <span class="text-[10px] uppercase tracking-wider text-ink-300">{{ hit.kind }}</span>
+        <span class="min-w-0 flex-1 truncate font-mono text-ink-800">{{ hit.item }}</span>
+        <span class="cx-menu-desc shrink-0">{{ hit.kind }}</span>
       </button>
     </div>
 
-    <div class="rounded-[12px] border border-line bg-white/5 p-2 shadow-inset">
-      <div v-if="attachments.length" class="mb-1 flex flex-wrap gap-1 px-2 pt-1">
-        <span
-          v-for="file in attachments"
-          :key="file.path"
-          class="inline-flex items-center gap-1 rounded-full bg-ink-100 px-2 py-1 text-[11px] text-ink-600"
-        >
-          {{ file.name }}
-          <button type="button" :aria-label="t('chat.removeAttachment')" @click="emit('remove-attachment', file.path)">
+    <div v-if="paletteOpen" class="cx-menu mb-1.5 p-1">
+      <div class="px-2 py-1">
+        <input
+          ref="paletteFilter"
+          v-model="paletteQuery"
+          class="h-6 w-full bg-transparent text-[12.5px] text-ink-950 outline-none placeholder:text-ink-400"
+          :placeholder="t('chat.paletteSearch')"
+          @keydown.down.prevent="movePalette(1)"
+          @keydown.up.prevent="movePalette(-1)"
+          @keydown.enter.prevent="runHighlighted"
+          @keydown.esc.prevent="closePalette"
+        />
+      </div>
+      <button
+        v-for="(item, index) in visibleModes"
+        :key="item.id"
+        type="button"
+        class="cx-menu-row"
+        :data-active="index === cursor || item.id === mode || undefined"
+        @mouseenter="cursor = index"
+        @click="pickMode(item.id)"
+      >
+        <component :is="item.icon" class="h-3.5 w-3.5 shrink-0" :class="item.tint" />
+        <span class="cx-menu-name shrink-0">{{ item.label }}</span>
+        <span class="cx-menu-desc">{{ item.desc }}</span>
+      </button>
+      <div class="cx-divider mx-2 my-1" />
+      <button type="button" class="cx-menu-row" @click="fileInput?.click()">
+        <Paperclip class="h-3.5 w-3.5 shrink-0" />
+        <span class="cx-menu-name">{{ t("chat.attach") }}</span>
+      </button>
+      <div class="cx-menu-row">
+        <Cpu class="h-3.5 w-3.5 shrink-0" />
+        <span class="cx-menu-name shrink-0">{{ t("chat.model") }}</span>
+        <span class="cx-menu-desc">{{ providerLabel }}</span>
+      </div>
+      <template v-if="recipesEnabled">
+        <button type="button" class="cx-menu-row" :data-active="recipesOpen || undefined" @click="recipesOpen = !recipesOpen">
+          <ListTodo class="h-3.5 w-3.5 shrink-0" />
+          <span class="cx-menu-name shrink-0">{{ t("chat.recipe") }}</span>
+          <span class="cx-menu-desc">{{ activeRecipe?.title ?? "" }}</span>
+          <ChevronRight class="ml-auto h-3 w-3 shrink-0 text-ink-400 transition-transform" :class="recipesOpen && 'rotate-90'" />
+        </button>
+        <template v-if="recipesOpen">
+          <button type="button" class="cx-menu-row pl-[29px]" @click="pickRecipe('')">
+            <span class="min-w-0 flex-1 truncate">{{ t("chat.recipeNone") }}</span>
+          </button>
+          <button
+            v-for="recipe in recipes"
+            :key="recipe.id"
+            type="button"
+            class="cx-menu-row pl-[29px]"
+            :data-active="recipe.id === recipeId || undefined"
+            @click="pickRecipe(recipe.id)"
+          >
+            <span class="min-w-0 flex-1 truncate">{{ recipe.title }}</span>
+          </button>
+        </template>
+      </template>
+      <div v-if="spectatorEnabled" class="cx-menu-row">
+        <span class="cx-menu-name">{{ spectator ? t("workspace.watching") : t("workspace.editor") }}</span>
+        <UiSwitch
+          class="ml-auto"
+          :model-value="!spectator"
+          :label="t('workspace.editor')"
+          @update:model-value="emit('toggle-spectator')"
+        />
+      </div>
+    </div>
+
+    <div class="cx-composer">
+      <div v-if="attachments.length" class="flex flex-wrap gap-1 px-2 pt-2">
+        <span v-for="file in attachments" :key="file.path" class="cx-pill max-w-full">
+          <span class="min-w-0 truncate">{{ file.name }}</span>
+          <button type="button" :aria-label="t('chat.removeAttachment')" class="text-ink-400 hover:text-ink-950" @click="emit('remove-attachment', file.path)">
             <X class="h-3 w-3" />
           </button>
         </span>
       </div>
-      <textarea
-        id="composer"
-        :value="modelValue"
-        :disabled="spectator"
-        :placeholder="t('chat.placeholder')"
-        class="h-[72px] w-full resize-none bg-transparent px-3 pt-2 text-sm outline-none placeholder:text-ink-300"
-        @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
-        @keydown.meta.enter.prevent="emit('submit')"
-        @keydown.ctrl.enter.prevent="emit('submit')"
-        @paste="onPaste"
-      />
-      <div class="flex items-center justify-between gap-2 px-1 pb-1">
-        <div class="flex min-w-0 items-center gap-1">
-          <input ref="fileInput" type="file" multiple class="hidden" @change="emit('attach', ($event.target as HTMLInputElement).files!)" />
-          <UiIconButton :label="t('chat.attach')" size="sm" @click="fileInput?.click()">
-            <Paperclip class="h-4 w-4" />
-          </UiIconButton>
-          <span class="rounded-[8px] bg-white/5 px-2 py-1 text-[11px] font-semibold text-ink-600">
-            {{ provider === "cursor" ? t("chat.usingCursor") : provider === "mock" ? t("chat.usingMock") : provider }}
-          </span>
-          <select
-            class="h-8 max-w-[110px] rounded-[8px] bg-white/5 px-2 text-[11px] font-semibold text-ink-800 outline-none"
-            :value="mode"
-            @change="emit('update:mode', ($event.target as HTMLSelectElement).value as AgentMode)"
-          >
-            <option value="agent">{{ t("chat.modeAgent") }}</option>
-            <option value="plan">{{ t("chat.modePlan") }}</option>
-            <option value="ask">{{ t("chat.modeAsk") }}</option>
-          </select>
-          <select
-            v-if="recipesEnabled"
-            class="h-8 max-w-[140px] truncate rounded-[8px] bg-white/5 px-2 text-[11px] font-semibold text-ink-800 outline-none"
-            :value="recipeId"
-            @change="emit('update:recipeId', ($event.target as HTMLSelectElement).value)"
-          >
-            <option value="">{{ t("chat.recipe") }}</option>
-            <option v-for="recipe in recipes" :key="recipe.id" :value="recipe.id">{{ recipe.title }}</option>
-          </select>
-        </div>
-        <div class="flex items-center gap-1">
-          <UiIconButton :label="t('chat.cancel')" size="sm" @click="emit('cancel')">
-            <X class="h-4 w-4" />
-          </UiIconButton>
+
+      <div class="flex items-end gap-2 px-2 py-2">
+        <button
+          type="button"
+          class="cx-round"
+          :data-active="paletteOpen || undefined"
+          :aria-label="t('chat.palette')"
+          :title="t('chat.palette')"
+          @click="togglePalette"
+        >
+          <Plus class="h-3.5 w-3.5" />
+        </button>
+        <textarea
+          id="composer"
+          ref="field"
+          rows="1"
+          :value="modelValue"
+          :disabled="spectator"
+          :placeholder="placeholder"
+          @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value); resize()"
+          @keydown.enter.exact.prevent="emit('submit')"
+          @keydown.meta.enter.prevent="emit('submit')"
+          @keydown.ctrl.enter.prevent="emit('submit')"
+          @paste="onPaste"
+        />
+        <UiIconButton v-if="sending" :label="t('chat.cancel')" size="sm" @click="emit('cancel')">
+          <X class="h-3.5 w-3.5" />
+        </UiIconButton>
+        <button
+          v-if="dictationSupported && !sending"
+          type="button"
+          class="cx-round"
+          :data-tone="listening ? 'recording' : undefined"
+          :aria-label="t('chat.dictate')"
+          :title="t('chat.dictate')"
+          @click="toggleDictation"
+        >
+          <Mic class="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="submit"
+          :disabled="spectator || sending"
+          class="cx-round"
+          data-tone="primary"
+          :aria-label="t('chat.send')"
+          :title="t('chat.send')"
+        >
+          <UiSpinner v-if="sending" size="sm" :label="t('chat.thinking')" />
+          <ArrowUp v-else class="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div class="flex items-center gap-1.5 border-t border-line px-2 py-1.5">
+        <div class="cx-modes">
           <button
-            type="submit"
-            :disabled="spectator || sending"
-            class="flex h-8 w-8 items-center justify-center rounded-[9px] bg-coral-500 text-[#061018] shadow-glow transition hover:bg-coral-400 disabled:opacity-40"
-            :aria-label="t('chat.send')"
+            v-for="item in modes"
+            :key="item.id"
+            type="button"
+            :data-active="item.id === mode || undefined"
+            :title="item.desc"
+            @click="emit('update:mode', item.id)"
           >
-            <UiSpinner v-if="sending" size="sm" :label="t('chat.thinking')" />
-            <ArrowUp v-else class="h-4 w-4" />
+            {{ item.label }}
           </button>
         </div>
+        <span class="cx-pill min-w-0" :title="t('chat.model')">
+          <Cpu class="h-3 w-3 shrink-0" />
+          <span class="truncate">{{ providerLabel }}</span>
+        </span>
+        <span v-if="activeRecipe" class="cx-pill min-w-0" :title="t('chat.recipe')">
+          <span class="truncate">{{ activeRecipe.title }}</span>
+          <button type="button" :aria-label="t('chat.recipeNone')" class="text-ink-400 hover:text-ink-950" @click="emit('update:recipeId', '')">
+            <X class="h-3 w-3" />
+          </button>
+        </span>
+        <input ref="fileInput" type="file" multiple class="hidden" @change="emit('attach', ($event.target as HTMLInputElement).files!)" />
+        <UiIconButton class="ml-auto" :label="t('chat.attach')" size="sm" @click="fileInput?.click()">
+          <Paperclip class="h-3.5 w-3.5" />
+        </UiIconButton>
       </div>
     </div>
-    <p class="mt-1.5 px-2 text-[11px] text-ink-300">{{ spectator ? t("workspace.spectator") : recipeId ? t("chat.recipeHint") : modeHint }}</p>
+    <p v-if="spectator" class="mt-1 px-1 text-[11px] text-ink-400">{{ t("workspace.spectator") }}</p>
   </form>
 </template>

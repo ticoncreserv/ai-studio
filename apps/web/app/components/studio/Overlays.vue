@@ -126,40 +126,38 @@ function submitQuestion() {
 </script>
 
 <template>
-  <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length || data.lock" class="pointer-events-none absolute inset-x-0 top-14 z-20 flex flex-col gap-2 px-4 pt-2">
-    <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length" class="pointer-events-auto rounded-[10px] border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[12px] text-amber-100 shadow-lift">
-      <p class="font-semibold">{{ t("workspace.divergence") }}</p>
+  <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length || data.lock" class="pointer-events-none absolute inset-x-0 top-10 z-20 flex flex-col gap-1.5 px-3">
+    <div v-if="data.divergence.pendingInBranch.length || data.divergence.extraInDatabase.length" class="cx-panel pointer-events-auto border-amber-400/25 bg-amber-400/[0.08] px-3 py-2 text-[12px] leading-relaxed text-amber-100/90">
+      <p class="font-medium">{{ t("workspace.divergence") }}</p>
       <p v-if="data.divergence.pendingInBranch.length">{{ t("workspace.pendingMigrations", { count: data.divergence.pendingInBranch.length }) }}</p>
       <p v-if="data.divergence.extraInDatabase.length">{{ t("workspace.extraMigrations", { count: data.divergence.extraInDatabase.length }) }}</p>
     </div>
-    <div v-if="data.lock && data.lock.sessionId !== data.session?.id" class="pointer-events-auto rounded-xl border border-line bg-paper px-3 py-2 text-[12px] text-ink-700 shadow-lift">
+    <div v-if="data.lock && data.lock.sessionId !== data.session?.id" class="cx-panel pointer-events-auto px-3 py-2 text-[12px] text-ink-700">
       {{ t("workspace.lockHeld") }}
     </div>
   </div>
 
-  <div v-if="toast" class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-[10px] border border-line bg-paper px-4 py-2 text-[13px] font-medium text-ink-950 shadow-float">
+  <div v-if="toast" class="cx-panel fixed bottom-5 left-1/2 z-50 -translate-x-1/2 px-3 py-1.5 text-[12px] text-ink-950 shadow-float">
     {{ toast }}
   </div>
 
-  <div v-if="dialog === 'palette'" class="fixed inset-0 z-50 flex items-start justify-center bg-black/45 p-8 backdrop-blur-md" @click.self="emit('update:dialog', null)">
-    <div class="glass-window w-full max-w-lg overflow-hidden p-3">
+  <div v-if="dialog === 'palette'" class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-8" @click.self="emit('update:dialog', null)">
+    <div class="cx-menu w-full max-w-md p-1 shadow-float">
       <div class="flex items-center gap-2 px-2">
-        <Command class="h-4 w-4 text-ink-300" />
+        <Command class="h-3.5 w-3.5 text-ink-400" />
         <input
           :value="paletteQuery"
           :placeholder="t('command.placeholder')"
-          class="h-11 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-300"
+          class="h-8 flex-1 bg-transparent text-[13px] outline-none placeholder:text-ink-400"
           @input="emit('update:paletteQuery', ($event.target as HTMLInputElement).value)"
         />
       </div>
-      <ul class="mt-1">
-        <li v-if="!filteredCommands.length" class="px-3 py-2 text-sm text-ink-300">{{ t("command.empty") }}</li>
+      <div class="cx-divider mx-2 my-1" />
+      <ul class="thin-scroll max-h-[50vh] overflow-y-auto">
+        <li v-if="!filteredCommands.length" class="cx-menu-row text-ink-400">{{ t("command.empty") }}</li>
         <li v-for="cmd in filteredCommands" :key="cmd.id">
-          <button
-            class="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-ink-700 hover:bg-canvas"
-            @click="runPaletteCommand(cmd)"
-          >
-            <span>{{ cmd.label }}</span>
+          <button type="button" class="cx-menu-row" @click="runPaletteCommand(cmd)">
+            <span class="min-w-0 flex-1 truncate">{{ cmd.label }}</span>
             <UiKbd v-if="cmd.keys">{{ cmd.keys }}</UiKbd>
           </button>
         </li>
@@ -171,7 +169,7 @@ function submitQuestion() {
     <p class="text-sm leading-relaxed text-ink-500">{{ t("rules.hint") }}</p>
     <p class="mt-3 text-[12px] text-ink-400">{{ t("rules.lockedHint") }}</p>
     <label v-for="layer in data.rules" :key="layer.id" class="mt-4 block">
-      <span class="text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{
+      <span class="text-[12px] text-ink-400">{{
         layer.level === "platform" ? t("rules.platform") : layer.level === "project" ? t("rules.project") : t("rules.user")
       }}</span>
       <p class="mb-1 text-[12px] text-ink-400">
@@ -187,7 +185,7 @@ function submitQuestion() {
         v-model="layer.body"
         :readonly="layer.level !== 'user'"
         :class="layer.level !== 'user' ? 'opacity-70' : ''"
-        class="mt-1 h-28 w-full rounded-[10px] border border-line bg-white/5 p-3 text-sm outline-none focus:border-coral-500/40"
+        class="mt-1 h-28 w-full rounded-[6px] border border-line bg-white/[0.03] p-2.5 text-[12.5px] leading-relaxed outline-none focus:border-coral-500/50"
       />
     </label>
     <template #footer>
@@ -199,7 +197,7 @@ function submitQuestion() {
     <p class="text-sm text-ink-500">{{ t("connections.erpReadOnly") }}</p>
     <p class="mt-1 text-sm text-ink-500">{{ t("connections.appMigrate") }}</p>
     <p v-if="!data.connections.length" class="mt-3 text-sm text-ink-400">{{ t("connections.empty") }}</p>
-    <article v-for="conn in data.connections" :key="conn.id" class="mt-3 rounded-2xl border border-line bg-canvas/60 p-3">
+    <article v-for="conn in data.connections" :key="conn.id" class="cx-panel mt-2 p-3">
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-sm font-semibold">{{ conn.name }}</h3>
         <div class="flex items-center gap-1.5">
@@ -251,7 +249,7 @@ function submitQuestion() {
     <div class="flex items-center justify-between">
       <p class="text-sm font-medium">{{ t("settings.language") }}</p>
       <select
-        class="rounded-md border border-line bg-paper px-2 py-1 text-xs"
+        class="rounded-[4px] border border-line bg-raised px-1.5 py-[2px] text-[11px] text-ink-800 outline-none"
         :value="locale"
         @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
       >
@@ -259,12 +257,12 @@ function submitQuestion() {
         <option value="en">{{ t("auth.english") }}</option>
       </select>
     </div>
-    <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("workspace.diskQuota") }}</p>
+    <p class="mt-5 text-[12px] text-ink-400">{{ t("workspace.diskQuota") }}</p>
     <p class="mt-1 text-sm text-ink-600">{{ t("workspace.quotaUsed", { used: data.quota.usedMb, limit: data.quota.limitMb }) }}</p>
-    <div class="mt-2 h-2 overflow-hidden rounded-full bg-ink-100">
+    <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-ink-100">
       <div class="h-full bg-coral-500" :style="{ width: `${Math.min(100, (data.quota.usedMb / data.quota.limitMb) * 100)}%` }" />
     </div>
-    <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("settings.envFileTitle") }}</p>
+    <p class="mt-5 text-[12px] text-ink-400">{{ t("settings.envFileTitle") }}</p>
     <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.envFileHint") }}</p>
     <p class="mt-2 text-[12px] text-ink-500">{{ t("settings.platformEnvHint") }}</p>
     <AdminEnvEditor
@@ -276,7 +274,7 @@ function submitQuestion() {
     >
       <template #save-label>{{ t("settings.overlaySave") }}</template>
     </AdminEnvEditor>
-    <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("workspace.envIsolation") }}</p>
+    <p class="mt-5 text-[12px] text-ink-400">{{ t("workspace.envIsolation") }}</p>
     <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.isolationHint") }}</p>
     <ul class="mt-2 space-y-1 font-mono text-[11px] text-ink-600">
       <li v-for="(value, key) in isolationEnv" :key="key">
@@ -284,7 +282,7 @@ function submitQuestion() {
         <span v-if="data.env.origins?.[key]" class="text-ink-300"> · {{ originLabel(data.env.origins[key]) }}</span>
       </li>
     </ul>
-    <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-300">{{ t("workspace.migrationJournal") }}</p>
+    <p class="mt-5 text-[12px] text-ink-400">{{ t("workspace.migrationJournal") }}</p>
     <p v-if="!data.migrationLog.length" class="mt-1 text-sm text-ink-400">{{ t("workspace.noMigrations") }}</p>
     <ul v-else class="mt-2 space-y-2 text-[12px] text-ink-600">
       <li v-for="row in data.migrationLog" :key="row.id">{{ row.author }} · {{ row.name }}</li>
@@ -325,8 +323,8 @@ function submitQuestion() {
           v-for="option in question.options"
           :key="option.id"
           type="button"
-          class="rounded-full border px-3 py-1.5 text-[13px]"
-          :class="(questionAnswers[question.id] ?? []).includes(option.id) ? 'border-coral-500 bg-coral-500 text-[#061018]' : 'border-line bg-white/5'"
+          class="rounded-[6px] border px-2.5 py-1 text-[12.5px]"
+          :class="(questionAnswers[question.id] ?? []).includes(option.id) ? 'border-transparent bg-coral-500 text-[#06101c]' : 'border-line bg-raised text-ink-800'"
           @click="toggleAnswer(question.id, option.id, question.allowMultiple)"
         >
           {{ option.label }}
