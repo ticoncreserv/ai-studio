@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Eye, EyeOff } from "@lucide/vue";
+import { Eye, EyeOff, Plus } from "@lucide/vue";
 import { mergeRawEnvInput, visibleRawEnv } from "~/utils/env-mask";
 
 type EnvRow = { id: number; key: string; value: string };
@@ -108,41 +108,34 @@ defineExpose({ submit });
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="mb-3 flex shrink-0 items-center justify-between gap-2">
-      <div class="inline-flex self-start rounded-[9px] border border-line bg-black/20 p-0.5">
-        <button
-          type="button"
-          class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
-          :class="mode === 'form' ? 'bg-white/10 text-ink-950' : 'text-ink-400'"
-          @click="mode = 'form'"
-        >
+    <div class="cx-card-head shrink-0">
+      <div class="cx-seg">
+        <button type="button" class="cx-seg-btn" :data-active="mode === 'form'" @click="mode = 'form'">
           {{ t("admin.form") }}
         </button>
-        <button
-          type="button"
-          class="rounded-[7px] px-3 py-1 text-[12px] font-medium"
-          :class="mode === 'raw' ? 'bg-white/10 text-ink-950' : 'text-ink-400'"
-          @click="mode = 'raw'"
-        >
+        <button type="button" class="cx-seg-btn" :data-active="mode === 'raw'" @click="mode = 'raw'">
           {{ t("admin.raw") }}
         </button>
       </div>
-      <button
+      <UiIconButton
         v-if="mode === 'raw'"
-        type="button"
-        class="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] text-ink-500 transition hover:bg-white/5 hover:text-ink-950"
-        :title="rawSecretsRevealed ? t('admin.hideSecrets') : t('admin.revealSecrets')"
-        :aria-label="rawSecretsRevealed ? t('admin.hideSecrets') : t('admin.revealSecrets')"
+        size="sm"
+        :active="rawSecretsRevealed"
+        :label="rawSecretsRevealed ? t('admin.hideSecrets') : t('admin.revealSecrets')"
         @click="toggleRawSecrets"
       >
-        <EyeOff v-if="rawSecretsRevealed" class="h-4 w-4" />
-        <Eye v-else class="h-4 w-4" />
-      </button>
+        <EyeOff v-if="rawSecretsRevealed" class="h-3.5 w-3.5" />
+        <Eye v-else class="h-3.5 w-3.5" />
+      </UiIconButton>
     </div>
-    <div v-if="mode === 'form'" class="thin-scroll min-h-0 flex-1 space-y-2 overflow-y-auto">
-      <div v-if="!rows.length" class="flex flex-col items-start gap-3 py-6">
+
+    <div v-if="mode === 'form'" class="thin-scroll min-h-0 flex-1 overflow-y-auto py-1.5">
+      <div v-if="!rows.length" class="flex flex-col items-center gap-3 px-4 py-8 text-center">
         <p class="text-[13px] text-ink-400">{{ t("admin.envEmpty") }}</p>
-        <UiButton size="sm" variant="outline" @click="addRow">{{ t("admin.addKey") }}</UiButton>
+        <UiButton size="sm" variant="outline" @click="addRow">
+          <Plus class="h-3.5 w-3.5" />
+          {{ t("admin.addKey") }}
+        </UiButton>
       </div>
       <template v-else>
         <AdminEnvEditorRow
@@ -152,23 +145,27 @@ defineExpose({ submit });
           :secret="secrets?.[row.key]"
           @remove="requestRemove(row)"
         />
-        <UiButton size="sm" variant="ghost" @click="addRow">{{ t("admin.addKey") }}</UiButton>
+        <div class="px-10 pt-1.5">
+          <UiButton size="sm" variant="ghost" @click="addRow">
+            <Plus class="h-3.5 w-3.5" />
+            {{ t("admin.addKey") }}
+          </UiButton>
+        </div>
       </template>
     </div>
     <div v-else class="relative min-h-48 flex-1">
-      <textarea
-        v-model="rawDisplay"
-        class="thin-scroll absolute inset-0 h-full w-full resize-none overflow-y-auto rounded-[10px] border border-line bg-black/25 p-3 font-mono text-[12px] outline-none focus:border-coral-500/40"
-      />
+      <textarea v-model="rawDisplay" class="cx-raw-editor thin-scroll absolute inset-0 overflow-y-auto" />
     </div>
+
     <div v-if="showFooter" class="admin-action-bar mt-4 shrink-0">
       <slot name="actions" />
-      <UiButton size="sm" @click="submit">
+      <UiButton size="sm" variant="outline" @click="submit">
         <slot name="save-label">{{ t("admin.saveEnv") }}</slot>
       </UiButton>
     </div>
+
     <UiDialog :open="pendingRemove != null" :title="pendingRemoveTitle" @close="cancelRemove">
-      <p class="text-sm leading-relaxed text-ink-500">{{ t("admin.removeKeyBody") }}</p>
+      <p class="text-[13px] leading-relaxed text-ink-500">{{ t("admin.removeKeyBody") }}</p>
       <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <UiButton size="sm" variant="outline" data-autofocus @click="cancelRemove">
           {{ t("admin.removeKeyCancel") }}

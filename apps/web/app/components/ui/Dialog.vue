@@ -47,6 +47,7 @@ function onKeydown(event: KeyboardEvent) {
 watch(
   () => props.open,
   (open) => {
+    if (!import.meta.client) return;
     if (open) {
       previouslyFocused.value = document.activeElement as HTMLElement | null;
       window.addEventListener("keydown", onKeydown);

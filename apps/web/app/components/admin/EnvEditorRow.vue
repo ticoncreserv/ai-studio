@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Eye, EyeOff, Trash2 } from "@lucide/vue";
 import { isSecretEnvKey, visibleEnvValue } from "~/utils/env-mask";
 
 const props = defineProps<{
@@ -24,22 +25,34 @@ function onValueInput(event: Event) {
 </script>
 
 <template>
-  <div class="flex items-center gap-2" :data-env-key="row.key">
+  <div class="cx-env-row" :data-env-key="row.key">
     <input
       v-model="row.key"
-      class="h-9 w-[38%] rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
+      class="cx-field cx-field-key"
       :placeholder="t('admin.envKey')"
+      :aria-label="t('admin.envKey')"
     />
     <input
       :value="visibleEnvValue(row.value, revealed, secret)"
       :type="secretRow && !revealed ? 'password' : 'text'"
-      class="h-9 min-w-0 flex-1 rounded-[8px] border border-line bg-black/25 px-2.5 font-mono text-[12px] outline-none focus:border-coral-500/40"
+      class="cx-field min-w-0 flex-1"
       :placeholder="t('admin.envValue')"
+      :aria-label="t('admin.envValue')"
       @input="onValueInput"
     />
-    <UiButton v-if="secretRow" size="sm" variant="ghost" @click="toggleReveal">
-      {{ revealed ? t("admin.hide") : t("admin.reveal") }}
-    </UiButton>
-    <UiButton size="sm" variant="ghost" @click="emit('remove')">{{ t("admin.removeKey") }}</UiButton>
+    <UiIconButton
+      v-if="secretRow"
+      size="sm"
+      :active="revealed"
+      :label="revealed ? t('admin.hide') : t('admin.reveal')"
+      @click="toggleReveal"
+    >
+      <EyeOff v-if="revealed" class="h-3.5 w-3.5" />
+      <Eye v-else class="h-3.5 w-3.5" />
+    </UiIconButton>
+    <span v-else class="h-6 w-6 shrink-0" aria-hidden="true" />
+    <UiIconButton size="sm" :label="t('admin.removeKey')" @click="emit('remove')">
+      <Trash2 class="h-3.5 w-3.5" />
+    </UiIconButton>
   </div>
 </template>

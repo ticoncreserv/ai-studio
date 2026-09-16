@@ -458,3 +458,336 @@ select,
 option {
   color-scheme: dark;
 }
+
+/* ---------- admin settings ---------- */
+
+/* Page title in the settings content column. */
+.cx-settings-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--color-ink-950);
+}
+
+/* A labelled card group. */
+.cx-section {
+  margin-top: 22px;
+}
+
+.cx-section:first-child {
+  margin-top: 0;
+}
+
+/* Relocated explanatory copy, sits between a section label and its card. */
+.cx-section-note {
+  margin: -3px 0 8px;
+  max-width: 64ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-ink-500);
+}
+
+/* Row whose control needs the full width, under the title and description. */
+.cx-row-stack {
+  display: block;
+}
+
+/* Row with a tall multi-line description: keep the controls level with the title. */
+.cx-row-top {
+  align-items: flex-start;
+}
+
+/* Tones for text inside .cx-* classes, which outrank Tailwind's layered colors. */
+.cx-tone-ok {
+  color: var(--color-emerald-300);
+}
+
+.cx-tone-warn {
+  color: var(--color-amber-200);
+}
+
+.cx-row-control {
+  margin-top: 9px;
+}
+
+/* Footnote line inside a card, below the rows it annotates. */
+.cx-note-row {
+  padding: 9px 14px;
+  border-top: 1px solid var(--color-line);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-ink-500);
+}
+
+/* Dismissible info banner above the page title. */
+.cx-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 9px 10px 9px 14px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--cx-radius-panel);
+  background: color-mix(in srgb, var(--color-coral-500) 6%, var(--color-paper));
+}
+
+/* Header strip inside a card: segmented control left, icon actions right. */
+.cx-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+/* Segmented control. */
+.cx-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-line);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.03);
+}
+
+.cx-seg-btn {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--color-ink-500);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.cx-seg-btn:hover {
+  color: var(--color-ink-950);
+}
+
+.cx-seg-btn[data-active="true"] {
+  background: var(--cx-active);
+  color: var(--color-ink-950);
+}
+
+/* Account row pinned to the bottom of the rail. */
+.cx-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px 0 10px;
+  border-top: 1px solid var(--color-line);
+}
+
+.cx-account-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--color-ink-700);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rail items inside one group sit 2px apart; groups are separated by margin. */
+.cx-nav-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Plain right-aligned value text, the quietest kind of row control. */
+.cx-value {
+  font-size: 12px;
+  color: var(--color-ink-600);
+}
+
+.cx-value-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-ink-600);
+}
+
+.cx-link {
+  color: var(--color-coral-400);
+  font-size: 12px;
+  transition: color 120ms ease;
+}
+
+.cx-link:hover {
+  color: var(--color-coral-300);
+}
+
+/* Compact counters card. Cell dividers are inset shadows so nothing shifts. */
+.cx-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cx-stat-cell {
+  padding: 12px 14px;
+  box-shadow: inset -1px 0 0 var(--color-line);
+}
+
+.cx-stat-cell:last-child {
+  box-shadow: none;
+}
+
+.cx-stat-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-ink-400);
+}
+
+.cx-stat-value {
+  margin-top: 5px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--color-ink-950);
+}
+
+@media (max-width: 639px) {
+  .cx-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cx-stat-cell:nth-child(-n + 2) {
+    box-shadow: inset -1px 0 0 var(--color-line), inset 0 -1px 0 var(--color-line);
+  }
+
+  .cx-stat-cell:nth-child(2n) {
+    box-shadow: none;
+  }
+
+  .cx-stat-cell:nth-child(2) {
+    box-shadow: inset 0 -1px 0 var(--color-line);
+  }
+}
+
+/* Compact monospace field used for env keys, values, and provider secrets. */
+.cx-field {
+  height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--cx-radius-control);
+  background: rgb(255 255 255 / 0.03);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-ink-950);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.cx-field:hover {
+  border-color: var(--color-line-strong);
+}
+
+.cx-field:focus {
+  border-color: rgb(77 155 245 / 0.55);
+}
+
+.cx-field::placeholder {
+  font-family: var(--font-sans);
+  color: var(--color-ink-400);
+}
+
+.cx-field-key {
+  width: 40%;
+  flex: none;
+}
+
+.cx-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--cx-radius-control);
+  background: rgb(255 255 255 / 0.03);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--color-ink-950);
+  outline: none;
+  resize: vertical;
+  transition: border-color 120ms ease;
+}
+
+.cx-textarea:focus {
+  border-color: rgb(77 155 245 / 0.55);
+}
+
+/* Full-bleed code surface inside a card, like Cursor's font preview block. */
+.cx-raw-editor {
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: rgb(0 0 0 / 0.18);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-ink-800);
+  outline: none;
+  resize: none;
+}
+
+/* Env key rows inside the editor card. */
+.cx-env-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+}
+
+.cx-env-row + .cx-env-row {
+  border-top: 1px solid rgb(255 255 255 / 0.04);
+}
+
+/* Mobile replacement for the rail. */
+.cx-tabstrip {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+.cx-tab {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--color-ink-500);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.cx-tab[data-active="true"] {
+  background: var(--cx-active);
+  color: var(--color-ink-950);
+}
+
+/* Toast: flat card, no blur. */
+.cx-toast {
+  padding: 6px 12px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--cx-radius-control);
+  background: var(--color-raised);
+  box-shadow: var(--shadow-float);
+  font-size: 12px;
+  color: var(--color-ink-950);
+}
+
+/* Chrome that only exists below the rail breakpoint. Kept here, after the
+   flex declarations above, so it wins over them. */
+@media (min-width: 1024px) {
+  .cx-mobile-only {
+    display: none;
+  }
+}
