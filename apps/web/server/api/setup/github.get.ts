@@ -1,5 +1,6 @@
 import {
   GITHUB_ACCESSED_PATHS,
+  atelierCanonicalOrigin,
   canSetupGitHubApp,
   githubAppCreateAction,
   ensureGitHubWebhookSecret,
@@ -13,6 +14,7 @@ import {
   hasGitHubOAuth,
   loadGitHubAppCredentials,
   saveGitHubAppSetupState,
+  shouldIncludeLoopbackCallbacks,
   syncGitHubAppPublicUrls,
 } from "@atelier/supervisor";
 import { randomBytes } from "node:crypto";
@@ -22,7 +24,8 @@ export default defineEventHandler(async (event) => {
   const configured = hasGitHubOAuth();
   const canCreate = canSetupGitHubApp() && !configured;
   const creds = loadGitHubAppCredentials();
-  const publicUrl = requestPublicUrl(event);
+  const requestOrigin = requestPublicUrl(event);
+  const publicUrl = atelierCanonicalOrigin(requestOrigin);
   const webhookSecret = configured ? ensureGitHubWebhookSecret() : "";
   const state = randomBytes(16).toString("hex");
   if (canCreate) {
@@ -33,8 +36,10 @@ export default defineEventHandler(async (event) => {
       path: "/",
     });
   }
-  if (configured) await syncGitHubAppPublicUrls().catch(() => false);
-  const listenOrigins = [...new Set([publicUrl, ...githubLoopbackOrigins()])];
+  if (configured) await syncGitHubAppPublicUrls(undefined, fetch, publicUrl).catch(() => false);
+  const listenOrigins = shouldIncludeLoopbackCallbacks(publicUrl)
+    ? [...new Set([publicUrl, requestOrigin, ...githubLoopbackOrigins()])]
+    : [publicUrl];
   return {
     configured,
     canCreate,

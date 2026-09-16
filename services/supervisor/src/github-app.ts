@@ -115,6 +115,31 @@ function isBrowserDefaultPort(port: string | undefined): boolean {
   return !port || port === "80" || port === "443";
 }
 
+function formatHostname(name: string): string {
+  return name === "::1" || (name.includes(":") && !name.startsWith("[")) ? `[${name.replace(/^\[|\]$/g, "")}]` : name;
+}
+
+function formatOrigin(protocol: string, name: string, port?: string): string {
+  const host = formatHostname(name);
+  if (!port || isBrowserDefaultPort(port)) return `${protocol}://${host}`;
+  return `${protocol}://${host}:${port}`;
+}
+
+export function isLoopbackOrigin(value?: string): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value.includes("://") ? value : `http://${value}`);
+    return isLoopback(url.hostname.replace(/^\[|\]$/g, ""));
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeOrigin(value: string): string {
+  const url = new URL(value.includes("://") ? value : `https://${value}`);
+  return formatOrigin(url.protocol.replace(":", ""), url.hostname, url.port);
+}
+
 export function atelierPublicUrl(host?: string, proto?: string, forwardedPort?: string): string {
   const listen = String(atelierListenPort());
   const protocol = proto === "https" ? "https" : "http";
@@ -123,11 +148,10 @@ export function atelierPublicUrl(host?: string, proto?: string, forwardedPort?: 
     const { name, port } = splitHost(host);
     if (isLoopback(name)) {
       const next = !isBrowserDefaultPort(port) ? port : !isBrowserDefaultPort(forwardedPort) ? forwardedPort! : listen;
-      return `${protocol}://${name}:${next || listen}`;
+      return formatOrigin(protocol, name, next || listen);
     }
-    if (port) return `${protocol}://${name}:${port}`;
-    if (forwardedPort && !isBrowserDefaultPort(forwardedPort)) return `${protocol}://${name}:${forwardedPort}`;
-    return `${protocol}://${name}`;
+    const next = port && !isBrowserDefaultPort(port) ? port : forwardedPort && !isBrowserDefaultPort(forwardedPort) ? forwardedPort : "";
+    return formatOrigin(protocol, name, next);
   }
 
   const envUrl = process.env.ATELIER_PUBLIC_URL?.replace(/\/$/, "");
@@ -135,15 +159,38 @@ export function atelierPublicUrl(host?: string, proto?: string, forwardedPort?: 
     try {
       const url = new URL(envUrl);
       if (isLoopback(url.hostname) && isBrowserDefaultPort(url.port)) {
-        return `${url.protocol}//${url.hostname}:${listen}`;
+        return formatOrigin(url.protocol.replace(":", ""), url.hostname, listen);
       }
-      return envUrl;
+      return normalizeOrigin(envUrl);
     } catch {
       return envUrl;
     }
   }
 
   return `http://127.0.0.1:${listen}`;
+}
+
+/** Origin GitHub and browsers should call. A dedicated domain in ATELIER_PUBLIC_URL wins over :43123. */
+export function atelierCanonicalOrigin(requestOrigin?: string): string {
+  const envUrl = process.env.ATELIER_PUBLIC_URL?.replace(/\/$/, "");
+  if (envUrl && !isLoopbackOrigin(envUrl)) return normalizeOrigin(envUrl);
+  if (requestOrigin && !isLoopbackOrigin(requestOrigin)) return normalizeOrigin(requestOrigin);
+  if (requestOrigin) {
+    try {
+      const url = new URL(requestOrigin.includes("://") ? requestOrigin : `http://${requestOrigin}`);
+      return atelierPublicUrl(url.host, url.protocol.replace(":", ""), url.port);
+    } catch {
+      return atelierPublicUrl();
+    }
+  }
+  return atelierPublicUrl();
+}
+
+export function shouldIncludeLoopbackCallbacks(origin?: string): boolean {
+  const flag = (process.env.ATELIER_INCLUDE_LOOPBACK_CALLBACKS ?? "").toLowerCase();
+  if (flag === "1" || flag === "true" || flag === "on") return true;
+  if (flag === "0" || flag === "false" || flag === "off") return false;
+  return isLoopbackOrigin(atelierCanonicalOrigin(origin));
 }
 
 export function canSetupGitHubApp(): boolean {
@@ -200,22 +247,26 @@ export function githubLoopbackOrigins(ports = githubLoopbackListenPorts()): stri
 
 export function githubAppRegisteredCallbackUrls(origin?: string): string[] {
   const path = GITHUB_OAUTH_CALLBACK_PATH;
-  const port = atelierListenPort();
-  const ordered = [
-    `http://127.0.0.1:${port}${path}`,
-    `http://localhost:${port}${path}`,
-    `http://localhost${path}`,
-    `http://127.0.0.1${path}`,
-    `http://[::1]:${port}${path}`,
-    origin ? `${origin.replace(/\/$/, "")}${path}` : "",
-    `http://localhost:8080${path}`,
-    `http://127.0.0.1:8080${path}`,
-  ].filter(Boolean);
+  const canonical = atelierCanonicalOrigin(origin);
+  const ordered = [`${canonical}${path}`];
+  if (shouldIncludeLoopbackCallbacks(canonical)) {
+    const port = atelierListenPort();
+    ordered.push(
+      `http://127.0.0.1:${port}${path}`,
+      `http://localhost:${port}${path}`,
+      `http://localhost${path}`,
+      `http://127.0.0.1${path}`,
+      `http://[::1]:${port}${path}`,
+      `http://localhost:8080${path}`,
+      `http://127.0.0.1:8080${path}`,
+    );
+  }
   return [...new Set(ordered)].slice(0, 10);
 }
 
 export function githubAppOAuthCallbackUrls(origin?: string): string[] {
   const urls = new Set<string>(githubAppRegisteredCallbackUrls(origin));
+  if (!shouldIncludeLoopbackCallbacks(origin)) return [...urls];
   const origins = new Set<string>(githubLoopbackOrigins());
   if (origin) origins.add(origin.replace(/\/$/, ""));
   for (const next of origins) {
@@ -227,8 +278,11 @@ export function githubAppOAuthCallbackUrls(origin?: string): string[] {
 }
 
 export function githubAppAccessedUrls(origin?: string): string[] {
-  const origins = new Set<string>(githubLoopbackOrigins());
-  if (origin) origins.add(origin.replace(/\/$/, ""));
+  const canonical = atelierCanonicalOrigin(origin);
+  const origins = new Set<string>([canonical]);
+  if (shouldIncludeLoopbackCallbacks(canonical)) {
+    for (const next of githubLoopbackOrigins()) origins.add(next);
+  }
   const urls = new Set<string>();
   for (const next of origins) {
     for (const path of GITHUB_ACCESSED_PATHS) urls.add(`${next}${path}`);
@@ -237,21 +291,12 @@ export function githubAppAccessedUrls(origin?: string): string[] {
 }
 
 export function preferredOAuthRedirectUri(origin?: string): string {
-  const urls = githubAppRegisteredCallbackUrls(origin || `http://127.0.0.1:${atelierListenPort()}`);
-  return urls.find((url) => url.includes("127.0.0.1:") && !url.includes("127.0.0.1:/")) ?? urls[0];
+  return `${atelierCanonicalOrigin(origin)}${GITHUB_OAUTH_CALLBACK_PATH}`;
 }
 
 export function githubAppAuthorizeRedirectUri(origin?: string): string {
-  if (origin) {
-    try {
-      const url = new URL(origin);
-      if (!isLoopback(url.hostname.replace(/^\[|\]$/g, ""))) {
-        return `${origin.replace(/\/$/, "")}${GITHUB_OAUTH_CALLBACK_PATH}`;
-      }
-    } catch {
-      // Use the loopback callback GitHub already stored.
-    }
-  }
+  const canonical = atelierCanonicalOrigin(origin);
+  if (!isLoopbackOrigin(canonical)) return `${canonical}${GITHUB_OAUTH_CALLBACK_PATH}`;
   return `http://localhost${GITHUB_OAUTH_CALLBACK_PATH}`;
 }
 
@@ -267,18 +312,23 @@ export function oauthRedirectUriForIncomingHost(host?: string, proto?: string, f
 }
 
 export function githubOAuthRedirectCandidates(preferred?: string): string[] {
-  const port = String(atelierListenPort());
-  const extras = [
-    preferred,
-    `http://localhost${GITHUB_OAUTH_CALLBACK_PATH}`,
-    `http://localhost:${GITHUB_OAUTH_CALLBACK_PATH}`,
-    `http://127.0.0.1:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
-    `http://localhost:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
-    `http://127.0.0.1${GITHUB_OAUTH_CALLBACK_PATH}`,
-    `http://127.0.0.1:${GITHUB_OAUTH_CALLBACK_PATH}`,
-    `http://[::1]:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
-    ...githubAppOAuthCallbackUrls(),
-  ];
+  const canonical = preferred
+    ? preferred.replace(/\/api\/auth\/github\/callback$/, "")
+    : atelierCanonicalOrigin();
+  const extras = [preferred, `${atelierCanonicalOrigin(canonical)}${GITHUB_OAUTH_CALLBACK_PATH}`];
+  if (shouldIncludeLoopbackCallbacks(canonical)) {
+    const port = String(atelierListenPort());
+    extras.push(
+      `http://localhost${GITHUB_OAUTH_CALLBACK_PATH}`,
+      `http://localhost:${GITHUB_OAUTH_CALLBACK_PATH}`,
+      `http://127.0.0.1:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
+      `http://localhost:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
+      `http://127.0.0.1${GITHUB_OAUTH_CALLBACK_PATH}`,
+      `http://127.0.0.1:${GITHUB_OAUTH_CALLBACK_PATH}`,
+      `http://[::1]:${port}${GITHUB_OAUTH_CALLBACK_PATH}`,
+    );
+  }
+  extras.push(...githubAppOAuthCallbackUrls(canonical));
   const seen = new Set<string>();
   const urls: string[] = [];
   for (const url of extras) {
@@ -292,14 +342,15 @@ export function githubOAuthRedirectCandidates(preferred?: string): string[] {
 export async function syncGitHubAppPublicUrls(
   creds = loadGitHubAppCredentials(),
   fetchImpl: typeof fetch = fetch,
+  origin?: string,
 ): Promise<boolean> {
   if (!creds?.appId || !creds.privateKey) return false;
-  const origin = `http://127.0.0.1:${atelierListenPort()}`;
+  const publicOrigin = atelierCanonicalOrigin(origin);
   const body = {
-    url: origin,
-    setup_url: `${origin}${GITHUB_SETUP_PATH}`,
-    callback_urls: githubAppRegisteredCallbackUrls(origin),
-    hook_attributes: { url: `${origin}${GITHUB_WEBHOOK_PATH}` },
+    url: publicOrigin,
+    setup_url: `${publicOrigin}${GITHUB_SETUP_PATH}`,
+    callback_urls: githubAppRegisteredCallbackUrls(publicOrigin),
+    hook_attributes: { url: `${publicOrigin}${GITHUB_WEBHOOK_PATH}` },
   };
   try {
     const jwt = appJwt(creds.appId, creds.privateKey);
@@ -328,7 +379,7 @@ export function saveGitHubInstallationId(installationId: string, path = githubAp
 }
 
 export function githubAppManifest(publicUrl: string): GitHubAppManifest {
-  const origin = publicUrl.replace(/\/$/, "");
+  const origin = atelierCanonicalOrigin(publicUrl);
   return {
     name: "Atelier",
     url: origin,

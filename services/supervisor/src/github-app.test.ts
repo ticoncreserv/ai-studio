@@ -2,9 +2,10 @@ import { createHmac, generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyGitHubAppCredentials,
+  atelierCanonicalOrigin,
   atelierPublicUrl,
   credentialsFromManifestResponse,
   githubAppAuthorizeRedirectUri,
@@ -28,7 +29,13 @@ const envKeys = [
   "GITHUB_CLIENT_SECRET",
   "GITHUB_APP_PRIVATE_KEY",
   "GITHUB_WEBHOOK_SECRET",
+  "ATELIER_PUBLIC_URL",
+  "ATELIER_INCLUDE_LOOPBACK_CALLBACKS",
 ];
+
+beforeEach(() => {
+  for (const key of envKeys) delete process.env[key];
+});
 
 afterEach(() => {
   for (const key of envKeys) delete process.env[key];
@@ -94,6 +101,26 @@ describe("github app manifest", () => {
     expect(atelierPublicUrl("localhost:80")).toBe("http://localhost:43123");
     expect(atelierPublicUrl("127.0.0.1:43123")).toBe("http://127.0.0.1:43123");
     expect(atelierPublicUrl("preview.example", "https")).toBe("https://preview.example");
+    expect(atelierPublicUrl("atelier.example.com:443", "https")).toBe("https://atelier.example.com");
+  });
+
+  it("uses a dedicated production domain instead of the listen port", () => {
+    process.env.ATELIER_PUBLIC_URL = "https://atelier.example.com";
+    expect(atelierCanonicalOrigin("http://127.0.0.1:43123")).toBe("https://atelier.example.com");
+    expect(githubAppAuthorizeRedirectUri("http://127.0.0.1:43123")).toBe(
+      "https://atelier.example.com/api/auth/github/callback",
+    );
+    expect(githubAppRegisteredCallbackUrls("http://127.0.0.1:43123")).toEqual([
+      "https://atelier.example.com/api/auth/github/callback",
+    ]);
+    expect(githubAppManifest("http://127.0.0.1:43123")).toMatchObject({
+      url: "https://atelier.example.com",
+      redirect_url: "https://atelier.example.com/api/setup/github/callback",
+      setup_url: "https://atelier.example.com/setup/github",
+      hook_attributes: { url: "https://atelier.example.com/api/webhooks/github", active: false },
+    });
+    expect(githubOAuthRedirectCandidates()[0]).toBe("https://atelier.example.com/api/auth/github/callback");
+    expect(githubOAuthRedirectCandidates()).not.toContain("http://localhost/api/auth/github/callback");
   });
 
   it("keeps the portless localhost callback GitHub already stored", () => {

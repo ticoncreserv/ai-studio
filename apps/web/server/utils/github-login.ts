@@ -50,7 +50,7 @@ export function oauthRedirectUri(event: H3Event): string {
 }
 
 export async function handleGitHubOAuthStart(event: H3Event) {
-  await syncGitHubAppPublicUrls().catch(() => false);
+  await syncGitHubAppPublicUrls(undefined, fetch, requestPublicUrl(event)).catch(() => false);
   const provider = createAuthProvider();
   const { url } = await provider.beginLogin(getQuery(event).redirect?.toString() || "/", oauthRedirectUri(event));
   return sendRedirect(event, url);

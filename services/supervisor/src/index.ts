@@ -13,6 +13,7 @@ export { LocalAuthProvider, GitHubAuthProvider, createAuthProvider, signState, v
 export type { AuthProvider, AuthIdentity } from "./auth.js";
 export {
   applyStoredGitHubAppCredentials,
+  atelierCanonicalOrigin,
   atelierPublicUrl,
   canSetupGitHubApp,
   convertGitHubAppManifest,
@@ -32,6 +33,7 @@ export {
   oauthRedirectUriForIncomingHost,
   preferredOAuthRedirectUri,
   saveGitHubInstallationId,
+  shouldIncludeLoopbackCallbacks,
   syncGitHubAppPublicUrls,
   githubAppWebhookSettingsUrl,
   verifyGitHubWebhookSignature,
