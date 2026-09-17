@@ -9,7 +9,13 @@ const execFileAsync = promisify(execFile);
 export async function worktreeBytes(worktree: string): Promise<number> {
   try {
     const { stdout } = await execFileAsync("du", ["-sb", worktree], { timeout: 30_000 });
-    return Number(stdout.trim().split(/\s+/)[0] || 0);
+    const bytes = Number(stdout.trim().split(/\s+/)[0] || 0);
+    if (Number.isFinite(bytes) && bytes > 0) return bytes;
+  } catch {
+    // GNU `du -sb` is the fast path; BSD/macOS `du` rejects `-b`.
+  }
+  try {
+    return directorySizeFallback(worktree);
   } catch {
     return 0;
   }

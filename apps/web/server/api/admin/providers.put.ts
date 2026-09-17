@@ -15,6 +15,13 @@ export default defineEventHandler(async (event) => {
     moveKey?: "up" | "down";
     resetKey?: boolean;
     deleteKey?: boolean;
+    addCliAccount?: boolean;
+    cliLabel?: string;
+    cliAccountId?: string;
+    moveCli?: "up" | "down";
+    resetCli?: boolean;
+    deleteCli?: boolean;
+    cliEnabled?: boolean;
   }>(event);
   if (!body.id) throw createError({ statusCode: 400, statusMessage: "id required" });
   return { providers: platform().saveProviderSettings(body) };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAgentError, toAgentError } from "./errors.js";
+import { formatAgentError, isAcpUnauthenticated, toAgentError } from "./errors.js";
 
 describe("ACP error formatting", () => {
   it("keeps Error and string messages", () => {
@@ -23,5 +23,11 @@ describe("ACP error formatting", () => {
   it("falls back only when the payload has no message", () => {
     expect(formatAgentError({})).toBe("The Cursor agent failed.");
     expect(formatAgentError(null)).toBe("The Cursor agent failed.");
+  });
+
+  it("recognizes unauthenticated ACP session/new failures", () => {
+    expect(isAcpUnauthenticated(new Error("unauthenticated"))).toBe(true);
+    expect(isAcpUnauthenticated({ code: 401, message: "Unauthorized" })).toBe(true);
+    expect(isAcpUnauthenticated(new Error("ACP process exited (1)"))).toBe(false);
   });
 });

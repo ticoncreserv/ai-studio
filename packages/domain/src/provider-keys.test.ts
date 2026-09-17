@@ -1,14 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyProviderKeyFailure,
+  cursorCliAuthRef,
+  DEFAULT_CURSOR_CLI_ACCOUNT_ID,
+  emptyCursorCliAccount,
   emptyProviderKeyState,
+  isCursorCliAccountUsable,
+  isCursorCliLoggedOut,
   isProviderKeyFailure,
   isProviderKeyUsable,
+  markCursorCliLoggedOut,
   markProviderKeyFailure,
   markProviderKeySuccess,
+  moveCursorCliAccount,
   moveProviderKey,
+  nextCursorCliAccountId,
   nextProviderKeyRef,
   orderProviderKeys,
+  parseCursorCliAuthRef,
   providerKeyRef,
   providerKeySlot,
   PROVIDER_KEY_MAX_FAILURES,
@@ -45,6 +54,18 @@ describe("provider key failure classification", () => {
     ).toBe("auth");
     expect(classifyProviderKeyFailure("ACP process exited (1): 401 Unauthorized")).toBe("auth");
     expect(classifyProviderKeyFailure("ANTHROPIC_API_KEY is not set")).toBe("auth");
+    expect(classifyProviderKeyFailure("unauthenticated")).toBe("auth");
+    expect(classifyProviderKeyFailure("You've hit your usage limit")).toBe("quota");
+    expect(classifyProviderKeyFailure("hit your limit")).toBe("quota");
+    expect(classifyProviderKeyFailure("pro limit reached")).toBe("quota");
+    expect(classifyProviderKeyFailure("out of credits")).toBe("quota");
+  });
+
+  it("treats Cursor CLI login copy as logged-out, not a bad API key", () => {
+    expect(isCursorCliLoggedOut("not logged in")).toBe(true);
+    expect(isCursorCliLoggedOut("Please log in via loginDeepControl")).toBe(true);
+    expect(isProviderKeyFailure("not logged in")).toBe(false);
+    expect(isProviderKeyFailure("Please log in")).toBe(false);
   });
 
   it("leaves unrelated failures alone", () => {
@@ -119,5 +140,37 @@ describe("provider key rotation", () => {
     ]);
     expect(moveProviderKey(keys, "CURSOR_API_KEY", "up").map((row) => row.ref)).toEqual(keys.map((row) => row.ref));
     expect(moveProviderKey(keys, "missing", "down").map((row) => row.ref)).toEqual(keys.map((row) => row.ref));
+  });
+});
+
+describe("cursor CLI accounts", () => {
+  it("keeps default as the first slot id and reuses the lowest free name", () => {
+    expect(nextCursorCliAccountId([])).toBe(DEFAULT_CURSOR_CLI_ACCOUNT_ID);
+    expect(nextCursorCliAccountId([DEFAULT_CURSOR_CLI_ACCOUNT_ID])).toBe("account-2");
+    expect(nextCursorCliAccountId([DEFAULT_CURSOR_CLI_ACCOUNT_ID, "account-3"])).toBe("account-2");
+    expect(cursorCliAuthRef("default")).toBe("cli:default");
+    expect(parseCursorCliAuthRef("cli:default")).toBe("default");
+    expect(parseCursorCliAuthRef("CURSOR_API_KEY")).toBeNull();
+  });
+
+  it("skips a logged-out account even when the cooldown is clear", () => {
+    const now = new Date("2026-09-17T10:00:00.000Z");
+    const loggedOut = emptyCursorCliAccount("default", "primary");
+    const loggedIn = { ...emptyCursorCliAccount("account-2", "backup"), loggedIn: true };
+    expect(isCursorCliAccountUsable(loggedOut, now)).toBe(false);
+    expect(isCursorCliAccountUsable(loggedIn, now)).toBe(true);
+    expect(markCursorCliLoggedOut({ ...loggedIn, account: "dev@example.com" })).toMatchObject({
+      loggedIn: false,
+      account: null,
+    });
+  });
+
+  it("moves a CLI account inside the roster", () => {
+    const accounts = [emptyCursorCliAccount("default"), emptyCursorCliAccount("account-2"), emptyCursorCliAccount("account-3")];
+    expect(moveCursorCliAccount(accounts, "account-3", "up").map((row) => row.id)).toEqual([
+      "default",
+      "account-3",
+      "account-2",
+    ]);
   });
 });

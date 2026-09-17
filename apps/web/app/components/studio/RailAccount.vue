@@ -1,5 +1,8 @@
 <script setup lang="ts">
-const props = defineProps<{ login: string }>();
+const props = defineProps<{
+  login: string;
+  platformAdmin?: boolean;
+}>();
 
 const { t } = useI18n();
 
@@ -9,13 +12,22 @@ const initial = computed(() => (props.login || "?").slice(0, 1).toUpperCase());
 <template>
   <div class="cx-rail-account" role="group" :aria-label="t('nav.account')">
     <div class="cx-rail-lockup">
-      <div class="cx-rail-identity">
+      <NuxtLink
+        v-if="platformAdmin"
+        to="/admin"
+        class="cx-rail-identity cx-rail-identity-link"
+        :aria-label="t('nav.admin')"
+        :title="t('nav.admin')"
+      >
+        <span class="cx-rail-mark" aria-hidden="true">{{ initial }}</span>
+        <span class="cx-rail-login" :title="login">{{ login }}</span>
+      </NuxtLink>
+      <div v-else class="cx-rail-identity">
         <span class="cx-rail-mark" aria-hidden="true">{{ initial }}</span>
         <span class="cx-rail-login" :title="login">{{ login }}</span>
       </div>
       <div class="cx-rail-tools">
-        <AuthLoginLocale placement="up" />
-        <ThemeSwatches placement="up" />
+        <StudioAccountMenu />
       </div>
     </div>
   </div>

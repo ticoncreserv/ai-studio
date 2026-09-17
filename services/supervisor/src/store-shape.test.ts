@@ -32,6 +32,7 @@ describe("store shape", () => {
         model: "gpt-5",
         keys: [{ ref: "CURSOR_API_KEY", label: "primary", enabled: true, failures: 0, lastUsedAt: null, lastFailureAt: null, cooldownUntil: null, lastError: null, lastFailureKind: null }],
         models: [{ id: "gpt-5", label: "GPT-5" }],
+        cliAccounts: [{ id: "default", label: "Default", enabled: true, loggedIn: true, account: "dev@example.com", failures: 0, lastUsedAt: null, lastFailureAt: null, cooldownUntil: null, lastError: null, lastFailureKind: null }],
       };
       db.sessions.push({
         id: "s1",
@@ -45,7 +46,10 @@ describe("store shape", () => {
     const rows = flattenDb(json.read());
     expect(rows.events).toHaveLength(1);
     expect(rows.leases).toHaveLength(1);
-    expect(rows.providers.find((row) => row.id === "cursor")).toMatchObject({ model: "gpt-5" });
+    expect(rows.providers.find((row) => row.id === "cursor")).toMatchObject({
+      model: "gpt-5",
+      cliAccounts: [{ id: "default", loggedIn: true }],
+    });
     const again = assembleDb(rows, json.read());
     expect(compareStoreShapes(json.read(), again)).toEqual([]);
     expect(again.sessions[0]?.events[0]).toMatchObject({ type: "user_message", text: "hi" });
@@ -94,6 +98,16 @@ describe("store shape", () => {
     const json = new JsonStore(file);
     expect(json.read().usageProfiles.map((row) => row.id)).toEqual(["starter", "standard", "premium"]);
     expect(json.read().usageLedger).toEqual([]);
+  });
+
+  it("does not resurrect a deleted usage profile from the seeds", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-usage-delete-"));
+    dirs.push(dir);
+    const json = new JsonStore(join(dir, "platform.json"));
+    json.update((db) => {
+      db.usageProfiles = db.usageProfiles.filter((row) => row.id !== "starter");
+    });
+    expect(json.read().usageProfiles.map((row) => row.id)).toEqual(["standard", "premium"]);
   });
 
   it("imports json into a snapshot replica", () => {

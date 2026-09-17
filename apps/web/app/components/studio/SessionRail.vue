@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, MessageSquarePlus, Plug, Search, SlidersHorizontal, Sparkles } from "@lucide/vue";
+import { BookOpen, Database, MessageSquarePlus, PanelLeft, Plug, Search, SlidersHorizontal, Sparkles } from "@lucide/vue";
 import type { StudioSession } from "~/types/studio";
 
 const props = defineProps<{
@@ -7,6 +7,7 @@ const props = defineProps<{
   activeId?: string;
   query: string;
   login: string;
+  platformAdmin?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -17,7 +18,9 @@ const emit = defineEmits<{
   rules: [];
   skills: [];
   mcp: [];
+  connections: [];
   settings: [];
+  close: [];
 }>();
 
 const { t } = useI18n();
@@ -55,7 +58,21 @@ function age(at: string) {
 </script>
 
 <template>
-  <aside class="cx-rail min-h-0 flex-col overflow-hidden">
+  <aside id="studio-session-rail" class="studio-session-rail cx-rail min-h-0 overflow-hidden">
+    <div class="cx-titlebar flex shrink-0 items-center">
+      <span class="app-brand">
+        <UiLogo :size="24" />
+        <span class="app-wordmark">{{ t("app.wordmark") }}</span>
+      </span>
+      <UiIconButton
+        class="ml-auto"
+        :label="t('nav.toggleRail')"
+        size="sm"
+        @click="emit('close')"
+      >
+        <PanelLeft class="h-3.5 w-3.5" />
+      </UiIconButton>
+    </div>
     <div class="px-2 pt-1.5">
       <button type="button" class="cx-nav-item" @click="emit('create')">
         <MessageSquarePlus class="h-3.5 w-3.5" />
@@ -72,6 +89,10 @@ function age(at: string) {
       <button type="button" class="cx-nav-item" @click="emit('mcp')">
         <Plug class="h-3.5 w-3.5" />
         {{ t("nav.mcp") }}
+      </button>
+      <button type="button" class="cx-nav-item" @click="emit('connections')">
+        <Database class="h-3.5 w-3.5" />
+        {{ t("nav.connections") }}
       </button>
       <button type="button" class="cx-nav-item" @click="emit('settings')">
         <SlidersHorizontal class="h-3.5 w-3.5" />
@@ -98,7 +119,7 @@ function age(at: string) {
       />
     </div>
 
-    <div class="thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2" aria-labelledby="studio-sessions-label">
+    <div class="cx-session-list thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2" aria-labelledby="studio-sessions-label">
       <p v-if="!sessions.length" class="px-2 py-3 text-[12px] text-ink-400">{{ t("workspace.noSessions") }}</p>
       <button
         v-for="session in visible"
@@ -118,6 +139,6 @@ function age(at: string) {
       </button>
     </div>
 
-    <StudioRailAccount :login="login" />
+    <StudioRailAccount :login="login" :platform-admin="platformAdmin" />
   </aside>
 </template>

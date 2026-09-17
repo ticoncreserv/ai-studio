@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateUsage,
   billableTokens,
+  createUsageProfile,
   defaultUsageProfiles,
   evaluateUsage,
   grantedTokens,
@@ -13,6 +14,7 @@ import {
   summarizeUsage,
   usageDayKey,
   usagePeriodKey,
+  usageProfileIdFromLabel,
   usageRetentionDays,
   type UsageGrant,
   type UsageLedgerEntry,
@@ -49,6 +51,20 @@ describe("usage profiles", () => {
 
   it("falls back to the seeds when the store has no profiles", () => {
     expect(resolveUsageProfile({ usageProfileId: "starter" }, []).id).toBe("starter");
+  });
+
+  it("slugs a plan name and avoids colliding ids", () => {
+    expect(usageProfileIdFromLabel("Agency Desk")).toBe("agency-desk");
+    expect(usageProfileIdFromLabel("Agência")).toBe("agencia");
+    expect(usageProfileIdFromLabel("Agency", ["agency"])).toBe("agency-2");
+    expect(usageProfileIdFromLabel("!!!", ["plan", "plan-2"])).toBe("plan-3");
+  });
+
+  it("copies the standard cap when creating a plan", () => {
+    const created = createUsageProfile("Agency", defaultUsageProfiles());
+    expect(created.id).toBe("agency");
+    expect(created.label).toBe("Agency");
+    expect(created.limits).toEqual(defaultUsageProfiles()[1]!.limits);
   });
 
   it("keeps the shared run budget when a profile sets no tool call cap", () => {

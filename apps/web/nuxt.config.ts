@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { installDisconnectGuard } from "./server/utils/disconnect-guard";
+import { atelierLaravelPublicAssets } from "./server/utils/preview-public-assets";
 
 installDisconnectGuard();
 
@@ -25,7 +26,9 @@ export default defineNuxtConfig({
   modules: ["@nuxtjs/i18n"],
   css: ["~/assets/css/main.css"],
   vite: {
-    plugins: [tailwindcss()],
+    // Preview GET/HEAD must run before Vite's `?import` rewrite; login POSTs go to Nitro.
+    // Orphan Laravel /assets and /resources resolve via skip_vite paths, /w/:id Referer, or cookie.
+    plugins: [tailwindcss(), atelierLaravelPublicAssets()],
     server: {
       host: "0.0.0.0",
       allowedHosts: true,
@@ -74,7 +77,7 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      title: "Atelier",
+      title: "Concreserv IA Studio",
       link: [
         { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
         { rel: "icon", type: "image/png", href: "/favicon.png" },

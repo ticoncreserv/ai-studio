@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ProviderKeyState, ProviderModel, Role, SessionEvent, UsageProfile, WorkspaceStatus } from "@atelier/contracts";
+import type { CursorCliAccount, ProviderKeyState, ProviderModel, Role, SessionEvent, UsageProfile, WorkspaceStatus } from "@atelier/contracts";
 import {
   defaultFlags,
   defaultUsageProfiles,
@@ -39,6 +39,8 @@ export interface WorkspaceRecord {
   warmedAt?: string;
   lastActiveAt: string;
   bytes?: number;
+  /** User chose Hibernate in Studio; opening the workspace must not auto-wake. */
+  hibernatedByUser?: boolean;
 }
 
 export interface SessionRecord {
@@ -58,6 +60,7 @@ export interface ProviderConfig {
   model?: string;
   keys?: ProviderKeyState[];
   models?: ProviderModel[];
+  cliAccounts?: CursorCliAccount[];
 }
 
 export interface InviteRecord {
@@ -129,6 +132,16 @@ function mergeById<T extends { id: string }>(current: T[] | undefined, defaults:
   for (const row of current ?? []) map.set(row.id, { ...map.get(row.id), ...row });
   const order = [...defaults.map((row) => row.id), ...(current ?? []).map((row) => row.id).filter((id) => !defaults.some((row) => row.id === id))];
   return order.map((id) => map.get(id)!);
+}
+
+/** Stored rows win on membership so deleting a seed plan is not undone on the next read. */
+function overlayDefaultsById<T extends { id: string }>(current: T[] | undefined, defaults: T[]): T[] {
+  if (!current?.length) return defaults;
+  const seeds = new Map(defaults.map((row) => [row.id, row]));
+  return current.map((row) => {
+    const seed = seeds.get(row.id);
+    return seed ? { ...seed, ...row } : row;
+  });
 }
 
 const emptyDb = (): DbShape => ({
@@ -239,7 +252,7 @@ export class JsonStore implements PlatformStore {
       migrationLog: raw.migrationLog ?? [],
       skillPrefs: raw.skillPrefs ?? [],
       mcpPrefs: raw.mcpPrefs ?? [],
-      usageProfiles: mergeById(raw.usageProfiles, base.usageProfiles),
+      usageProfiles: overlayDefaultsById(raw.usageProfiles, base.usageProfiles),
       usageLedger: raw.usageLedger ?? [],
       usageRollups: raw.usageRollups ?? [],
       usageGrants: raw.usageGrants ?? [],

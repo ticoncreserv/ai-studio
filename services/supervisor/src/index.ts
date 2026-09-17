@@ -6,7 +6,7 @@ export { bus, EventBus } from "./bus.js";
 export type { BusListener } from "./bus.js";
 export { authorizeSessionSocket } from "./ws-auth.js";
 export { AcpSession } from "./acp/session.js";
-export { createProvider, listProviders, MockProvider, CursorProvider, ClaudeProvider, GeminiProvider, GrokProvider, PROVIDER_CATALOG } from "./providers/index.js";
+export { createProvider, listProviders, MockProvider, CursorProvider, CodexProvider, ClaudeProvider, GeminiProvider, GrokProvider, PROVIDER_CATALOG } from "./providers/index.js";
 export { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider, implementedProviders } from "./providers/env.js";
 export { inspectProviderHealth, listProviderHealth } from "./providers/health.js";
 export { wrapSandbox, sanitizeAgentEnv } from "./providers/sandbox.js";

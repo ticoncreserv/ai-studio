@@ -80,6 +80,18 @@ async function cloneFromSource(input: CloneInput): Promise<void> {
     }
   }
   await git(input.worktree, ["checkout", "-B", input.branch], input.user);
+  // Fixture clones stand in for ATELIER_REPO. Point origin at GitHub so ensureWorkspace
+  // does not treat them as foreign and destroy the worktree on the next warm.
+  if (input.repo) await pointOriginAtGithub(input.worktree, input.repo, input.user);
+}
+
+async function pointOriginAtGithub(worktree: string, repo: string, user: CloneInput["user"]): Promise<void> {
+  const publicUrl = `https://github.com/${repo}.git`;
+  try {
+    await git(worktree, ["remote", "set-url", "origin", publicUrl], user);
+  } catch {
+    await git(worktree, ["remote", "add", "origin", publicUrl], user);
+  }
 }
 
 export function neededFetchRefs(defaultBranch: string, userBranch: string): string[] {

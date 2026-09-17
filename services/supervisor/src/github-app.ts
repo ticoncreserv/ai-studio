@@ -160,6 +160,21 @@ export function normalizeOrigin(value: string): string {
   return formatOrigin(url.protocol.replace(":", ""), url.hostname, url.port);
 }
 
+/** Configured public origin. Loopback `ATELIER_PUBLIC_URL` still wins over 127.0.0.1 vs localhost. */
+export function atelierConfiguredPublicUrl(): string | undefined {
+  const envUrl = process.env.ATELIER_PUBLIC_URL?.replace(/\/$/, "");
+  if (!envUrl) return undefined;
+  try {
+    const url = new URL(envUrl);
+    if (isLoopback(url.hostname) && isBrowserDefaultPort(url.port)) {
+      return formatOrigin(url.protocol.replace(":", ""), url.hostname, String(atelierListenPort()));
+    }
+    return normalizeOrigin(envUrl);
+  } catch {
+    return envUrl;
+  }
+}
+
 export function atelierPublicUrl(host?: string, proto?: string, forwardedPort?: string): string {
   const listen = String(atelierListenPort());
   const protocol = proto === "https" ? "https" : "http";
@@ -174,26 +189,13 @@ export function atelierPublicUrl(host?: string, proto?: string, forwardedPort?: 
     return formatOrigin(protocol, name, next);
   }
 
-  const envUrl = process.env.ATELIER_PUBLIC_URL?.replace(/\/$/, "");
-  if (envUrl) {
-    try {
-      const url = new URL(envUrl);
-      if (isLoopback(url.hostname) && isBrowserDefaultPort(url.port)) {
-        return formatOrigin(url.protocol.replace(":", ""), url.hostname, listen);
-      }
-      return normalizeOrigin(envUrl);
-    } catch {
-      return envUrl;
-    }
-  }
-
-  return `http://127.0.0.1:${listen}`;
+  return atelierConfiguredPublicUrl() ?? `http://127.0.0.1:${listen}`;
 }
 
-/** Origin GitHub and browsers should call. A dedicated domain in ATELIER_PUBLIC_URL wins over :43123. */
+/** Origin GitHub and browsers should call. `ATELIER_PUBLIC_URL` wins over the request host. */
 export function atelierCanonicalOrigin(requestOrigin?: string): string {
-  const envUrl = process.env.ATELIER_PUBLIC_URL?.replace(/\/$/, "");
-  if (envUrl && !isLoopbackOrigin(envUrl)) return normalizeOrigin(envUrl);
+  const configured = atelierConfiguredPublicUrl();
+  if (configured) return configured;
   if (requestOrigin && !isLoopbackOrigin(requestOrigin)) return normalizeOrigin(requestOrigin);
   if (requestOrigin) {
     try {
@@ -313,18 +315,7 @@ export function preferredOAuthRedirectUri(origin?: string): string {
 }
 
 export function githubAppAuthorizeRedirectUri(origin?: string): string {
-  const canonical = atelierCanonicalOrigin(origin);
-  if (!isLoopbackOrigin(canonical)) return `${canonical}${GITHUB_OAUTH_CALLBACK_PATH}`;
-  // Stay on the origin the browser opened (usually ATELIER_PUBLIC_URL / :43123).
-  // Portless localhost needs the :80 proxy and is often not the registered callback.
-  if (origin && isLoopbackOrigin(origin)) {
-    try {
-      return `${normalizeOrigin(origin)}${GITHUB_OAUTH_CALLBACK_PATH}`;
-    } catch {
-      // fall through
-    }
-  }
-  return `${canonical}${GITHUB_OAUTH_CALLBACK_PATH}`;
+  return preferredOAuthRedirectUri(origin);
 }
 
 export function oauthRedirectUriForIncomingHost(host?: string, proto?: string, forwardedPort?: string): string {

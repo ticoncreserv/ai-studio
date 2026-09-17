@@ -1,5 +1,17 @@
 <script setup lang="ts">
 import type { ClientCommand } from "@atelier/contracts";
+import { previewDebugCommand, type PreviewDebugAction } from "~/utils/preview-debug-prompt";
+import type { PreviewInspectTarget } from "~/utils/preview-inspect";
+import {
+  RAIL_STORAGE_KEY,
+  SIDEBAR_STORAGE_KEY,
+  resolveSidebarOpen,
+  sidebarOverrideFromStorage,
+  sidebarStorageValue,
+  sidebarVisibilityClass,
+  studioRailOverlays,
+  type SidebarOverride,
+} from "~/utils/studio-layout";
 
 const studio = useStudio();
 const {
@@ -31,8 +43,7 @@ const {
   mode,
   recipeId,
   attachments,
-  mobileTab,
-  debugOpen,
+  inspectPins,
   previewDebug,
   questionAnswers,
   events,
@@ -55,6 +66,7 @@ const {
   deleteUserMcp,
   refresh,
   sendCommand,
+  commandBusy,
   submit,
   cancelRun,
   dropQueue,
@@ -70,13 +82,75 @@ const {
   saveUserEnv,
   hibernate,
   resume,
-  signOut,
-  addPreviewNote,
+  addInspectPins,
+  removeInspectPin,
   statusLabel,
   useSuggestion,
 } = studio;
 
-const railOpen = ref(true);
+const railOverlayOpen = ref(false);
+const railDockedClosed = ref(false);
+const sidebarOverride = ref<SidebarOverride>(null);
+const sidebarPaneClass = computed(() => sidebarVisibilityClass(sidebarOverride.value));
+
+onMounted(() => {
+  sidebarOverride.value = sidebarOverrideFromStorage(sessionStorage.getItem(SIDEBAR_STORAGE_KEY));
+  railDockedClosed.value = sidebarOverrideFromStorage(sessionStorage.getItem(RAIL_STORAGE_KEY)) === false;
+});
+
+function persistSidebar(open: boolean) {
+  sidebarOverride.value = open;
+  sessionStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarStorageValue(open));
+}
+
+function persistRailDocked(open: boolean) {
+  railDockedClosed.value = !open;
+  sessionStorage.setItem(RAIL_STORAGE_KEY, sidebarStorageValue(open));
+}
+
+function toggleSidebar() {
+  persistSidebar(!resolveSidebarOpen(sidebarOverride.value, window.innerWidth));
+}
+
+function closeRailOverlay() {
+  railOverlayOpen.value = false;
+}
+
+function closeRail() {
+  if (studioRailOverlays(window.innerWidth)) {
+    closeRailOverlay();
+    return;
+  }
+  persistRailDocked(false);
+}
+
+function toggleRailOverlay() {
+  if (studioRailOverlays(window.innerWidth)) {
+    railOverlayOpen.value = !railOverlayOpen.value;
+    return;
+  }
+  persistRailDocked(railDockedClosed.value);
+}
+
+function onSelectSession(id: string) {
+  selectSession(id);
+  closeRailOverlay();
+}
+
+function onCreateSession() {
+  newSession();
+  closeRailOverlay();
+}
+
+function openSheet(name: typeof sheet.value) {
+  sheet.value = name;
+  closeRailOverlay();
+}
+
+function onInspectPin(targets: PreviewInspectTarget[]) {
+  addInspectPins(targets);
+  persistSidebar(true);
+}
 
 const usageBlocked = computed(() => data.value?.usage?.decision.decision === "block");
 const usageNotice = computed(() => {
@@ -89,25 +163,16 @@ const usageNotice = computed(() => {
 });
 
 const conversationTitle = computed(() => data.value?.session?.title || t("workspace.project"));
-const sessionIndex = computed(() =>
-  data.value?.sessions.findIndex((session) => session.id === data.value?.session?.id) ?? -1,
-);
-
-function stepSession(delta: number) {
-  const list = data.value?.sessions ?? [];
-  const next = list[sessionIndex.value + delta];
-  if (next) void selectSession(next.id);
-}
 
 function onCommand(payload: { type: string; [key: string]: unknown }) {
   void sendCommand(payload as ClientCommand);
 }
 
-function onFixDebug() {
-  const eventId = lastRuntimeError.value && lastRuntimeError.value.type === "runtime_error" ? lastRuntimeError.value.id : "";
-  if (!eventId) return;
-  void sendCommand({ type: "fix_error", eventId });
-  debugOpen.value = false;
+function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
+  const runtime = lastRuntimeError.value;
+  const eventId = runtime && runtime.type === "runtime_error" ? runtime.id : undefined;
+  void sendCommand(previewDebugCommand(payload?.action ?? "nplusone", previewDebug.value, t, eventId, payload?.sql));
+  sheet.value = null;
 }
 </script>
 
@@ -128,13 +193,43 @@ function onFixDebug() {
     </div>
   </div>
 
-  <div v-else class="flex h-screen flex-col overflow-hidden bg-canvas lg:flex-row">
+  <div v-else class="@container flex h-dvh w-full min-w-0 max-w-full flex-col overflow-hidden bg-canvas min-[900px]:flex-row">
+    <button
+      v-if="railOverlayOpen"
+      type="button"
+      class="fixed inset-0 z-[65] bg-black/50 min-[1200px]:hidden"
+      :aria-label="t('nav.toggleRail')"
+      @click="closeRailOverlay"
+    />
+    <StudioSessionRail
+      :data-open="railOverlayOpen || undefined"
+      :data-closed="railDockedClosed || undefined"
+      :sessions="data.sessions"
+      :active-id="data.session?.id"
+      :query="query"
+      :login="data.user.login"
+      :platform-admin="!!data.user.platformAdmin"
+      @update:query="query = $event"
+      @search="refresh"
+      @select="onSelectSession"
+      @create="onCreateSession"
+      @rules="openSheet('rules')"
+      @skills="openSheet('skills')"
+      @mcp="openSheet('mcp')"
+      @connections="openSheet('connections')"
+      @settings="openSheet('settings')"
+      @close="closeRail"
+    />
+    <button
+      v-if="sidebarOverride === true"
+      type="button"
+      class="fixed inset-0 z-40 bg-black/50 min-[900px]:hidden"
+      :aria-label="t('workspace.closeChat')"
+      @click="persistSidebar(false)"
+    />
     <div
-      class="flex min-h-0 min-w-0 flex-1 flex-col lg:flex-none"
-      :class="[
-        railOpen ? 'lg:w-[555px]' : 'lg:w-[340px]',
-        mobileTab === 'preview' ? 'hidden lg:flex' : 'flex',
-      ]"
+      class="min-h-0 min-w-0 flex-col overflow-hidden bg-canvas max-[899px]:fixed max-[899px]:inset-y-0 max-[899px]:bottom-12 max-[899px]:left-0 max-[899px]:z-50 max-[899px]:w-full max-[899px]:border-r max-[899px]:border-line max-[899px]:shadow-float min-[900px]:relative min-[900px]:w-[392px] min-[900px]:max-w-[392px] min-[900px]:flex-none"
+      :class="sidebarPaneClass"
     >
       <StudioHeader
         :title="conversationTitle"
@@ -144,41 +239,15 @@ function onFixDebug() {
         :login="data.user.login"
         :presence-count="data.presence.length"
         :presence-label="t('workspace.presence', { count: data.presence.length })"
-        :publish-enabled="!!data?.flags?.publish"
-        :platform-admin="!!data.user.platformAdmin"
-        :rail-open="railOpen"
-        :can-go-prev="sessionIndex > 0"
-        :can-go-next="sessionIndex >= 0 && sessionIndex < data.sessions.length - 1"
+        :rail-overlay-open="railOverlayOpen"
+        :rail-docked-closed="railDockedClosed"
         @invite="dialog = 'invite'"
         @share="dialog = 'share'"
-        @rules="sheet = 'rules'"
-        @connections="sheet = 'connections'"
-        @settings="sheet = 'settings'"
-        @shortcuts="dialog = 'shortcuts'"
-        @sign-out="signOut"
-        @toggle-rail="railOpen = !railOpen"
-        @prev="stepSession(-1)"
-        @next="stepSession(1)"
+        @toggle-rail="toggleRailOverlay"
+        @close-sidebar="persistSidebar(false)"
       />
 
       <div class="flex min-h-0 min-w-0 flex-1">
-        <StudioSessionRail
-          v-if="railOpen"
-          class="hidden w-[215px] shrink-0 lg:flex"
-          :sessions="data.sessions"
-          :active-id="data.session?.id"
-          :query="query"
-          :login="data.user.login"
-          @update:query="query = $event"
-          @search="refresh"
-          @select="selectSession"
-          @create="newSession"
-          @rules="sheet = 'rules'"
-          @skills="sheet = 'skills'"
-          @mcp="sheet = 'mcp'"
-          @settings="sheet = 'settings'"
-        />
-
         <StudioChatPane
           :events="events"
           :sending="sending"
@@ -186,11 +255,8 @@ function onFixDebug() {
           :working-since="workingSince"
           :failed-event-id="failedEventId"
           :enter-event-id="enterEventId"
-          :query="query"
+          :command-busy="commandBusy"
           @command="onCommand"
-          @update:query="query = $event"
-          @search="refresh"
-          @create="newSession"
           @suggestion="useSuggestion"
           @fork="newSession"
           @retry="retryFailed"
@@ -209,6 +275,7 @@ function onFixDebug() {
             :provider="data.session?.provider ?? data.preferredProvider"
             :providers="data.providers"
             :attachments="attachments"
+            :inspect-pins="inspectPins"
             :placeholder="sending || events.length ? t('chat.followUp') : t('chat.placeholder')"
             :mentions-open="mentionsOpen"
             :mention-hits="mentionHits"
@@ -236,6 +303,7 @@ function onFixDebug() {
             @manage-mcp="sheet = 'mcp'"
             @attach="attachFiles"
             @remove-attachment="attachments = attachments.filter((a) => a.path !== $event)"
+            @remove-inspect="removeInspectPin"
             @toggle-spectator="toggleSpectator"
             @drop-queue="dropQueue"
             @update:provider="setProvider"
@@ -245,8 +313,7 @@ function onFixDebug() {
     </div>
 
     <StudioPreviewPane
-      class="min-w-0 flex-1"
-      :class="mobileTab === 'chat' ? 'hidden lg:flex' : 'flex'"
+      class="flex min-h-0 min-w-0 w-full flex-1 overflow-hidden"
       :src="previewSrc"
       :status="data.workspace.status"
       :title="t('workspace.project')"
@@ -254,35 +321,37 @@ function onFixDebug() {
       :rotated="rotated"
       :preview-key="previewKey"
       :tool-mode="toolMode"
-      :debug-open="debugOpen"
+      :debug-open="sheet === 'debug'"
       :debug="previewDebug"
       :last-error="data.workspace.lastError"
       :resuming="previewBusy"
+      :process-running="data.workspace.previewProcessRunning"
+      :can-edit="data.canEdit"
       @update:viewport="viewport = $event"
       @update:rotated="rotated = $event"
       @update:tool-mode="toolMode = $event"
-      @update:debug-open="debugOpen = $event"
+      @update:debug-open="sheet = $event ? 'debug' : sheet === 'debug' ? null : sheet"
       @refresh="previewKey += 1"
-      @note="addPreviewNote"
+      @pin="onInspectPin"
       @resume="resume"
-      @fix-debug="onFixDebug"
-      @toggle-rail="railOpen = !railOpen"
+      @hibernate="hibernate"
+      @toggle-rail="toggleSidebar"
     />
 
-    <nav class="grid shrink-0 grid-cols-2 border-t border-line bg-surface lg:hidden">
+    <nav class="relative z-[60] grid shrink-0 grid-cols-2 border-t border-line bg-surface min-[900px]:hidden">
       <button
         type="button"
         class="py-2.5 text-[12px]"
-        :class="mobileTab === 'chat' ? 'text-ink-950' : 'text-ink-400'"
-        @click="mobileTab = 'chat'"
+        :class="sidebarOverride === true ? 'text-ink-950' : 'text-ink-400'"
+        @click="persistSidebar(true)"
       >
         {{ t("workspace.openChat") }}
       </button>
       <button
         type="button"
         class="py-2.5 text-[12px]"
-        :class="mobileTab === 'preview' ? 'text-ink-950' : 'text-ink-400'"
-        @click="mobileTab = 'preview'"
+        :class="sidebarOverride === true ? 'text-ink-400' : 'text-ink-950'"
+        @click="persistSidebar(false)"
       >
         {{ t("workspace.openPreview") }}
       </button>
@@ -300,6 +369,11 @@ function onFixDebug() {
       :pending-permission="pendingPermission"
       :question-answers="questionAnswers"
       :toast="toast"
+      :debug="previewDebug"
+      :debug-pending="previewBusy && !previewDebug"
+      :debug-error="data.workspace.lastError"
+      :has-runtime-error="Boolean(lastRuntimeError)"
+      :command-busy="commandBusy"
       @update:sheet="sheet = $event"
       @update:dialog="dialog = $event"
       @update:palette-query="paletteQuery = $event"
@@ -317,6 +391,7 @@ function onFixDebug() {
       @hibernate="hibernate"
       @sync="sendCommand({ type: 'sync_base' })"
       @update:question-answers="questionAnswers = $event"
+      @debug-action="onFixDebug"
     />
   </div>
 </template>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultFlags, emptyProviderKeyState, markProviderKeyFailure } from "@atelier/domain";
+import { defaultFlags, emptyCursorCliAccount, emptyProviderKeyState, markProviderKeyFailure } from "@atelier/domain";
 import { inspectProviderHealth, isProviderSelectable, listProviderHealth } from "./health.js";
 
 describe("provider health", () => {
@@ -12,6 +12,19 @@ describe("provider health", () => {
   it("reports unconfigured when the flag is on but the key is missing", () => {
     const flags = { ...defaultFlags, multiProvider: true, claudeProvider: true };
     expect(inspectProviderHealth("claude", flags, { PATH: process.env.PATH }).status).toBe("unconfigured");
+  });
+
+  it("marks cursor available when a CLI account is signed in without a key", () => {
+    const health = inspectProviderHealth(
+      "cursor",
+      defaultFlags,
+      { PATH: "/usr/bin" },
+      undefined,
+      [],
+      [{ ...emptyCursorCliAccount("default"), loggedIn: true }],
+    );
+    expect(health.hasCredential).toBe(true);
+    expect(health.status).not.toBe("unconfigured");
   });
 
   it("marks cursor available when a key and binary exist", () => {
@@ -27,6 +40,7 @@ describe("provider health", () => {
     const rows = listProviderHealth(defaultFlags, { VITEST: "true" });
     expect(rows.some((row) => row.id === "mock" && row.status === "available")).toBe(true);
     expect(rows.some((row) => row.id === "cursor")).toBe(true);
+    expect(rows.some((row) => row.id === "codex")).toBe(true);
   });
 
   it("treats a second key slot as a credential", () => {

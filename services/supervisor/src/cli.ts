@@ -9,6 +9,11 @@ if (!process.env.VITEST) {
 }
 
 const platform = getPlatform();
+if (!process.env.VITEST) {
+  await platform.probeCursorApiKeys().catch((error) => {
+    console.error("[atelier-supervisor] Cursor API key probe failed", error);
+  });
+}
 const reconciler = new Reconciler();
 reconciler.start();
 

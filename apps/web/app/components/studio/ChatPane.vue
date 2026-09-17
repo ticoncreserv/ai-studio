@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SessionEvent } from "@atelier/contracts";
-import { ChevronDown, Plus, Search } from "@lucide/vue";
+import { ChevronDown } from "@lucide/vue";
 
 const props = defineProps<{
   events: SessionEvent[];
@@ -9,14 +9,11 @@ const props = defineProps<{
   workingSince: number | null;
   failedEventId: string;
   enterEventId: string;
-  query: string;
+  commandBusy?: boolean;
 }>();
 
 const emit = defineEmits<{
   command: [payload: { type: string; [key: string]: unknown }];
-  "update:query": [value: string];
-  search: [];
-  create: [];
   suggestion: [text: string];
   fork: [];
   retry: [];
@@ -87,21 +84,6 @@ const workingLabel = computed(() =>
 
 <template>
   <section class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <div class="flex items-center gap-1.5 px-2 pb-1 lg:hidden">
-      <div class="cx-search flex-1">
-        <Search class="h-3.5 w-3.5 shrink-0 text-ink-400" />
-        <input
-          :value="query"
-          :placeholder="t('nav.searchSessions')"
-          @input="emit('update:query', ($event.target as HTMLInputElement).value)"
-          @change="emit('search')"
-        />
-      </div>
-      <UiIconButton :label="t('nav.newSession')" size="sm" @click="emit('create')">
-        <Plus class="h-4 w-4" />
-      </UiIconButton>
-    </div>
-
     <div ref="scroller" class="thin-scroll min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3 pt-2">
       <div v-if="!events.length" class="pt-2">
         <p class="text-[13px] text-ink-950">{{ t("chat.emptyTitle") }}</p>
@@ -126,6 +108,7 @@ const workingLabel = computed(() =>
         :event="event"
         :enter="event.id === enterEventId"
         :failed="event.id === failedEventId"
+        :command-busy="commandBusy"
         @command="emit('command', $event)"
         @reuse="emit('suggestion', $event)"
         @fork="emit('fork')"

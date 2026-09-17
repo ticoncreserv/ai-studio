@@ -21,13 +21,58 @@ export interface StudioWorkspace {
   status: string;
   previewToken: string;
   lastError?: string;
+  hibernatedByUser?: boolean;
+  previewProcessRunning?: boolean;
+}
+
+export interface PreviewDebugDuplicate {
+  sql: string;
+  count: number;
+}
+
+export interface PreviewDebugStatement {
+  sql: string;
+  durationMs?: number;
+  connection?: string;
+  startMs?: number;
+}
+
+export interface PreviewDebugMeasure {
+  label: string;
+  durationMs: number;
+}
+
+export interface PreviewDebugView {
+  name: string;
+  count?: number;
+}
+
+export interface PreviewDebugModel {
+  class: string;
+  count: number;
 }
 
 export interface PreviewDebug {
   timeMs?: number;
   queries?: number;
+  queryMs?: number;
   memoryMb?: number;
   nPlusOne?: boolean;
+  missing?: boolean;
+  duplicates?: PreviewDebugDuplicate[];
+  statements?: PreviewDebugStatement[];
+  measures?: PreviewDebugMeasure[];
+  views?: PreviewDebugView[];
+  models?: PreviewDebugModel[];
+  uri?: string;
+  method?: string;
+  datetime?: string;
+  title?: string;
+  inertiaComponent?: string;
+  inertiaUrl?: string;
+  route?: { uri?: string; controller?: string; middleware?: string };
+  laravel?: { version?: string; environment?: string };
+  exceptions?: { count: number; message?: string };
 }
 
 export interface StudioPayload {
@@ -120,8 +165,8 @@ export interface StudioMcp {
 
 export type StudioAvailableCommand = { name: string; description: string; hint?: string };
 
-export type StudioSheet = "rules" | "connections" | "settings" | "skills" | "mcp" | null;
+export type StudioSheet = "rules" | "connections" | "settings" | "skills" | "mcp" | "debug" | null;
 export type StudioDialog = "share" | "invite" | "shortcuts" | "palette" | null;
-export type PreviewTool = "select" | "annotate" | "comment";
+export type PreviewTool = "select" | "inspect";
 
 export type { AgentMode, ClientCommand, SessionEvent, UsageSummary, Viewport };

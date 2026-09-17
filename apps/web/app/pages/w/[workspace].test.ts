@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foldEvents } from "@atelier/domain";
+import { foldEvents, shouldAutoResumePreview } from "@atelier/domain";
 import type { SessionEvent } from "@atelier/contracts";
 import { renderMarkdown, splitDiffLines } from "../../utils/markdown";
 
@@ -19,5 +19,10 @@ describe("studio snapshot", () => {
       { kind: "del", text: "old" },
       { kind: "add", text: "new" },
     ]);
+  });
+
+  it("wakes a hibernated preview when opening studio unless the user pinned it", () => {
+    expect(shouldAutoResumePreview({ status: "hibernated" })).toBe(true);
+    expect(shouldAutoResumePreview({ status: "hibernated", hibernatedByUser: true })).toBe(false);
   });
 });

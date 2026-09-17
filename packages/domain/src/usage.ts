@@ -98,6 +98,37 @@ export function defaultUsageProfiles(): UsageProfile[] {
   ];
 }
 
+export function usageProfileIdFromLabel(label: string, taken: Iterable<string> = []): string {
+  const used = new Set(taken);
+  const base = label
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  const root = base || "plan";
+  if (!used.has(root)) return root;
+  let n = 2;
+  while (used.has(`${root}-${n}`)) n += 1;
+  return `${root}-${n}`;
+}
+
+export function createUsageProfile(label: string, existing: UsageProfile[]): UsageProfile {
+  const template =
+    existing.find((row) => row.id === DEFAULT_USAGE_PROFILE_ID) ?? existing[0] ?? defaultUsageProfiles()[1]!;
+  const trimmed = label.trim();
+  return {
+    id: usageProfileIdFromLabel(trimmed, existing.map((row) => row.id)),
+    label: trimmed || template.label,
+    limits: { ...template.limits },
+    enforcement: template.enforcement,
+    warnAtPercent: template.warnAtPercent,
+    meter: template.meter,
+    providers: [...template.providers],
+  };
+}
+
 function zoneParts(at: Date, tz: string): { year: string; month: string; day: string } {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,

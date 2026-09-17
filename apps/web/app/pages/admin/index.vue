@@ -7,8 +7,8 @@ import {
   Gauge,
   KeyRound,
   LayoutGrid,
-  LogOut,
   MonitorSmartphone,
+  PanelLeft,
   Plug,
   Search,
   Sparkles,
@@ -18,11 +18,14 @@ import {
 } from "@lucide/vue";
 import { serializeMcpConfig, type McpEntry, type McpPolicy, type SkillDefinition } from "@atelier/domain";
 import type { UsageProfile, UsageSummary } from "@atelier/contracts";
+import { ADMIN_RAIL_PX } from "~/utils/admin-layout";
+import { adminSectionQuery, parseAdminSection, type AdminSection } from "~/utils/admin-section";
 
-const { t } = useI18n();
+const { t, te } = useI18n();
+const route = useRoute();
 const relativeTime = useRelativeTime();
 
-type Section = "overview" | "errors" | "env" | "providers" | "users" | "usage" | "rules" | "skills" | "mcp" | "flags" | "workspaces";
+type Section = AdminSection;
 
 type UsageRow = UsageSummary & { login: string; name: string };
 type UsagePayload = { profiles: UsageProfile[]; users: UsageRow[]; flags?: Record<string, boolean> };
@@ -43,13 +46,13 @@ type AdminError = {
   hints: ErrorHint[];
 };
 
-const section = ref<Section>("overview");
+const section = computed(() => parseAdminSection(route.query.tab));
 const loading = ref(true);
 const forbidden = ref(false);
+const mobileOpen = ref(false);
 const toast = ref("");
 const error = ref("");
 const busy = ref(false);
-const query = ref("");
 const bannerDismissed = ref(false);
 
 const overview = ref<{
@@ -91,12 +94,33 @@ const providers = ref<
       lastFailureKind: string | null;
       lastUsedAt: string | null;
     }>;
+    cliAccounts?: Array<{
+      id: string;
+      label: string;
+      enabled: boolean;
+      loggedIn: boolean;
+      account: string | null;
+      usable: boolean;
+      failures: number;
+      cooldownUntil: string | null;
+      lastError: string | null;
+      lastFailureKind: string | null;
+      lastUsedAt: string | null;
+    }>;
+    cliLogin?: { accountId: string; loginUrl?: string; startedAt: number } | null;
   }>
 >([]);
 const providerKeys = ref<Record<string, string>>({});
 const providerKeyLabels = ref<Record<string, string>>({});
 const providerModels = ref<Record<string, string>>({});
 const signedIn = ref<{ login: string; name: string } | null>(null);
+const workspaceId = ref<string | null>(null);
+const studioTo = computed(() => {
+  if (workspaceId.value) return `/w/${workspaceId.value}`;
+  const mine = users.value.find((row) => row.login === signedIn.value?.login)?.workspaceId;
+  if (mine) return `/w/${mine}`;
+  return "/";
+});
 const users = ref<
   Array<{
     id: string;
@@ -201,6 +225,7 @@ const flagList = [
   "claudeProvider",
   "geminiProvider",
   "grokProvider",
+  "codexProvider",
   "providerCanary",
   "usageMetering",
   "usageLimits",
@@ -212,14 +237,6 @@ function fold(text: string) {
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase();
 }
-
-const visibleGroups = computed(() => {
-  const needle = fold(query.value.trim());
-  if (!needle) return navGroups;
-  return navGroups
-    .map((group) => group.filter((item) => fold(t(item.label)).includes(needle)))
-    .filter((group) => group.length > 0);
-});
 
 const current = computed(() => sections.find((item) => item.id === section.value) ?? sections[0]!);
 const showSetupBanner = computed(
@@ -304,6 +321,17 @@ async function grantUsageTokens(userId: string, tokens: number, reason: string) 
   });
 }
 
+async function deleteUsageProfile(profileId: string, migrateTo?: string) {
+  await wrap(async () => {
+    hydrateUsage(
+      await $fetch<UsagePayload>(`/api/admin/usage/profiles/${encodeURIComponent(profileId)}`, {
+        method: "DELETE",
+        query: migrateTo ? { migrateTo } : undefined,
+      }),
+    );
+  });
+}
+
 async function refreshData() {
   const [over, envRes, providerRes, userRes, ruleRes, skillRes, mcpRes, workspaceRes, errorRes, usageRes] = await Promise.all([
     $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
@@ -351,9 +379,10 @@ function hydrateMcp(servers: McpEntry[], policy: McpPolicy) {
 async function load() {
   forbidden.value = false;
   try {
-    const me = await $fetch<{ user: { login: string; name: string; platformAdmin?: boolean; disabled?: boolean } }>(
-      "/api/me",
-    );
+    const me = await $fetch<{
+      user: { login: string; name: string; platformAdmin?: boolean; disabled?: boolean };
+      workspace: { id: string } | null;
+    }>("/api/me");
     if (me.user.disabled) {
       await navigateTo("/disabled");
       return;
@@ -363,10 +392,15 @@ async function load() {
       return;
     }
     signedIn.value = { login: me.user.login, name: me.user.name };
+    workspaceId.value = me.workspace?.id ?? null;
     await refreshData();
   } catch (err) {
     const status = (err as { statusCode?: number }).statusCode;
-    forbidden.value = status === 401 || status === 403;
+    if (status === 401) {
+      await navigateTo("/");
+      return;
+    }
+    forbidden.value = status === 403;
     if (!forbidden.value) error.value = apiErrorMessage(err);
   } finally {
     loading.value = false;
@@ -405,6 +439,15 @@ function apiErrorMessage(err: unknown): string {
   if (typeof message === "string" && /workspace not found/i.test(message)) {
     return t("admin.workspaceGone");
   }
+  if (typeof message === "string" && /last usage profile/i.test(message)) {
+    return t("admin.usageLastPlan");
+  }
+  if (typeof message === "string" && /still has people/i.test(message)) {
+    return t("admin.usageOccupied");
+  }
+  if (typeof message === "string" && /migrateTo required/i.test(message)) {
+    return t("admin.usageMigrateRequired");
+  }
   if (typeof message === "string" && message.trim() && !/^\[[A-Z]+\]\s+"/.test(message)) {
     return message;
   }
@@ -424,18 +467,41 @@ async function wrap(run: () => Promise<void>, onError?: (err: unknown) => string
   }
 }
 
+function closeMobileRail() {
+  mobileOpen.value = false;
+}
+
+function onAdminRailKeydown(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !mobileOpen.value) return;
+  closeMobileRail();
+}
+
+function onBreakpointChange() {
+  closeMobileRail();
+}
+
+let railMedia: MediaQueryList | null = null;
+
 onMounted(() => {
   void load();
+  railMedia = window.matchMedia(`(min-width: ${ADMIN_RAIL_PX}px)`);
+  railMedia.addEventListener("change", onBreakpointChange);
+  document.addEventListener("keydown", onAdminRailKeydown);
+});
+
+onBeforeUnmount(() => {
+  railMedia?.removeEventListener("change", onBreakpointChange);
+  document.removeEventListener("keydown", onAdminRailKeydown);
 });
 
 watch(section, () => {
   error.value = "";
   listQuery.value = "";
+  closeMobileRail();
 });
 
-async function signOut() {
-  await $fetch("/api/auth/logout", { method: "POST" });
-  await navigateTo("/");
+function openSection(id: Section) {
+  void navigateTo({ query: adminSectionQuery(id) });
 }
 
 async function saveEnv(payload: { env?: Record<string, string>; raw?: string }) {
@@ -487,6 +553,50 @@ async function patchProviderKey(payload: {
       method: "PUT",
       body: payload,
     });
+    providers.value = res.providers;
+  });
+}
+
+async function patchProviderCli(payload: {
+  id: string;
+  addCliAccount?: boolean;
+  cliLabel?: string;
+  cliAccountId?: string;
+  moveCli?: "up" | "down";
+  resetCli?: boolean;
+  deleteCli?: boolean;
+  cliEnabled?: boolean;
+}) {
+  await wrap(async () => {
+    const res = await $fetch<{ providers: typeof providers.value }>("/api/admin/providers", {
+      method: "PUT",
+      body: payload,
+    });
+    providers.value = res.providers;
+    if (payload.addCliAccount) providerKeyLabels.value.cursor = "";
+  });
+}
+
+async function signInCursorCli(id: string) {
+  await wrap(async () => {
+    await $fetch(`/api/admin/providers/cursor/accounts/${id}/login`, { method: "POST" });
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      const res = await $fetch<{ providers: typeof providers.value }>("/api/admin/providers");
+      providers.value = res.providers;
+      const account = res.providers.find((row) => row.id === "cursor")?.cliAccounts?.find((row) => row.id === id);
+      if (account?.loggedIn) break;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  });
+}
+
+async function signOutCursorCli(id: string) {
+  await wrap(async () => {
+    const res = await $fetch<{ providers: typeof providers.value }>(
+      `/api/admin/providers/cursor/accounts/${id}/logout`,
+      { method: "POST" },
+    );
     providers.value = res.providers;
   });
 }
@@ -736,7 +846,7 @@ function runHintAction(row: AdminError, hint: ErrorHint) {
   else if (hint.action === "destroy") {
     alsoDeactivate.value = false;
     pendingDestroy.value = { id: row.id, login: row.login, canDeactivate: true };
-  } else if (hint.action === "openEnv") section.value = "env";
+  } else if (hint.action === "openEnv") openSection("env");
   else if (hint.action === "openWorkspace") void navigateTo(`/w/${row.id}`);
 }
 
@@ -887,18 +997,20 @@ function ruleHint(level: "platform" | "project" | "user") {
   if (level === "project") return t("rules.projectHint");
   return t("rules.userHint");
 }
+
+function hintTitle(hint: ErrorHint) {
+  const key = `admin.errorHint.${hint.id}.title`;
+  return te(key) ? t(key) : hint.title;
+}
+
+function hintDetail(hint: ErrorHint) {
+  const key = `admin.errorHint.${hint.id}.detail`;
+  return te(key) ? t(key) : hint.detail;
+}
 </script>
 
 <template>
   <div class="admin-shell relative flex h-screen flex-col overflow-hidden">
-    <header class="menubar cx-mobile-only shrink-0">
-      <NuxtLink to="/" class="flex items-center gap-2 text-ink-500 transition-colors hover:text-ink-950">
-        <ArrowLeft class="h-3.5 w-3.5" />
-        <span class="text-[12px]">{{ t("admin.back") }}</span>
-      </NuxtLink>
-      <span class="ml-auto text-[12px] text-ink-400">{{ t("admin.title") }}</span>
-    </header>
-
     <p v-if="toast" class="cx-toast absolute top-4 left-1/2 z-20 -translate-x-1/2">{{ toast }}</p>
 
     <div v-if="loading" class="flex flex-1 items-center justify-center">
@@ -908,75 +1020,62 @@ function ruleHint(level: "platform" | "project" | "user") {
     <div v-else-if="forbidden" class="flex flex-1 items-center justify-center px-6">
       <div class="cx-panel max-w-sm p-6">
         <h1 class="cx-settings-title">{{ t("admin.forbidden") }}</h1>
-        <NuxtLink to="/" class="cx-link mt-3 inline-flex items-center gap-1.5">
+        <NuxtLink :to="studioTo" class="cx-link mt-3 inline-flex items-center gap-1.5">
           <ArrowLeft class="h-3.5 w-3.5" /> {{ t("admin.back") }}
         </NuxtLink>
       </div>
     </div>
 
     <div v-else class="flex min-h-0 flex-1">
-      <nav class="admin-rail hidden w-[220px] shrink-0 flex-col lg:flex">
-        <div class="shrink-0 p-2">
-          <NuxtLink to="/" class="cx-nav-item">
-            <ArrowLeft class="h-3.5 w-3.5 shrink-0" />
-            <span class="truncate">{{ t("admin.back") }}</span>
+      <button
+        v-if="mobileOpen"
+        type="button"
+        class="fixed inset-0 z-40 bg-black/50 lg:hidden"
+        :aria-label="t('admin.closeSidebar')"
+        @click="closeMobileRail"
+      />
+      <nav id="admin-rail" class="admin-rail" :data-open="mobileOpen">
+        <div class="cx-titlebar flex shrink-0 items-center">
+          <span class="app-brand min-w-0">
+            <UiLogo :size="24" />
+            <span class="app-wordmark">{{ t("app.wordmark") }}</span>
+          </span>
+          <NuxtLink
+            :to="studioTo"
+            class="ml-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-ink-500 transition-colors hover:bg-white/[0.06] hover:text-ink-950 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-coral-500/60"
+            :aria-label="t('admin.back')"
+            :title="t('admin.back')"
+          >
+            <ArrowLeft class="h-3.5 w-3.5" />
           </NuxtLink>
-          <div class="cx-search mt-1.5">
-            <Search class="h-3 w-3 shrink-0 text-ink-400" />
-            <input
-              v-model="query"
-              type="text"
-              autocomplete="off"
-              spellcheck="false"
-              :placeholder="t('admin.searchSettings')"
-              :aria-label="t('admin.searchSettings')"
-            />
-          </div>
         </div>
-        <div class="thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          <div v-for="(group, index) in visibleGroups" :key="index" :class="index ? 'mt-3.5' : ''" class="cx-nav-stack">
-            <button
+        <div class="thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pt-1.5 pb-2">
+          <div v-for="(group, index) in navGroups" :key="index" :class="index ? 'mt-3.5' : ''" class="cx-nav-stack">
+            <NuxtLink
               v-for="item in group"
               :key="item.id"
-              type="button"
+              :to="{ query: adminSectionQuery(item.id) }"
               class="cx-nav-item"
               :data-active="section === item.id"
-              @click="section = item.id"
+              :aria-current="section === item.id ? 'page' : undefined"
             >
               <component :is="item.icon" class="h-3.5 w-3.5 shrink-0 opacity-80" />
               <span class="truncate">{{ t(item.label) }}</span>
-            </button>
+            </NuxtLink>
           </div>
-          <p v-if="!visibleGroups.length" class="px-2 py-1.5 text-[12px] text-ink-400">{{ t("admin.noMatches") }}</p>
         </div>
-        <div class="cx-account shrink-0">
-          <UiAvatar :name="signedIn?.login ?? ''" size="sm" />
-          <span class="cx-account-name">{{ signedIn?.login }}</span>
-          <UiIconButton size="sm" :label="t('nav.signOut')" @click="signOut">
-            <LogOut class="h-3.5 w-3.5" />
-          </UiIconButton>
-        </div>
+        <StudioRailAccount :login="signedIn?.login ?? ''" :platform-admin="true" />
       </nav>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <div class="cx-tabstrip cx-mobile-only shrink-0">
-          <button
-            v-for="item in sections"
-            :key="item.id"
-            type="button"
-            class="cx-tab"
-            :data-active="section === item.id"
-            @click="section = item.id"
-          >
-            {{ t(item.label) }}
-          </button>
-        </div>
-
         <main
-          class="flex min-h-0 flex-1 flex-col px-5 py-6 sm:px-8 lg:pt-3.5 lg:pb-8"
+          class="flex min-h-0 flex-1 flex-col px-5 pt-6 pb-20 sm:px-8 lg:pt-3.5 lg:pb-24"
           :class="section === 'env' ? 'overflow-hidden' : 'thin-scroll overflow-y-auto'"
         >
-          <div class="mx-auto flex min-h-0 w-full max-w-[560px] flex-1 flex-col">
+          <div
+            class="mx-auto w-full max-w-[560px]"
+            :class="section === 'env' ? 'flex min-h-0 flex-1 flex-col' : 'pb-20 lg:pb-24'"
+          >
             <div v-if="showSetupBanner" class="cx-banner shrink-0">
               <div class="min-w-0">
                 <p class="cx-row-title">{{ t("admin.setupBannerTitle") }}</p>
@@ -984,7 +1083,7 @@ function ruleHint(level: "platform" | "project" | "user") {
               </div>
               <div class="flex shrink-0 items-center gap-1">
                 <UiButton size="sm" variant="ghost" @click="bannerDismissed = true">{{ t("admin.dismiss") }}</UiButton>
-                <UiButton size="sm" variant="outline" @click="section = 'env'">
+                <UiButton size="sm" variant="outline" @click="openSection('env')">
                   {{ t("admin.openEnv") }}
                   <ArrowUpRight class="h-3 w-3" />
                 </UiButton>
@@ -992,7 +1091,20 @@ function ruleHint(level: "platform" | "project" | "user") {
             </div>
 
             <div class="shrink-0">
-              <h1 class="cx-settings-title">{{ t(current.label) }}</h1>
+              <div class="flex items-center gap-1.5">
+                <UiIconButton
+                  class="relative z-50 lg:hidden"
+                  size="sm"
+                  :label="t(mobileOpen ? 'admin.closeSidebar' : 'admin.openSidebar')"
+                  :active="mobileOpen"
+                  aria-controls="admin-rail"
+                  :aria-expanded="mobileOpen"
+                  @click="mobileOpen = !mobileOpen"
+                >
+                  <PanelLeft class="h-3.5 w-3.5" />
+                </UiIconButton>
+                <h1 class="cx-settings-title">{{ t(current.label) }}</h1>
+              </div>
               <p v-if="error" class="mt-1.5 text-[12px] text-red-300">{{ error }}</p>
             </div>
 
@@ -1080,7 +1192,7 @@ function ruleHint(level: "platform" | "project" | "user") {
                           v-if="overview.lastPreviewError"
                           size="sm"
                           variant="outline"
-                          @click="section = 'errors'"
+                          @click="openSection('errors')"
                         >
                           {{ t("admin.openErrors") }}
                         </UiButton>
@@ -1157,8 +1269,8 @@ function ruleHint(level: "platform" | "project" | "user") {
                         <div class="space-y-2">
                           <div v-for="hint in row.hints" :key="hint.id" class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
-                              <p class="cx-row-title">{{ hint.title }}</p>
-                              <p class="cx-row-desc">{{ hint.detail }}</p>
+                              <p class="cx-row-title">{{ hintTitle(hint) }}</p>
+                              <p class="cx-row-desc">{{ hintDetail(hint) }}</p>
                             </div>
                             <UiButton
                               v-if="hint.action"
@@ -1224,6 +1336,7 @@ function ruleHint(level: "platform" | "project" | "user") {
                 @save="saveUsageProfiles"
                 @assign="assignUsageProfile"
                 @grant="grantUsageTokens"
+                @delete="deleteUsageProfile"
               />
 
               <AdminProvidersList
@@ -1237,94 +1350,23 @@ function ruleHint(level: "platform" | "project" | "user") {
                 @save="saveProvider"
                 @model="saveProviderModel"
                 @key="patchProviderKey"
+                @cli="patchProviderCli"
+                @login="signInCursorCli"
+                @logout="signOutCursorCli"
               />
 
-              <section v-else-if="section === 'users'" class="cx-section">
-                <p class="cx-section-label">{{ t("admin.usersSection") }}</p>
-                <p class="cx-section-note">{{ t("admin.usersHint") }}</p>
-                <div class="cx-search mb-2">
-                  <Search class="h-3 w-3 shrink-0 text-ink-400" />
-                  <input
-                    v-model="listQuery"
-                    type="text"
-                    autocomplete="off"
-                    :placeholder="t('admin.searchUsers')"
-                    :aria-label="t('admin.searchUsers')"
-                  />
-                </div>
-                <div v-if="!users.length" class="cx-panel px-4 py-7 text-center text-[13px] text-ink-400">
-                  {{ t("admin.noUsers") }}
-                </div>
-                <div
-                  v-else-if="!filteredUsers.length"
-                  class="cx-panel px-4 py-7 text-center text-[13px] text-ink-400"
-                >
-                  {{ t("admin.noUserMatches") }}
-                </div>
-                <div v-else class="cx-panel">
-                  <div v-for="user in filteredUsers" :key="user.id" class="cx-row cx-row-wrap">
-                    <div class="flex min-w-0 items-center gap-2.5">
-                      <UiAvatar :name="user.login" />
-                      <div class="min-w-0">
-                        <div class="flex flex-wrap items-center gap-1.5">
-                          <p class="cx-row-title">{{ user.login }}</p>
-                          <UiBadge v-if="user.platformAdmin" tone="info">{{ t("admin.adminBadge") }}</UiBadge>
-                          <UiBadge v-if="user.accessPending" tone="warn">{{ t("admin.pending") }}</UiBadge>
-                          <UiBadge v-if="user.disabled" tone="warn">{{ t("admin.disabledBadge") }}</UiBadge>
-                        </div>
-                        <p class="cx-row-desc">
-                          {{ user.role }}
-                          <span v-if="user.workspaceStatus"> · {{ statusLabel(user.workspaceStatus) }}</span>
-                          <span v-else-if="!user.disabled"> · {{ t("admin.noWorkspace") }}</span>
-                        </p>
-                      </div>
-                    </div>
-                    <div class="cx-row-actions flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                      <select
-                        v-if="usageProfiles.length"
-                        :value="user.usageProfileId"
-                        class="cx-field w-[120px]"
-                        :disabled="busy"
-                        :aria-label="`${user.login} · ${t('admin.usageProfile')}`"
-                        @change="assignUsageProfile(user.id, ($event.target as HTMLSelectElement).value)"
-                      >
-                        <option v-for="profile in usageProfiles" :key="profile.id" :value="profile.id">
-                          {{ profile.label }}
-                        </option>
-                      </select>
-                      <p v-if="user.repoOwner" class="cx-value text-right">{{ t("admin.ownerLocked") }}</p>
-                      <p v-else-if="user.envAdmin" class="cx-value text-right">{{ t("admin.envLocked") }}</p>
-                      <UiButton
-                        v-else
-                        size="sm"
-                        variant="outline"
-                        :disabled="busy"
-                        @click="toggleAdmin(user.id, !user.platformAdmin)"
-                      >
-                        {{ user.platformAdmin ? t("admin.revokeAdmin") : t("admin.makeAdmin") }}
-                      </UiButton>
-                      <UiButton
-                        v-if="user.disabled && user.canDisable"
-                        size="sm"
-                        variant="outline"
-                        :disabled="busy"
-                        @click="reactivateUser(user.id)"
-                      >
-                        {{ t("admin.reactivate") }}
-                      </UiButton>
-                      <UiButton
-                        v-else-if="user.canDisable"
-                        size="sm"
-                        variant="ghost"
-                        :disabled="busy"
-                        @click="requestDisable(user)"
-                      >
-                        {{ t("admin.deactivate") }}
-                      </UiButton>
-                    </div>
-                  </div>
-                </div>
-              </section>
+              <AdminUsersList
+                v-else-if="section === 'users'"
+                v-model:query="listQuery"
+                :users="filteredUsers"
+                :total="users.length"
+                :profiles="usageProfiles"
+                :busy="busy"
+                @assign="assignUsageProfile"
+                @toggle-admin="toggleAdmin"
+                @reactivate="reactivateUser"
+                @disable="requestDisable"
+              />
 
               <section v-else-if="section === 'workspaces'" class="cx-section">
                 <p class="cx-section-label">{{ t("admin.workspacesSection") }}</p>
@@ -1498,12 +1540,13 @@ function ruleHint(level: "platform" | "project" | "user") {
                       v-if="mcpNew.transport === 'stdio'"
                       v-model="mcpNew.command"
                       class="cx-textarea cx-row-control h-8"
-                      :placeholder="t('mcp.name')"
+                      :placeholder="t('mcp.command')"
                     />
                     <input
                       v-if="mcpNew.transport === 'stdio'"
                       v-model="mcpNew.args"
                       class="cx-textarea cx-row-control h-8"
+                      :placeholder="t('mcp.args')"
                     />
                     <input
                       v-else

@@ -1,15 +1,6 @@
 <script setup lang="ts">
 const { t } = useI18n();
-const leaving = ref(false);
-
-async function signOut() {
-  leaving.value = true;
-  try {
-    await $fetch("/api/auth/logout", { method: "POST" });
-  } finally {
-    await navigateTo("/");
-  }
-}
+const { leaving, signOut } = useSignOut();
 </script>
 
 <template>

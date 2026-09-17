@@ -6,6 +6,7 @@ import {
   modelOptionValues,
   resolveModelValue,
 } from "../acp/config-options.js";
+import { isAcpUnauthenticated } from "../acp/errors.js";
 import { eventsFromAcpUpdate, permissionFromAcp } from "../acp/events.js";
 import { AcpSession, selectAuthMethod, type AcpPromptBlock } from "../acp/session.js";
 import { wrapSandbox } from "./sandbox.js";
@@ -50,22 +51,37 @@ export async function startProcessAcp(input: ProcessAcpLaunch): Promise<Provider
   );
   acp.start(input.env, input.cwd);
   await acp.initialize();
+  const hasCursorKey = Boolean(input.env.CURSOR_API_KEY?.trim());
   const method = selectAuthMethod(acp.authMethods, input.preferredAuth, input.env);
-  if (method) await acp.authenticate(method, { _meta: { headless: true } });
+  // cursor_login opens a browser PKCE flow. Never call it before session/new;
+  // only use it if session/new is unauthenticated and there is no API key.
+  if (method && method !== "cursor_login") {
+    await acp.authenticate(method, { _meta: { headless: true } });
+  }
   const caps = acp.capabilities?.mcpCapabilities ?? {};
   const servers = (input.mcpServers ?? []).filter((server) => {
     if (server.type === "http") return Boolean(caps.http);
     if (server.type === "sse") return Boolean(caps.sse);
     return Boolean(server.command);
   });
-  if (input.resumeSessionId && acp.capabilities?.loadSession !== false) {
-    try {
-      await acp.loadSession(input.resumeSessionId, input.cwd, servers);
-    } catch {
-      await acp.newSession(input.cwd, servers);
+  const openSession = async () => {
+    if (input.resumeSessionId && acp.capabilities?.loadSession !== false) {
+      try {
+        await acp.loadSession(input.resumeSessionId, input.cwd, servers);
+        return;
+      } catch {
+        await acp.newSession(input.cwd, servers);
+        return;
+      }
     }
-  } else {
     await acp.newSession(input.cwd, servers);
+  };
+  try {
+    await openSession();
+  } catch (error) {
+    if (hasCursorKey || !isAcpUnauthenticated(error)) throw error;
+    await acp.authenticate("cursor_login", { _meta: { headless: true } });
+    await openSession();
   }
   await applyModelOption(acp, input.model);
   const modelOption = findModelOption(acp.configOptions);

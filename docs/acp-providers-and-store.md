@@ -15,16 +15,17 @@ The studio started as Cursor ACP (`agent --trust acp`) plus `var/platform.json`.
 - `session/cancel` as a notification (no `id`)
 - unknown agent methods are rejected with `-32601`
 
-`ProcessAcpProvider` / `startProcessAcp` is the shared spawn path for Cursor, Claude, Gemini, and Grok. `MockProvider` remains tests-only.
+`ProcessAcpProvider` / `startProcessAcp` is the shared spawn path for Cursor, Codex, Claude, Gemini, and Grok. `MockProvider` remains tests-only.
 
 | Provider | Command | Secret | Flag |
 | --- | --- | --- | --- |
-| Cursor | `agent --trust acp` | `CURSOR_API_KEY` (`CURSOR_API_KEY_2`…) | always (default) |
+| Cursor | `agent --trust acp` | CLI login (`var/cursor-home/<id>`) then `CURSOR_API_KEY` (`CURSOR_API_KEY_2`…) | always (default) |
+| Codex | `npx -y @agentclientprotocol/codex-acp` | `CODEX_API_KEY` (`OPENAI_API_KEY` alias, then `_2`…) | `multiProvider` + `codexProvider` |
 | Claude | `npx -y @agentclientprotocol/claude-agent-acp` | `ANTHROPIC_API_KEY` (`CLAUDE_API_KEY` alias, then `_2`…) | `multiProvider` + `claudeProvider` |
 | Gemini | `gemini --acp` | `GEMINI_API_KEY` (`GOOGLE_API_KEY` alias, then `_2`…) | `multiProvider` + `geminiProvider` |
 | Grok | `grok --no-auto-update agent stdio` | `XAI_API_KEY` (`XAI_API_KEY_2`…) | `multiProvider` + `grokProvider` |
 
-Workspace pickers also require the admin enable toggle and a healthy credential + CLI. `providerCanary` hides extras unless `ATELIER_PROVIDER_CANARY=1`. Extra keys live in `var/env/providers.env`. A failed key (401/403, quota, 429) is cooled down and the next key on the same provider is tried. The admin also pins a default model per provider; the composer shows it and does not offer a model picker.
+Workspace pickers also require the admin enable toggle and a healthy credential + CLI. `providerCanary` hides extras unless `ATELIER_PROVIDER_CANARY=1`. Extra keys live in `var/env/providers.env`. Cursor tries signed-in CLI accounts first (isolated HOMEs under `var/cursor-home/`), then API keys. A failed slot (401/403, quota, 429) is cooled down and the next candidate is tried. `agent status` "not logged in" marks that CLI account signed out and does not burn an API key. The admin also pins a default model per provider; the composer shows it and does not offer a model picker.
 
 The default model is applied as a CLI flag or env var at spawn (`--model` for Cursor/Gemini/Grok, `ANTHROPIC_MODEL` / `GEMINI_MODEL` / `GROK_DEFAULT_MODEL`), then over ACP `session/set_config_option` when the agent advertises a `model` config option.
 
@@ -33,7 +34,7 @@ The default model is applied as a CLI flag or env var at spawn (`--model` for Cu
 `resolveSandboxProfile` maps flags/env to `disabled` | `best-effort` | `required`.
 
 - `sanitizeAgentEnv` strips host credentials except the keep-list for the selected provider
-- `wrapSandbox` uses bubblewrap when `bwrap` is on PATH, else Docker when `ATELIER_SANDBOX_IMAGE` is set
+- `wrapSandbox` uses bubblewrap when `bwrap` is on PATH, else Docker when `ATELIER_SANDBOX_IMAGE` is set. Cursor CLI runs bind the account HOME so the sandbox can see the login.
 - `required` throws if neither backend exists
 - `best-effort` leaves the command unwrapped
 

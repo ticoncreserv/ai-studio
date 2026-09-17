@@ -19,8 +19,7 @@ export async function finishGitHubLogin(
   const identity = await provider.completeLogin({
     code: input.code,
     locale: input.locale || String(getCookie(event, "atelier-locale") ?? "pt-BR"),
-    // Must match the authorize redirect_uri. The loopback proxy 302s localhost:80
-    // to :43123, so the incoming Host is the wrong value to send to GitHub.
+    // Must match authorize: ATELIER_PUBLIC_URL, not the incoming Host (127.0.0.1 vs localhost).
     redirectUri: oauthRedirectUri(event),
     state: input.state,
   });

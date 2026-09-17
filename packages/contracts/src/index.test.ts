@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClientCommandSchema, FeatureFlagSchema, ProviderCapabilitySchema, ProviderHealthSchema, ProviderKeyStateSchema, SessionEventSchema } from "./index.js";
+import { ClientCommandSchema, CursorCliAccountSchema, FeatureFlagSchema, ProviderCapabilitySchema, ProviderHealthSchema, ProviderKeyStateSchema, SessionEventSchema } from "./index.js";
 
 describe("contracts", () => {
   it("parses a prompt command and a diff event", () => {
@@ -41,6 +41,26 @@ describe("contracts", () => {
     expect(command.skill).toBe("land-it");
   });
 
+  it("parses inspect pins on a prompt without putting them in the typed text", () => {
+    const command = ClientCommandSchema.parse({
+      type: "prompt",
+      text: "What is this heading?",
+      inspect: [{ label: "Button", note: "- tag: button\n- selector: button.primary" }],
+    });
+    if (command.type !== "prompt") throw new Error("expected prompt");
+    expect(command.text).toBe("What is this heading?");
+    expect(command.inspect).toEqual([{ label: "Button", note: "- tag: button\n- selector: button.primary" }]);
+    const event = SessionEventSchema.parse({
+      type: "user_message",
+      id: "u1",
+      at: "t",
+      text: "What is this heading?",
+      inspect: [{ label: "Button", note: "- tag: button" }],
+    });
+    if (event.type !== "user_message") throw new Error("expected user_message");
+    expect(event.inspect?.[0]?.label).toBe("Button");
+  });
+
   it("parses proposal events and discard commands", () => {
     const event = SessionEventSchema.parse({
       type: "proposal",
@@ -60,6 +80,7 @@ describe("contracts", () => {
   it("parses sandbox and provider health contracts", () => {
     expect(FeatureFlagSchema.parse("sandboxRequired")).toBe("sandboxRequired");
     expect(FeatureFlagSchema.parse("claudeProvider")).toBe("claudeProvider");
+    expect(FeatureFlagSchema.parse("codexProvider")).toBe("codexProvider");
     expect(ProviderHealthSchema.parse({
       id: "claude",
       status: "unconfigured",
@@ -69,6 +90,16 @@ describe("contracts", () => {
     }).status).toBe("unconfigured");
     const key = ProviderKeyStateSchema.parse({ ref: "CURSOR_API_KEY" });
     expect(key).toMatchObject({ enabled: true, failures: 0, cooldownUntil: null });
+    const cli = CursorCliAccountSchema.parse({ id: "default" });
+    expect(cli).toMatchObject({ enabled: true, loggedIn: false, account: null, failures: 0 });
+    const failover = SessionEventSchema.parse({
+      type: "run_failure",
+      id: "f1",
+      at: "t",
+      kind: "provider_failover",
+      message: "quota",
+    });
+    expect(failover.type === "run_failure" && failover.kind === "provider_failover").toBe(true);
     expect(ProviderCapabilitySchema.parse({
       id: "cursor",
       label: "Cursor",

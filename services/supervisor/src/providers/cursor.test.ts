@@ -2,12 +2,33 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { mcpServersFromWorktree, toAcpMcpServers } from "./cursor.js";
+import { cursorAcpArgs, mcpServersFromWorktree, toAcpMcpServers } from "./cursor.js";
 
 const dirs: string[] = [];
 
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+describe("cursor ACP args", () => {
+  it("passes --api-key before acp so the CLI is pre-authenticated", () => {
+    expect(cursorAcpArgs("agent", undefined, "crsr_test")).toEqual(["--api-key", "crsr_test", "--trust", "acp"]);
+    expect(cursorAcpArgs("plan", "gpt-5", "crsr_test")).toEqual([
+      "--api-key",
+      "crsr_test",
+      "--trust",
+      "--mode",
+      "plan",
+      "--model",
+      "gpt-5",
+      "acp",
+    ]);
+  });
+
+  it("omits --api-key when the slot has no value", () => {
+    expect(cursorAcpArgs()).toEqual(["--trust", "acp"]);
+    expect(cursorAcpArgs("agent", undefined, "  ")).toEqual(["--trust", "acp"]);
+  });
 });
 
 describe("ACP MCP servers", () => {

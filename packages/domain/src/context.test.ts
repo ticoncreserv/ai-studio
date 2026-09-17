@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateTokens, packPrompt, promptPrefixForMode, titleFromPrompt, visiblePromptText } from "./context.js";
+import { estimateTokens, packPrompt, promptPrefixForMode, titleFromPrompt, visiblePromptText, withInspectPrompt } from "./context.js";
 
 describe("prompt envelope", () => {
   it("omits lower-priority blocks when over budget", () => {
@@ -33,5 +33,11 @@ describe("prompt envelope", () => {
     expect(titleFromPrompt(`${promptPrefixForMode("ask")}pong`)).toBe("pong");
     expect(visiblePromptText(`${promptPrefixForMode("plan")}Add a quotes page`)).toBe("Add a quotes page");
     expect(estimateTokens("abcd")).toBe(1);
+  });
+
+  it("hides inspect facts from the typed prompt until they are packed for the agent", () => {
+    expect(withInspectPrompt("What is this?", ["- tag: button"])).toBe("What is this?\n\n- tag: button");
+    expect(withInspectPrompt("", ["- tag: button"])).toBe("- tag: button");
+    expect(withInspectPrompt("What is this?", [])).toBe("What is this?");
   });
 });

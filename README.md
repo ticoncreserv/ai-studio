@@ -2,7 +2,7 @@
 
 Self-hosted studio for assisted creation on `github.com/ticoncreserv/app` (Laravel 13 + Inertia + Vue). A signed-in GitHub user gets a personal branch (`user/{login}/studio`), a Cursor ACP session, and a live Laravel preview in mobile, tablet, and desktop viewports.
 
-This repository is the **platform**. The target app stays in `ticoncreserv/app`. Production needs a GitHub App (clone + push) and `CURSOR_API_KEY` (prompts). `fixtures/laravel-app` and `MockProvider` exist only for tests, eval, and SLO checks.
+This repository is the **platform**. The target app stays in `ticoncreserv/app`. Production needs a GitHub App (clone + push) and a Cursor credential — a signed-in CLI account in `/admin` and/or `CURSOR_API_KEY`. `fixtures/laravel-app` and `MockProvider` exist only for tests, eval, and SLO checks.
 
 ## Stack
 
@@ -17,16 +17,15 @@ This repository is the **platform**. The target app stays in `ticoncreserv/app`.
 ## Run locally
 
 ```bash
-nvm use
-corepack enable
-pnpm install
-pnpm dev
+pnpm start
 ```
+
+That selects Node from `.nvmrc` (`nvm use`), enables Corepack, installs dependencies, and starts `pnpm dev`.
 
 Required in `.env` before opening a workspace:
 
 - GitHub App: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_INSTALLATION_ID` (or `var/github-app.json` from `/setup/github`)
-- Cursor: `CURSOR_API_KEY`
+- Cursor: a signed-in CLI account (Admin → Providers) and/or `CURSOR_API_KEY`
 - Optional extra agents (off by default): `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY`, `GEMINI_API_KEY` / `GOOGLE_API_KEY`, `XAI_API_KEY`
 - Public origin: `ATELIER_PUBLIC_URL` (preview `APP_URL` and OAuth callbacks)
 
@@ -60,7 +59,7 @@ You need to be an owner of the `ticoncreserv` organization. The login page does 
 1. Open [http://127.0.0.1:43123/setup/github](http://127.0.0.1:43123/setup/github) while the studio is running and the flag is on.
 2. Click **Create GitHub App on ticoncreserv**. GitHub shows the pre-filled manifest (homepage, callback, permissions).
 3. Confirm the app. GitHub redirects the **browser** to `{origin}/api/setup/github/callback`. The studio answers that path on `127.0.0.1:43123`, `localhost:43123`, `localhost:8080`, and `http://localhost` (port 80). If a leftover GitHub URL still 404s, paste the `code` query into `/setup/github`. Atelier stores `client_id`, `client_secret`, App ID, private key, and webhook secret in `var/github-app.json` (gitignored) and loads them into the current process.
-4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`. After install or sign-in GitHub redirects to the **Callback URL**. Locally the authorize flow uses the origin you opened (usually `http://127.0.0.1:43123/api/auth/github/callback`, which matches `ATELIER_PUBLIC_URL`). Token exchange sends that same `redirect_uri` from OAuth `state`. The loopback proxy on port 80 is only a fallback for leftover `http://localhost` callbacks. In production set `ATELIER_PUBLIC_URL=https://your-domain` and register `{ATELIER_PUBLIC_URL}/api/auth/github/callback`.
+4. Install the app **only** on `ticoncreserv/app`. Do not grant `Administration`. After install or sign-in GitHub redirects to the **Callback URL**. Authorize always sends `{ATELIER_PUBLIC_URL}/api/auth/github/callback` (not the host you typed, so `127.0.0.1` and `localhost` stay aligned with the GitHub App). Token exchange sends that same `redirect_uri` from OAuth `state`. The loopback proxy on port 80 is only a fallback for leftover `http://localhost` callbacks. In production set `ATELIER_PUBLIC_URL=https://your-domain` and register `{ATELIER_PUBLIC_URL}/api/auth/github/callback`.
 5. Copy the values into `.env` if you want them to survive a restart or another host (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_INSTALLATION_ID`, `GITHUB_WEBHOOK_SECRET`).
 
 Manual path: GitHub → Organization settings → Developer settings → GitHub Apps → New GitHub App.
@@ -77,7 +76,7 @@ Manual path: GitHub → Organization settings → Developer settings → GitHub 
 
 A GitHub OAuth App also covers login. Same callback URL; only `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are required.
 
-Cursor ACP is a different credential. Set `CURSOR_API_KEY` in `.env`. The studio strips any inherited Origin-scoped `CURSOR_AUTH_TOKEN` before spawning `agent acp`. Without a key, the studio shows an error — it does not fall back to Mock.
+Cursor ACP is a different credential. Sign in one or more Cursor CLI accounts in **Admin → Providers**, or set `CURSOR_API_KEY` in `.env` / `var/env/providers.env`. The studio tries signed-in CLI accounts first, then API keys. The studio strips any inherited Origin-scoped `CURSOR_AUTH_TOKEN` before spawning `agent acp`. Without a CLI session or a key, the studio shows an error — it does not fall back to Mock.
 
 Commits in a workspace set `user.name` / `user.email` and `commit.gpgsign=false` per invocation.
 
@@ -98,7 +97,7 @@ On every preview start the studio writes the worktree `.env` as `.env.example` �
 
 `/admin` is for platform admins: shared `.env`, providers, users, usage profiles, global rules (`AGENTS.md` prefix), global skills, MCP servers and policy, flags, and the workspace fleet.
 
-The Cursor key is global. An admin can store several keys per provider; if the current one is rejected for auth, quota, or rate limits, the next key on that provider is used. Per-user spend is a local ledger (`usageProfiles` / `usageLedger` / `usageGrants`) with three seeded profiles — starter 5M, standard 20M, premium 60M tokens per month in `America/Sao_Paulo`. Limits ship on in `block` mode; an admin who needs room grants extra tokens (including to themselves). Assign a profile on the Users row or under Token limits.
+The Cursor credential is global. An admin can store several CLI accounts (each with an isolated `var/cursor-home/<id>`) and several keys per provider; signed-in CLI accounts are tried first, then API keys, when the current slot is rejected for auth, quota, or rate limits. Per-user spend is a local ledger (`usageProfiles` / `usageLedger` / `usageGrants`) with three seeded profiles — starter 5M, standard 20M, premium 60M tokens per month in `America/Sao_Paulo`. Limits ship on in `block` mode; an admin who needs room grants extra tokens (including to themselves). Assign a profile on the Users row or under Token limits.
 
 A user is a platform admin when their login is in `ATELIER_ADMIN_LOGINS`, or `platformAdmin` is set on their record, or **no explicit admin exists yet** and they are a GitHub `owner`. After the first admin is granted in the panel, other owners do not get the panel automatically. The last admin cannot be removed.
 

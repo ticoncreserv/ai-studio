@@ -39,15 +39,22 @@ export function selectAuthMethod(
 ): string | undefined {
   const ids = (methods ?? []).map((method) => method.id);
   if (!ids.length) return undefined;
+  // CURSOR_API_KEY / --api-key already authenticates ACP. Picking cursor_login
+  // or cached_token here opens a browser / waits 30s against the isolated HOME.
+  const skip = new Set<string>(["cached_token"]);
+  if (env.CURSOR_API_KEY?.trim()) skip.add("cursor_login");
+  if (env.CODEX_API_KEY?.trim() || env.OPENAI_API_KEY?.trim()) skip.add("chatgpt");
+  const allowed = ids.filter((id) => !skip.has(id));
+  if (!allowed.length) return undefined;
   for (const id of preferred ?? []) {
-    if (ids.includes(id)) return id;
+    if (allowed.includes(id)) return id;
   }
-  if (env.ANTHROPIC_API_KEY && ids.includes("anthropic_api_key")) return "anthropic_api_key";
-  if ((env.GEMINI_API_KEY || env.GOOGLE_API_KEY) && ids.includes("gemini_api_key")) return "gemini_api_key";
-  if (env.XAI_API_KEY && ids.includes("xai.api_key")) return "xai.api_key";
-  if (env.CURSOR_API_KEY && ids.includes("cursor_login")) return "cursor_login";
-  if (ids.includes("cached_token")) return "cached_token";
-  return ids[0];
+  if (env.ANTHROPIC_API_KEY && allowed.includes("anthropic_api_key")) return "anthropic_api_key";
+  if ((env.GEMINI_API_KEY || env.GOOGLE_API_KEY) && allowed.includes("gemini_api_key")) return "gemini_api_key";
+  if (env.XAI_API_KEY && allowed.includes("xai.api_key")) return "xai.api_key";
+  if (env.CODEX_API_KEY?.trim() && allowed.includes("codex-api-key")) return "codex-api-key";
+  if ((env.OPENAI_API_KEY || env.CODEX_API_KEY) && allowed.includes("openai-api-key")) return "openai-api-key";
+  return allowed[0];
 }
 
 export class AcpSession {

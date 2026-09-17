@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  committedSlashSkill,
+  composePromptWithSkill,
+  composerVisiblePrompt,
   insertSlashCommand,
   mcpServerFromToolName,
   mergeSlashCatalog,
   removeSlashCommand,
+  resolvedSlashSkill,
+  shouldClearSkillToken,
   slashMatches,
   slashQuery,
 } from "./slash";
@@ -38,6 +43,28 @@ describe("composer slash helpers", () => {
     expect(insertSlashCommand("/in", "inertia-crud")).toBe("/inertia-crud ");
     expect(removeSlashCommand("/inertia-crud quotes", "inertia-crud")).toBe("quotes");
     expect(removeSlashCommand("/inertia-crud ")).toBe("");
+  });
+
+  it("only tokens a slash command that exists in the catalog after a trailing space", () => {
+    const names = ["caveman", "inertia-crud"];
+    expect(committedSlashSkill("/caveman", names)).toBeNull();
+    expect(committedSlashSkill("/caveman ", names)).toBe("caveman");
+    expect(committedSlashSkill("/caveman do this", names)).toBe("caveman");
+    expect(committedSlashSkill("/nope ", names)).toBeNull();
+    expect(resolvedSlashSkill("/caveman", names)).toBe("caveman");
+    expect(resolvedSlashSkill("/nope extra", names)).toBeNull();
+    expect(composerVisiblePrompt("/caveman do this", "caveman")).toBe("do this");
+    expect(composePromptWithSkill("caveman", "do this")).toBe("/caveman do this");
+    expect(composePromptWithSkill("caveman", "")).toBe("/caveman ");
+    expect(
+      shouldClearSkillToken({ key: "Backspace", selectionStart: 0, selectionEnd: 0, hasSkill: true }),
+    ).toBe(true);
+    expect(
+      shouldClearSkillToken({ key: "Backspace", selectionStart: 1, selectionEnd: 1, hasSkill: true }),
+    ).toBe(false);
+    expect(
+      shouldClearSkillToken({ key: "Delete", selectionStart: 0, selectionEnd: 0, hasSkill: true }),
+    ).toBe(false);
   });
 
   it("reads the MCP server label from a tool name", () => {

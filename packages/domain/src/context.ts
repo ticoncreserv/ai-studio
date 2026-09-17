@@ -68,6 +68,12 @@ export function visiblePromptText(text: string): string {
   return text;
 }
 
+export function withInspectPrompt(text: string, notes: string[]): string {
+  const extra = notes.map((note) => note.trim()).filter(Boolean).join("\n\n");
+  if (!extra) return text;
+  return text.trim() ? `${text.trim()}\n\n${extra}` : extra;
+}
+
 export function titleFromPrompt(text: string): string {
   const cleaned = visiblePromptText(text).replace(/\s+/g, " ").trim();
   if (!cleaned) return "Untitled session";

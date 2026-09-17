@@ -11,6 +11,22 @@ describe("ACP client", () => {
     );
     expect(selectAuthMethod([{ id: "gemini_api_key" }], undefined, { GEMINI_API_KEY: "g" })).toBe("gemini_api_key");
     expect(selectAuthMethod([{ id: "xai.api_key" }], undefined, { XAI_API_KEY: "x" })).toBe("xai.api_key");
+    expect(selectAuthMethod([{ id: "chatgpt" }, { id: "codex-api-key" }], undefined, { CODEX_API_KEY: "sk" })).toBe(
+      "codex-api-key",
+    );
+    expect(selectAuthMethod([{ id: "chatgpt" }, { id: "openai-api-key" }], undefined, { OPENAI_API_KEY: "sk" })).toBe(
+      "openai-api-key",
+    );
+  });
+
+  it("does not pick cursor_login when CURSOR_API_KEY already authenticates ACP", () => {
+    expect(selectAuthMethod([{ id: "cursor_login" }], undefined, { CURSOR_API_KEY: "crsr_test" })).toBeUndefined();
+    expect(selectAuthMethod([{ id: "cursor_login" }], ["cursor_login"], { CURSOR_API_KEY: "crsr_test" })).toBeUndefined();
+    expect(
+      selectAuthMethod([{ id: "cursor_login" }, { id: "cached_token" }], undefined, { CURSOR_API_KEY: "crsr_test" }),
+    ).toBeUndefined();
+    expect(selectAuthMethod([{ id: "cursor_login" }], ["cursor_login"], {})).toBe("cursor_login");
+    expect(selectAuthMethod([{ id: "cursor_login" }, { id: "cached_token" }], undefined, {})).toBe("cursor_login");
   });
 
   it("serializes initialize and authenticate envelopes", () => {

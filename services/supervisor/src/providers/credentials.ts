@@ -4,12 +4,14 @@ import { readProviderSecrets } from "../runtime/env-file.js";
 
 export const PROVIDER_SECRET_KEYS: Record<Exclude<ProviderId, "mock">, string> = {
   cursor: "CURSOR_API_KEY",
+  codex: "CODEX_API_KEY",
   claude: "ANTHROPIC_API_KEY",
   gemini: "GEMINI_API_KEY",
   grok: "XAI_API_KEY",
 };
 
 export const PROVIDER_SECRET_ALIASES: Partial<Record<ProviderId, string[]>> = {
+  codex: ["OPENAI_API_KEY"],
   claude: ["CLAUDE_API_KEY"],
   gemini: ["GOOGLE_API_KEY"],
 };
@@ -18,9 +20,7 @@ export const PROVIDER_SECRET_ALIASES: Partial<Record<ProviderId, string[]>> = {
 export const PROVIDER_KEY_SLOTS = 8;
 
 export function providerSecretKey(id: string): string {
-  if (id === "cursor" || id === "claude" || id === "gemini" || id === "grok") {
-    return PROVIDER_SECRET_KEYS[id];
-  }
+  if (id in PROVIDER_SECRET_KEYS) return PROVIDER_SECRET_KEYS[id as Exclude<ProviderId, "mock">];
   return `${id.toUpperCase()}_API_KEY`;
 }
 

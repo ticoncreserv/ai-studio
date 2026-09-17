@@ -153,6 +153,18 @@ describe("github app manifest", () => {
     expect(githubOAuthRedirectCandidates()).toContain("http://localhost:/api/auth/github/callback");
   });
 
+  it("keeps OAuth redirect_uri on ATELIER_PUBLIC_URL even when the tab is 127.0.0.1", () => {
+    process.env.ATELIER_PUBLIC_URL = "http://localhost:43123";
+    expect(atelierCanonicalOrigin("http://127.0.0.1:43123")).toBe("http://localhost:43123");
+    expect(githubAppAuthorizeRedirectUri("http://127.0.0.1:43123")).toBe(
+      "http://localhost:43123/api/auth/github/callback",
+    );
+    expect(githubAppAuthorizeRedirectUri()).toBe("http://localhost:43123/api/auth/github/callback");
+    expect(githubAppRegisteredCallbackUrls("http://127.0.0.1:43123")[0]).toBe(
+      "http://localhost:43123/api/auth/github/callback",
+    );
+  });
+
   it("maps the manifest conversion payload and persists it", () => {
     const creds = credentialsFromManifestResponse({
       id: 99,

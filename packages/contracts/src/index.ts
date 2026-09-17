@@ -13,11 +13,17 @@ export const WorkspaceStatusSchema = z.enum([
 ]);
 export type WorkspaceStatus = z.infer<typeof WorkspaceStatusSchema>;
 
-export const ProviderIdSchema = z.enum(["cursor", "claude", "gemini", "grok", "mock"]);
+export const ProviderIdSchema = z.enum(["cursor", "codex", "claude", "gemini", "grok", "mock"]);
 export type ProviderId = z.infer<typeof ProviderIdSchema>;
 
 export const AgentModeSchema = z.enum(["agent", "plan", "ask"]);
 export type AgentMode = z.infer<typeof AgentModeSchema>;
+
+export const InspectPinSchema = z.object({
+  label: z.string().min(1),
+  note: z.string().min(1),
+});
+export type InspectPin = z.infer<typeof InspectPinSchema>;
 
 export const TodoStatusSchema = z.enum(["pending", "in_progress", "completed", "cancelled"]);
 export type TodoStatus = z.infer<typeof TodoStatusSchema>;
@@ -46,6 +52,7 @@ export const FeatureFlagSchema = z.enum([
   "claudeProvider",
   "geminiProvider",
   "grokProvider",
+  "codexProvider",
   "providerCanary",
   "usageMetering",
   "usageLimits",
@@ -96,6 +103,25 @@ export const ProviderKeyStateSchema = z.object({
   lastFailureKind: ProviderKeyFailureSchema.nullable().default(null),
 });
 export type ProviderKeyState = z.infer<typeof ProviderKeyStateSchema>;
+
+/**
+ * One Cursor CLI login on the host. Session files live under
+ * `var/cursor-home/<id>/`; `loggedIn` / `account` come from `agent status`.
+ */
+export const CursorCliAccountSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().default(""),
+  enabled: z.boolean().default(true),
+  loggedIn: z.boolean().default(false),
+  account: z.string().nullable().default(null),
+  failures: z.number().int().min(0).default(0),
+  lastUsedAt: z.string().nullable().default(null),
+  lastFailureAt: z.string().nullable().default(null),
+  cooldownUntil: z.string().nullable().default(null),
+  lastError: z.string().nullable().default(null),
+  lastFailureKind: ProviderKeyFailureSchema.nullable().default(null),
+});
+export type CursorCliAccount = z.infer<typeof CursorCliAccountSchema>;
 
 export const ProviderModelSchema = z.object({
   id: z.string().min(1),
@@ -219,6 +245,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     text: z.string(),
     attachments: z.array(z.string()).default([]),
     mentions: z.array(z.string()).default([]),
+    inspect: z.array(InspectPinSchema).optional(),
     skill: z.string().optional(),
   }),
   z.object({
@@ -387,6 +414,7 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
       "push_failed",
       "permission_denied",
       "provider_failed",
+      "provider_failover",
     ]),
     message: z.string(),
   }),
@@ -430,6 +458,7 @@ export const ClientCommandSchema = z.discriminatedUnion("type", [
     text: z.string(),
     attachments: z.array(z.string()).default([]),
     mentions: z.array(z.string()).default([]),
+    inspect: z.array(InspectPinSchema).optional(),
     recipeId: z.string().optional(),
     skill: z.string().optional(),
     mode: AgentModeSchema.optional(),

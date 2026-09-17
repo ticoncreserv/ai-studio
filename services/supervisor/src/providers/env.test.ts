@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { cursorAgentEnv, hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./env.js";
+import { cursorAccountHome, cursorAgentEnv, cursorProbeHome, hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./env.js";
 
 describe("cursor agent env", () => {
   it("prefers cursor only when an API key is present", () => {
@@ -17,6 +17,7 @@ describe("cursor agent env", () => {
     expect(resolveSessionProvider("mock", { CURSOR_API_KEY: "crsr_test" })).toBe("cursor");
     expect(resolveSessionProvider("cursor", {})).toBe("cursor");
     expect(resolveSessionProvider("claude", { CURSOR_API_KEY: "crsr_test" })).toBe("claude");
+    expect(resolveSessionProvider("codex", { CURSOR_API_KEY: "crsr_test" })).toBe("codex");
   });
 
   it("strips Origin-scoped Cursor session vars so CURSOR_API_KEY wins", () => {
@@ -38,6 +39,22 @@ describe("cursor agent env", () => {
     expect(parts[1]).toBe(local);
     expect(parts).toContain("/usr/bin");
     expect(env.HOME).toContain("cursor-home");
+    expect(env.HOME).toContain("default");
+    expect(env.AGENT_CLI_CREDENTIAL_STORE).toBe("file");
+  });
+
+  it("uses an isolated HOME per CLI account and omits the API key on CLI runs", () => {
+    const env = cursorAgentEnv(
+      { CURSOR_API_KEY: "crsr_test", PATH: "/usr/bin" },
+      { home: "/tmp/cursor-home/work", apiKey: false },
+    );
+    expect(env.HOME).toBe("/tmp/cursor-home/work");
+    expect(env.CURSOR_API_KEY).toBeUndefined();
+    expect(env.AGENT_CLI_CREDENTIAL_STORE).toBe("file");
+    expect(cursorProbeHome({ ATELIER_CURSOR_HOME: "/tmp/cursor-home" })).toBe("/tmp/cursor-home/.probe");
+    expect(cursorAccountHome("account-2", { ATELIER_CURSOR_HOME: "/tmp/cursor-home" })).toBe(
+      "/tmp/cursor-home/account-2",
+    );
   });
 
   it("moves nvm and local bin to the front even when they already appear on PATH", () => {

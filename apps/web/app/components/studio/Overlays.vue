@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Command } from "@lucide/vue";
-import type { StudioDialog, StudioMcpServer, StudioPayload, StudioSheet, StudioSkill } from "~/types/studio";
+import type { StudioDialog, StudioMcpServer, StudioPayload, StudioSheet, StudioSkill, PreviewDebug } from "~/types/studio";
+import type { PreviewDebugAction } from "~/utils/preview-debug-prompt";
 import type { SessionEvent } from "@atelier/contracts";
+import { STUDIO_SHORTCUTS } from "~/utils/studio-shortcuts";
 import { formatTokens, usageBarTone, usageBarWidth } from "~/utils/usage";
 
 const props = defineProps<{
@@ -16,6 +18,11 @@ const props = defineProps<{
   pendingPermission?: SessionEvent;
   questionAnswers: Record<string, string[]>;
   toast: string;
+  debug?: PreviewDebug | null;
+  debugPending?: boolean;
+  debugError?: string;
+  hasRuntimeError?: boolean;
+  commandBusy?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -36,6 +43,7 @@ const emit = defineEmits<{
   hibernate: [];
   sync: [];
   "update:questionAnswers": [value: Record<string, string[]>];
+  debugAction: [payload: { action: PreviewDebugAction; sql?: string }];
 }>();
 
 const { t, locale } = useI18n();
@@ -193,7 +201,7 @@ function runPaletteCommand(cmd: { id: string; run: () => void }) {
 }
 
 function submitQuestion() {
-  if (!props.pendingQuestion || props.pendingQuestion.type !== "question") return;
+  if (!props.pendingQuestion || props.pendingQuestion.type !== "question" || props.commandBusy) return;
   emit("command", {
     type: "answer_question",
     answers: props.pendingQuestion.questions.map((q) => ({
@@ -521,6 +529,16 @@ function submitQuestion() {
     </div>
   </UiDialog>
 
+  <StudioPreviewDebugSheet
+    :open="sheet === 'debug'"
+    :debug="debug"
+    :pending="debugPending"
+    :last-error="debugError"
+    :has-runtime-error="hasRuntimeError"
+    @close="emit('update:sheet', null)"
+    @action="emit('debugAction', $event)"
+  />
+
   <UiDialog :open="dialog === 'invite'" :title="t('invite.title')" @close="emit('update:dialog', null)">
     <p class="text-sm leading-relaxed text-ink-500">{{ t("invite.hint") }}</p>
     <p class="mt-2 text-[12px] text-ink-300">{{ t("invite.expires") }}</p>
@@ -535,9 +553,9 @@ function submitQuestion() {
 
   <UiDialog :open="dialog === 'shortcuts'" :title="t('nav.shortcuts')" @close="emit('update:dialog', null)">
     <ul class="space-y-2">
-      <li v-for="cmd in commands.filter((c) => c.keys)" :key="cmd.id" class="flex items-center justify-between text-sm">
-        <span>{{ cmd.label }}</span>
-        <UiKbd>{{ cmd.keys }}</UiKbd>
+      <li v-for="row in STUDIO_SHORTCUTS" :key="row.id" class="flex items-center justify-between text-sm">
+        <span>{{ t(row.labelKey) }}</span>
+        <UiKbd>{{ row.keys }}</UiKbd>
       </li>
     </ul>
   </UiDialog>
@@ -559,6 +577,6 @@ function submitQuestion() {
         </button>
       </div>
     </div>
-    <UiButton class="mt-4 w-full" @click="submitQuestion">{{ t("chat.send") }}</UiButton>
+    <UiButton class="mt-4 w-full" :disabled="commandBusy" :loading="commandBusy" @click="submitQuestion">{{ t("chat.send") }}</UiButton>
   </UiDialog>
 </template>

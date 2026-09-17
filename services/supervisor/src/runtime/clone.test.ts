@@ -39,6 +39,24 @@ describe("provisionWorktree", () => {
     expect(await isForeignWorktree(worktree, "ticoncreserv/app")).toBe(true);
   });
 
+  it("points source clones at the GitHub repo so they are not treated as foreign", async () => {
+    const source = tempDir();
+    await git(source, ["init", "-b", "main"]);
+    writeFileSync(join(source, "README.md"), "real source");
+    await git(source, ["add", "-A"], { name: "Ada", email: "ada@example.com" });
+    await git(source, ["commit", "-m", "init"], { name: "Ada", email: "ada@example.com" });
+
+    const worktree = join(tempDir(), "ws");
+    await provisionWorktree({
+      worktree,
+      branch: "user/ada/studio",
+      user: { name: "Ada", email: "ada@example.com" },
+      sourceDir: source,
+      repo: "ticoncreserv/app",
+    });
+    expect(await isForeignWorktree(worktree, "ticoncreserv/app")).toBe(false);
+  });
+
   it("fetches only the default branch and the user studio branch", () => {
     expect(neededFetchRefs("main", "user/ada/studio")).toEqual([
       "+refs/heads/main:refs/heads/main",

@@ -56,7 +56,7 @@ onBeforeUnmount(() => window.removeEventListener("message", onPreviewMessage));
       <div class="ml-auto flex shrink-0 items-center gap-1.5">
         <NuxtLink to="/" class="text-[12px] text-ink-500 hover:text-ink-950">{{ t("share.openStudio") }}</NuxtLink>
         <a v-if="data" :href="data.previewPath" target="_blank" rel="noreferrer" class="inline-flex">
-          <UiIconButton :label="t('preview.openTab')" size="sm">
+          <UiIconButton :label="t('preview.openExternal')" size="sm">
             <Maximize2 class="h-3.5 w-3.5" />
           </UiIconButton>
         </a>

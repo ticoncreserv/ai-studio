@@ -148,7 +148,7 @@ export async function runLiveAcpEval(env: NodeJS.ProcessEnv = process.env): Prom
       run.stop();
     } else {
       const providerId = (env.ATELIER_LIVE_EVAL_PROVIDER ?? "cursor") as ProviderId;
-      const health = inspectProviderHealth(providerId, { ...defaultFlags, multiProvider: true, claudeProvider: true, geminiProvider: true, grokProvider: true }, env);
+      const health = inspectProviderHealth(providerId, { ...defaultFlags, multiProvider: true, claudeProvider: true, geminiProvider: true, grokProvider: true, codexProvider: true }, env);
       if (health.status !== "available" && health.status !== "degraded") {
         return {
           id: "live-acp",

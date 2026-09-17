@@ -59,6 +59,15 @@ async function seatedUser(p: Platform, login: string): Promise<{ user: UserRecor
   return { user, workspaceId: ws.id, sessionId: session.id };
 }
 
+async function promptAndFlush(
+  p: Platform,
+  input: { user: UserRecord; workspaceId: string; sessionId: string },
+  text: string,
+) {
+  await p.handleCommand({ user: input.user, sessionId: input.sessionId, command: { type: "prompt", text, attachments: [], mentions: [] } });
+  await p.flushWorkspace(input.workspaceId);
+}
+
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -146,17 +155,17 @@ describe("platform metering", () => {
     const p = platform(scriptedProvider((emit) => {
       emit({ type: "assistant_delta", id: "d1", at: "t", text: "z".repeat(2_000) });
     }));
-    const { user, sessionId } = await seatedUser(p, "meter-one");
-    await p.handleCommand({ user, sessionId, command: { type: "prompt", text: "Say hello", attachments: [], mentions: [] } });
+    const seated = await seatedUser(p, "meter-one");
+    await promptAndFlush(p, seated, "Say hello");
 
     const ledger = p.store.read().usageLedger;
     expect(ledger).toHaveLength(1);
-    expect(ledger[0]!.userId).toBe(user.id);
+    expect(ledger[0]!.userId).toBe(seated.user.id);
     expect(ledger[0]!.inputTokens).toBeGreaterThan(0);
     expect(ledger[0]!.outputTokens).toBe(500);
     expect(ledger[0]!.source).toBe("estimated");
 
-    const summary = p.usageSummary(user.id);
+    const summary = p.usageSummary(seated.user.id);
     expect(summary.profileId).toBe("standard");
     expect(summary.runs).toBe(1);
     expect(summary.periodTokens).toBe(ledger[0]!.estimatedTokens);
@@ -168,24 +177,24 @@ describe("platform metering", () => {
     const p = platform(scriptedProvider((emit) => {
       emit({ type: "usage", id: "u", at: "t", v: 1, contextUsed: 30_000, contextSize: 200_000, costUsd: cumulative });
     }));
-    const { user, sessionId } = await seatedUser(p, "meter-cost");
-    await p.handleCommand({ user, sessionId, command: { type: "prompt", text: "First", attachments: [], mentions: [] } });
+    const seated = await seatedUser(p, "meter-cost");
+    await promptAndFlush(p, seated, "First");
     cumulative = 0.06;
-    await p.handleCommand({ user, sessionId, command: { type: "prompt", text: "Second", attachments: [], mentions: [] } });
+    await promptAndFlush(p, seated, "Second");
 
     const ledger = p.store.read().usageLedger;
     expect(ledger).toHaveLength(2);
     expect(ledger[0]!.costUsd).toBeCloseTo(0.045);
     expect(ledger[1]!.costUsd).toBeCloseTo(0.015);
-    expect(p.store.read().sessions.find((row) => row.id === sessionId)?.costBaselineUsd).toBeCloseTo(0.06);
-    expect(p.usageSummary(user.id).periodCostUsd).toBeCloseTo(0.06);
+    expect(p.store.read().sessions.find((row) => row.id === seated.sessionId)?.costBaselineUsd).toBeCloseTo(0.06);
+    expect(p.usageSummary(seated.user.id).periodCostUsd).toBeCloseTo(0.06);
   });
 
   it("skips the ledger when metering is off", async () => {
     const p = platform(scriptedProvider(() => undefined));
-    const { user, sessionId } = await seatedUser(p, "meter-off");
+    const seated = await seatedUser(p, "meter-off");
     p.saveFlags({ usageMetering: false });
-    await p.handleCommand({ user, sessionId, command: { type: "prompt", text: "Quiet", attachments: [], mentions: [] } });
+    await promptAndFlush(p, seated, "Quiet");
     expect(p.store.read().usageLedger).toEqual([]);
   });
 });
@@ -221,7 +230,7 @@ describe("platform enforcement", () => {
 
   it("lets a grant unblock the same prompt", async () => {
     const p = platform(scriptedProvider(() => undefined));
-    const { user, sessionId } = await seatedUser(p, "granted");
+    const { user, workspaceId, sessionId } = await seatedUser(p, "granted");
     const admin = await p.loginDev("ticoncreserv");
     p.saveUsageProfiles(admin, p.usageProfiles().map((row) =>
       row.id === "standard" ? { ...row, limits: { ...row.limits, monthlyTokens: 1, dailyTokens: 0, perRunTokens: 0 } } : row,
@@ -231,7 +240,7 @@ describe("platform enforcement", () => {
     ).rejects.toBeInstanceOf(UsageLimitError);
 
     p.grantUsageTokens(admin, user.id, 1_000_000, "release week");
-    await p.handleCommand({ user, sessionId, command: { type: "prompt", text: "Build it", attachments: [], mentions: [] } });
+    await promptAndFlush(p, { user, workspaceId, sessionId }, "Build it");
     expect(p.store.read().usageLedger).toHaveLength(1);
     expect(p.usageSummary(user.id).grantedTokens).toBe(1_000_000);
   });
@@ -241,25 +250,25 @@ describe("platform enforcement", () => {
       emit({ type: "assistant_delta", id: "d1", at: "t", text: "z".repeat(40_000) });
       emit({ type: "assistant_delta", id: "d2", at: "t", text: "z".repeat(40_000) });
     }));
-    const { user, sessionId } = await seatedUser(p, "per-run");
+    const seated = await seatedUser(p, "per-run");
     const admin = await p.loginDev("ticoncreserv");
     p.saveUsageProfiles(admin, p.usageProfiles().map((row) =>
       row.id === "standard" ? { ...row, limits: { ...row.limits, perRunTokens: 5_000 } } : row,
     ));
 
-    await p.handleCommand({ user, sessionId, command: { type: "prompt", text: "Write a lot", attachments: [], mentions: [] } });
-    expect(p.snapshot(sessionId).budgetCut).toContain("per-run");
+    await promptAndFlush(p, seated, "Write a lot");
+    expect(p.snapshot(seated.sessionId).budgetCut).toContain("per-run");
   });
 
   it("does not block when the limits flag is off", async () => {
     const p = platform(scriptedProvider(() => undefined));
-    const { user, sessionId } = await seatedUser(p, "flag-off");
+    const seated = await seatedUser(p, "flag-off");
     const admin = await p.loginDev("ticoncreserv");
     p.saveUsageProfiles(admin, p.usageProfiles().map((row) =>
       row.id === "standard" ? { ...row, limits: { ...row.limits, monthlyTokens: 1 } } : row,
     ));
     p.saveFlags({ usageLimits: false });
-    await p.handleCommand({ user, sessionId, command: { type: "prompt", text: "Build it", attachments: [], mentions: [] } });
+    await promptAndFlush(p, seated, "Build it");
     expect(p.store.read().usageLedger).toHaveLength(1);
   });
 
@@ -304,6 +313,34 @@ describe("profile administration", () => {
     expect(() => p.saveUsageProfiles(admin, bad)).toThrow();
     const duplicated = [p.usageProfiles()[0]!, p.usageProfiles()[0]!];
     expect(() => p.saveUsageProfiles(admin, duplicated)).toThrow(/Duplicate profile id/);
+  });
+
+  it("adds a plan and refuses to drop one that still has people", async () => {
+    const p = platform();
+    const admin = await p.loginDev("ticoncreserv");
+    const user = await p.loginDev("assigned");
+    p.setUserUsageProfile(admin, user.id, "starter");
+    const extra = {
+      ...p.usageProfiles()[1]!,
+      id: "agency",
+      label: "Agency",
+    };
+    expect(p.saveUsageProfiles(admin, [...p.usageProfiles(), extra]).map((row) => row.id)).toContain("agency");
+    const withoutStarter = p.usageProfiles().filter((row) => row.id !== "starter");
+    expect(() => p.saveUsageProfiles(admin, withoutStarter)).toThrow(/still has people/);
+  });
+
+  it("migrates people when deleting a plan and keeps at least one", async () => {
+    const p = platform();
+    const admin = await p.loginDev("ticoncreserv");
+    const user = await p.loginDev("assigned");
+    p.setUserUsageProfile(admin, user.id, "starter");
+    expect(() => p.deleteUsageProfile(admin, "starter")).toThrow(/migrateTo required/);
+    expect(p.deleteUsageProfile(admin, "starter", "premium").map((row) => row.id)).toEqual(["standard", "premium"]);
+    expect(p.usageSummary(user.id).profileId).toBe("premium");
+    expect(() => p.deleteUsageProfile(admin, "standard")).toThrow(/migrateTo required/);
+    expect(p.deleteUsageProfile(admin, "standard", "premium").map((row) => row.id)).toEqual(["premium"]);
+    expect(() => p.deleteUsageProfile(admin, "premium")).toThrow(/last usage profile/);
   });
 
   it("rolls expired entries into a rollup and keeps the total", async () => {

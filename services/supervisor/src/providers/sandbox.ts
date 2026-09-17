@@ -19,6 +19,8 @@ const STRIP_KEYS = [
   "GOOGLE_APPLICATION_CREDENTIALS",
   "XAI_API_KEY",
   "CURSOR_API_KEY",
+  "OPENAI_API_KEY",
+  "CODEX_API_KEY",
 ];
 
 export function sanitizeAgentEnv(env: NodeJS.ProcessEnv, keep: string[] = []): NodeJS.ProcessEnv {
@@ -95,14 +97,14 @@ export function wrapSandbox(
       if (profile === "required") throw new Error("Sandbox is required but bubblewrap is not installed");
       return { command, args, backend: null };
     }
+    const binds = sandboxBindPaths(cwd, env);
+    const bindArgs = binds.flatMap((path) => ["--bind", path, path]);
     return {
       command: bwrap,
       args: [
         "--unshare-pid",
         "--die-with-parent",
-        "--bind",
-        cwd,
-        cwd,
+        ...bindArgs,
         "--chdir",
         cwd,
         command,
@@ -130,8 +132,7 @@ export function wrapSandbox(
       env.ATELIER_SANDBOX_NETWORK?.trim() || "none",
       "--user",
       "65534:65534",
-      "--mount",
-      `type=bind,src=${cwd},dst=${cwd}`,
+      ...sandboxBindPaths(cwd, env).flatMap((path) => ["--mount", `type=bind,src=${path},dst=${path}`]),
       "--workdir",
       cwd,
       image,
@@ -140,4 +141,11 @@ export function wrapSandbox(
     ],
     backend,
   };
+}
+
+function sandboxBindPaths(cwd: string, env: NodeJS.ProcessEnv): string[] {
+  const paths = [cwd];
+  const home = env.HOME?.trim();
+  if (home && home !== cwd) paths.push(home);
+  return paths;
 }

@@ -10,14 +10,26 @@ import {
   Paperclip,
   Plug,
   Plus,
+  Scan,
   Sparkles,
   Wrench,
   X,
 } from "@lucide/vue";
+import type { InspectPin } from "@atelier/contracts";
 import type { StudioAttachment, StudioMcpServer, StudioSkill } from "~/types/studio";
 import type { QueuedPrompt } from "~/utils/chat-events";
-import { MCP_SERVER_WARN_THRESHOLD } from "~/utils/slash";
+import {
+  composerCompactFieldWidth,
+  composerFieldHeight,
+  composerNeedsExpanded,
+} from "~/utils/composer-layout";
 import type { SlashRow } from "~/utils/slash";
+import {
+  composePromptWithSkill,
+  composerVisiblePrompt,
+  MCP_SERVER_WARN_THRESHOLD,
+  shouldClearSkillToken,
+} from "~/utils/slash";
 
 const props = defineProps<{
   modelValue: string;
@@ -32,6 +44,7 @@ const props = defineProps<{
   providers?: ProviderCapability[];
   placeholder: string;
   attachments: StudioAttachment[];
+  inspectPins?: InspectPin[];
   mentionsOpen: boolean;
   mentionHits: Array<{ item: string; kind: string }>;
   slashOpen?: boolean;
@@ -62,6 +75,7 @@ const emit = defineEmits<{
   "manage-mcp": [];
   attach: [files: FileList];
   "remove-attachment": [path: string];
+  "remove-inspect": [note: string];
   "toggle-spectator": [];
   "drop-queue": [];
   "update:provider": [value: string];
@@ -70,6 +84,11 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const fileInput = ref<HTMLInputElement | null>(null);
 const field = ref<HTMLTextAreaElement | null>(null);
+const inputRow = ref<HTMLElement | null>(null);
+const endCluster = ref<HTMLElement | null>(null);
+const skillToken = ref<HTMLElement | null>(null);
+const expanded = ref(false);
+let rowObserver: ResizeObserver | null = null;
 const paletteOpen = ref(false);
 const paletteQuery = ref("");
 const paletteFilter = ref<HTMLInputElement | null>(null);
@@ -82,13 +101,15 @@ const cursor = ref(0);
 const listening = ref(false);
 const dictationSupported = ref(false);
 const queued = computed(() => props.queue ?? []);
+const inspectPins = computed(() => props.inspectPins ?? []);
 const slashHits = computed(() => props.slashHits ?? []);
 const skills = computed(() => props.skills ?? []);
 const mcpServers = computed(() => props.mcpServers ?? []);
 const enabledMcpCount = computed(() => mcpServers.value.filter((server) => server.enabled && !server.shadowed).length);
-const canSend = computed(() => Boolean(props.modelValue.trim() || props.recipeId || props.attachments.length));
+const canSend = computed(() => Boolean(props.modelValue.trim() || props.recipeId || props.attachments.length || inspectPins.value.length));
 const sendBlocked = computed(() => props.spectator || props.usageBlocked === true || !canSend.value);
 const showStop = computed(() => props.sending && !canSend.value);
+const visiblePrompt = computed(() => composerVisiblePrompt(props.modelValue, props.skillChip));
 
 type Recognition = {
   lang: string;
@@ -116,6 +137,7 @@ const providerLabel = computed(() => {
   if (props.provider === "claude") return t("chat.usingClaude");
   if (props.provider === "gemini") return t("chat.usingGemini");
   if (props.provider === "grok") return t("chat.usingGrok");
+  if (props.provider === "codex") return t("chat.usingCodex");
   if (props.provider === "mock") return t("chat.usingMock");
   return catalog.value.find((row) => row.id === props.provider)?.label ?? props.provider;
 });
@@ -135,16 +157,101 @@ const visibleModes = computed(() => {
   return available.filter((item) => `${item.label} ${item.desc}`.toLowerCase().includes(needle));
 });
 
+function readAutoHeight(el: HTMLTextAreaElement): number {
+  const previous = el.style.height;
+  el.style.height = "auto";
+  const height = el.scrollHeight;
+  el.style.height = previous;
+  return height;
+}
+
+function probeHeightAtWidth(source: HTMLTextAreaElement, width: number): number {
+  const probe = document.createElement("textarea");
+  const cs = getComputedStyle(source);
+  probe.rows = 1;
+  probe.value = source.value;
+  probe.style.cssText = [
+    "position:absolute",
+    "left:-9999px",
+    "top:0",
+    "height:auto",
+    "overflow:hidden",
+    `width:${width}px`,
+    `font:${cs.font}`,
+    `font-size:${cs.fontSize}`,
+    `line-height:${cs.lineHeight}`,
+    `letter-spacing:${cs.letterSpacing}`,
+    `padding:${cs.padding}`,
+    `border:${cs.border}`,
+    `box-sizing:${cs.boxSizing}`,
+    "white-space:pre-wrap",
+    `overflow-wrap:${cs.overflowWrap}`,
+  ].join(";");
+  document.body.append(probe);
+  const height = probe.scrollHeight;
+  probe.remove();
+  return height;
+}
+
+function heightAtCompactWidth(el: HTMLTextAreaElement): number {
+  const row = inputRow.value;
+  const end = endCluster.value;
+  if (!expanded.value || !row || !end) return readAutoHeight(el);
+  const styles = getComputedStyle(row);
+  const paddingX = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
+  const columnGap = Number.parseFloat(styles.columnGap);
+  const width = composerCompactFieldWidth(
+    row.clientWidth,
+    paddingX,
+    columnGap,
+    end.offsetWidth,
+    undefined,
+    skillToken.value?.offsetWidth ?? 0,
+  );
+  return probeHeightAtWidth(el, width);
+}
+
+function applyFieldHeight(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${composerFieldHeight(el.scrollHeight)}px`;
+}
+
 function resize() {
   const el = field.value;
   if (!el) return;
-  el.style.height = "auto";
-  el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+  const nextExpanded = composerNeedsExpanded(el.value, heightAtCompactWidth(el));
+  const layoutChanged = nextExpanded !== expanded.value;
+  expanded.value = nextExpanded;
+  if (layoutChanged) {
+    void nextTick(() => {
+      if (field.value) applyFieldHeight(field.value);
+    });
+    return;
+  }
+  applyFieldHeight(el);
 }
 
 watch(() => props.modelValue, () => nextTick(resize));
+watch(
+  () => props.skillChip,
+  async () => {
+    await nextTick();
+    resize();
+    field.value?.focus();
+  },
+);
 onMounted(() => {
   resize();
+  if (inputRow.value && typeof ResizeObserver !== "undefined") {
+    let lastWidth = inputRow.value.clientWidth;
+    rowObserver = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      if (Math.abs(width - lastWidth) < 1) return;
+      lastWidth = width;
+      resize();
+    });
+    rowObserver.observe(inputRow.value);
+  }
   const ctor = (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown });
   dictationSupported.value = Boolean(ctor.SpeechRecognition || ctor.webkitSpeechRecognition);
 });
@@ -216,7 +323,27 @@ function pickHighlightedSlash() {
   if (target) emit("skill", target.name);
 }
 
+function onComposerInput(event: Event) {
+  const el = event.target as HTMLTextAreaElement;
+  emit("update:modelValue", composePromptWithSkill(props.skillChip, el.value));
+  resize();
+}
+
 function onComposerKey(event: KeyboardEvent) {
+  const el = field.value;
+  if (
+    el &&
+    shouldClearSkillToken({
+      key: event.key,
+      selectionStart: el.selectionStart,
+      selectionEnd: el.selectionEnd,
+      hasSkill: Boolean(props.skillChip),
+    })
+  ) {
+    event.preventDefault();
+    emit("clear-skill");
+    return;
+  }
   if (props.slashOpen) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -229,6 +356,11 @@ function onComposerKey(event: KeyboardEvent) {
       return;
     }
     if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (slashHits.value.length) pickHighlightedSlash();
+      return;
+    }
+    if (event.key === "Tab") {
       event.preventDefault();
       if (slashHits.value.length) pickHighlightedSlash();
       return;
@@ -286,7 +418,10 @@ function toggleDictation() {
   recognition.start();
 }
 
-onBeforeUnmount(() => recognition?.stop());
+onBeforeUnmount(() => {
+  recognition?.stop();
+  rowObserver?.disconnect();
+});
 </script>
 
 <template>
@@ -497,7 +632,14 @@ onBeforeUnmount(() => recognition?.stop());
     </div>
 
     <div class="cx-composer">
-      <div v-if="attachments.length" class="flex flex-wrap gap-1 px-2 pt-2">
+      <div v-if="attachments.length || inspectPins.length" class="flex flex-wrap gap-1 px-2 pt-2">
+        <span v-for="pin in inspectPins" :key="pin.note" class="cx-pill max-w-full">
+          <Scan class="h-3 w-3 shrink-0" />
+          <span class="min-w-0 truncate font-mono">{{ pin.label }}</span>
+          <button type="button" :aria-label="t('preview.removePin')" class="text-ink-400 hover:text-ink-950" @click="emit('remove-inspect', pin.note)">
+            <X class="h-3 w-3" />
+          </button>
+        </span>
         <span v-for="file in attachments" :key="file.path" class="cx-pill max-w-full">
           <span class="min-w-0 truncate">{{ file.name }}</span>
           <button type="button" :aria-label="t('chat.removeAttachment')" class="text-ink-400 hover:text-ink-950" @click="emit('remove-attachment', file.path)">
@@ -506,10 +648,10 @@ onBeforeUnmount(() => recognition?.stop());
         </span>
       </div>
 
-      <div class="flex items-end gap-2 px-2 py-2">
+      <div ref="inputRow" class="cx-composer-input" :data-expanded="expanded || undefined" :data-skill="skillChip || undefined">
         <button
           type="button"
-          class="cx-round"
+          class="cx-round cx-composer-plus"
           :data-active="paletteOpen || undefined"
           :aria-label="t('chat.palette')"
           :title="t('chat.palette')"
@@ -517,55 +659,72 @@ onBeforeUnmount(() => recognition?.stop());
         >
           <Plus class="h-3.5 w-3.5" />
         </button>
-        <textarea
-          id="composer"
-          ref="field"
-          rows="1"
-          :value="modelValue"
-          :disabled="spectator"
-          :placeholder="placeholder"
-          @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value); resize()"
-          @keydown="onComposerKey"
-          @keydown.meta.enter.prevent="emit('submit')"
-          @keydown.ctrl.enter.prevent="emit('submit')"
-          @paste="onPaste"
-        />
-        <UiIconButton v-if="sending && canSend" :label="t('chat.stop')" size="sm" @click="emit('cancel')">
-          <X class="h-3.5 w-3.5" />
-        </UiIconButton>
-        <button
-          v-if="dictationSupported && !sending"
-          type="button"
-          class="cx-round"
-          :data-tone="listening ? 'recording' : undefined"
-          :aria-label="t('chat.dictate')"
-          :title="t('chat.dictate')"
-          @click="toggleDictation"
-        >
-          <Mic class="h-3.5 w-3.5" />
-        </button>
-        <button
-          v-if="showStop"
-          type="button"
-          class="cx-round"
-          data-tone="primary"
-          :aria-label="t('chat.stop')"
-          :title="t('chat.stop')"
-          @click="emit('cancel')"
-        >
-          <span class="h-[9px] w-[9px] rounded-[1.5px] bg-current" />
-        </button>
-        <button
-          v-else
-          type="submit"
-          :disabled="sendBlocked"
-          class="cx-round"
-          data-tone="primary"
-          :aria-label="sending ? t('chat.queue') : t('chat.send')"
-          :title="sending ? t('chat.queue') : t('chat.send')"
-        >
-          <ArrowUp class="h-3.5 w-3.5" />
-        </button>
+        <div class="cx-composer-field">
+          <button
+            v-if="skillChip"
+            ref="skillToken"
+            type="button"
+            class="cx-skill-token"
+            :aria-label="t('chat.skillChipClear')"
+            :title="t('chat.skillChip')"
+            :disabled="spectator"
+            @click="emit('clear-skill')"
+          >
+            /{{ skillChip }}
+          </button>
+          <textarea
+            id="composer"
+            ref="field"
+            class="thin-scroll"
+            rows="1"
+            :value="visiblePrompt"
+            :disabled="spectator"
+            :placeholder="placeholder"
+            @input="onComposerInput"
+            @keydown="onComposerKey"
+            @keydown.meta.enter.prevent="emit('submit')"
+            @keydown.ctrl.enter.prevent="emit('submit')"
+            @paste="onPaste"
+          />
+        </div>
+        <div ref="endCluster" class="cx-composer-end">
+          <UiIconButton v-if="sending && canSend" :label="t('chat.stop')" size="sm" @click="emit('cancel')">
+            <X class="h-3.5 w-3.5" />
+          </UiIconButton>
+          <button
+            v-if="dictationSupported && !sending"
+            type="button"
+            class="cx-round"
+            :data-tone="listening ? 'recording' : undefined"
+            :aria-label="t('chat.dictate')"
+            :title="t('chat.dictate')"
+            @click="toggleDictation"
+          >
+            <Mic class="h-3.5 w-3.5" />
+          </button>
+          <button
+            v-if="showStop"
+            type="button"
+            class="cx-round"
+            data-tone="primary"
+            :aria-label="t('chat.stop')"
+            :title="t('chat.stop')"
+            @click="emit('cancel')"
+          >
+            <span class="h-[9px] w-[9px] rounded-[1.5px] bg-current" />
+          </button>
+          <button
+            v-else
+            type="submit"
+            :disabled="sendBlocked"
+            class="cx-round"
+            data-tone="primary"
+            :aria-label="sending ? t('chat.queue') : t('chat.send')"
+            :title="sending ? t('chat.queue') : t('chat.send')"
+          >
+            <ArrowUp class="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       <div class="flex items-center gap-1.5 border-t border-line px-2 py-1.5">
@@ -584,13 +743,6 @@ onBeforeUnmount(() => recognition?.stop());
         <span class="cx-pill min-w-0" :title="providerModel ? t('chat.providerModel') : t('chat.model')">
           <Cpu class="h-3 w-3 shrink-0" />
           <span class="truncate">{{ providerLine }}</span>
-        </span>
-        <span v-if="skillChip" class="cx-pill min-w-0" :title="t('chat.skillChip')">
-          <Sparkles class="h-3 w-3 shrink-0" />
-          <span class="truncate">/{{ skillChip }}</span>
-          <button type="button" :aria-label="t('chat.skillChipClear')" class="text-ink-400 hover:text-ink-950" @click="emit('clear-skill')">
-            <X class="h-3 w-3" />
-          </button>
         </span>
         <span v-if="activeRecipe" class="cx-pill min-w-0" :title="t('chat.recipe')">
           <span class="truncate">{{ activeRecipe.title }}</span>

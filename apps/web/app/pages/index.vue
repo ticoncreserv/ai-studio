@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ArrowRight, Settings2 } from "@lucide/vue";
+import { ArrowRight, LogOut, Settings2 } from "@lucide/vue";
 
 const { t } = useI18n();
 const route = useRoute();
+const { leaving, signOut } = useSignOut();
 const loading = ref(false);
 const ready = ref(false);
 const me = ref<null | {
@@ -11,10 +12,6 @@ const me = ref<null | {
   sessions?: Array<{ id: string; title: string }>;
 }>(null);
 const error = computed(() => (route.query.error === "github" ? t("auth.error") : ""));
-
-useHead({
-  title: () => `${t("app.name")} · ${t("auth.title")}`,
-});
 
 onMounted(async () => {
   try {
@@ -59,9 +56,9 @@ function sessionTitle(session: { title: string }) {
     <AuthLoginAtmosphere />
 
     <header class="login-topbar">
-      <span class="login-brand">
+      <span class="app-brand">
         <UiLogo :size="24" />
-        <span class="login-wordmark">{{ t("app.wordmark") }}</span>
+        <span class="app-wordmark">{{ t("app.wordmark") }}</span>
       </span>
       <div class="login-tools">
         <NuxtLink
@@ -73,6 +70,17 @@ function sessionTitle(session: { title: string }) {
         >
           <Settings2 class="h-3.5 w-3.5" aria-hidden="true" />
         </NuxtLink>
+        <button
+          v-if="me"
+          type="button"
+          class="login-admin"
+          :aria-label="t('nav.signOut')"
+          :title="t('nav.signOut')"
+          :disabled="leaving"
+          @click="signOut"
+        >
+          <LogOut class="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
         <ThemeSwatches />
         <AuthLoginLocale />
       </div>

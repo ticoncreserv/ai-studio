@@ -8,6 +8,7 @@
   },
   "scripts": {
     "predev": "node scripts/ensure-cursor-agent.mjs",
+    "start": "bash scripts/up.sh",
     "dev": "pnpm --filter @atelier/web dev",
     "dev:supervisor": "pnpm --filter @atelier/supervisor start",
     "build": "pnpm -r build",

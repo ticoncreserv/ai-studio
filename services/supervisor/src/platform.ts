@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import type {
   ClientCommand,
+  CursorCliAccount,
   ProviderId,
   ProviderKeyState,
   ProviderModel,
@@ -40,7 +41,9 @@ import {
   reduceSession,
   shouldCollect,
   shouldHibernate,
+  shouldResetToReadyOnWarm,
   titleFromPrompt,
+  withInspectPrompt,
   transition,
   slashInvocation,
   mcpFingerprint,
@@ -67,12 +70,19 @@ import {
   summarizeValidation,
   defaultUsageProfileId,
   defaultUsageProfiles,
+  emptyCursorCliAccount,
   emptyProviderKeyState,
+  isCursorCliAccountUsable,
+  isCursorCliLoggedOut,
   isProviderKeyFailure,
   isProviderKeyUsable,
+  markCursorCliLoggedOut,
   markProviderKeyFailure,
   markProviderKeySuccess,
   mergeRollups,
+  moveCursorCliAccount,
+  nextCursorCliAccountId,
+  parseCursorCliAuthRef,
   resolveUsageProfile,
   rollupFromEntries,
   runBudgetFromProfile,
@@ -87,10 +97,21 @@ import {
 import { bus } from "./bus.js";
 import { type PlatformStore, type ProviderConfig, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
 import { createPlatformStore } from "./store-factory.js";
-import { hasCursorApiKey, implementedProviders, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
+import { hasCursorApiKey, implementedProviders, preferredAgentProvider, resolveSessionProvider, cursorAgentEnv } from "./providers/env.js";
 import { hydrateProviderKeys, isProviderKeyRef, listProviderCredentials, providerCredentialCandidates, providerSecretKey } from "./providers/credentials.js";
 import { inspectProviderHealth, isProviderSelectable, listProviderHealth } from "./providers/health.js";
-import { findCursorAgentBinary } from "./providers/ensure-agent.js";
+import { probeCursorApiKeys as runCursorApiKeyProbes, probeCursorCliAccounts as runCursorCliProbes, defaultCursorProbeRun } from "./providers/cursor-probe.js";
+import {
+  CursorCliLoginLock,
+  cursorAuthCandidates,
+  ensureCursorAccountHome,
+  migrateLegacyCursorHome,
+  removeCursorAccountHome,
+  seedDefaultCursorCliAccount,
+  spawnCursorLoginAcp,
+  type CursorAuthCandidate,
+} from "./providers/cursor-cli.js";
+import { ensureCursorAgent, findCursorAgentBinary } from "./providers/ensure-agent.js";
 import { createProvider, listProviders as catalogProviders } from "./providers/index.js";
 import { mergeProviderModels, providerModelCatalog } from "./providers/models.js";
 import { PROVIDER_CATALOG, type AgentProvider } from "./providers/types.js";
@@ -192,6 +213,7 @@ export class Platform {
   private readonly runMeters = new Map<string, { meter: RunMeter; profile: UsageProfile; enforce: boolean }>();
   private readonly runKeyRefs = new Map<string, string>();
   private readonly promptTouched = new Set<string>();
+  private readonly cliLogin = new CursorCliLoginLock();
 
   constructor(
     store: PlatformStore = createPlatformStore(),
@@ -408,6 +430,10 @@ export class Platform {
   }
 
   async wakePreview(workspaceId: string): Promise<WorkspaceRecord> {
+    this.store.update((d) => {
+      const row = d.workspaces.find((w) => w.id === workspaceId);
+      if (row) row.hibernatedByUser = false;
+    });
     const ws = this.requireWorkspace(workspaceId);
     const needsVite = existsSync(join(ws.worktree, "package.json"));
     if (this.runtime.isRunning(workspaceId) && ws.status === "running" && ws.port && (!needsVite || ws.vitePort)) {
@@ -420,13 +446,13 @@ export class Platform {
     const ws = await this.ensureWorkspace(user);
     this.store.update((d) => {
       const row = d.workspaces.find((w) => w.id === ws.id);
-      if (row) {
-        row.warmedAt = new Date().toISOString();
-        row.status = "ready";
-        row.desired = "ready";
-      }
+      if (!row) return;
+      row.warmedAt = new Date().toISOString();
+      if (!shouldResetToReadyOnWarm(row)) return;
+      row.status = "ready";
+      row.desired = "ready";
     });
-    return ws;
+    return this.requireWorkspace(ws.id);
   }
 
   async startPreview(workspaceId: string): Promise<WorkspaceRecord> {
@@ -448,6 +474,7 @@ export class Platform {
             : "ready";
         row.status = from === "running" ? "running" : transition(from, "running");
         row.desired = "running";
+        row.hibernatedByUser = false;
         row.port = handle.port;
         row.vitePort = handle.vitePort;
         row.lastError = undefined;
@@ -473,7 +500,7 @@ export class Platform {
     return this.requireWorkspace(workspaceId);
   }
 
-  async hibernate(workspaceId: string): Promise<WorkspaceRecord> {
+  async hibernate(workspaceId: string, options: { byUser?: boolean } = {}): Promise<WorkspaceRecord> {
     const ws = this.requireWorkspace(workspaceId);
     await this.runtime.hibernate(workspaceId, { port: ws.port, vitePort: ws.vitePort });
     for (const session of this.sessions(workspaceId)) {
@@ -487,6 +514,7 @@ export class Platform {
         row.status = canTransition(row.status, "hibernated") ? transition(row.status, "hibernated") : "hibernated";
         row.desired = "hibernated";
       }
+      if (options.byUser) row.hibernatedByUser = true;
       row.port = undefined;
       row.vitePort = undefined;
     });
@@ -607,7 +635,7 @@ export class Platform {
     if (input.command.type === "prompt") {
       const prompt = input.command;
       this.assertUsageAllowed(input.user, session, prompt);
-      await this.enqueueWorkspace(ws.id, () => this.runPrompt(input.user, session, ws, prompt));
+      this.queuePrompt(ws.id, () => this.runPrompt(input.user, session, ws, prompt));
       return;
     }
     if (input.command.type === "cancel") {
@@ -715,7 +743,7 @@ export class Platform {
     if (input.command.type === "fix_error") {
       const lastError = [...session.events].reverse().find((e) => e.type === "runtime_error");
       const eventId = input.command.eventId;
-      await this.enqueueWorkspace(ws.id, () =>
+      this.queuePrompt(ws.id, () =>
         this.runPrompt(input.user, session, ws, {
           type: "prompt",
           text: `Fix this preview error: ${lastError && lastError.type === "runtime_error" ? lastError.message : eventId}`,
@@ -744,13 +772,12 @@ export class Platform {
     }
     if (input.command.type === "decide_plan") {
       const outcome = input.command.outcome;
-      this.store.update((d) => {
-        const s = d.sessions.find((x) => x.id === session.id);
-        if (!s) return;
-        s.events = s.events.map((e) => (e.type === "plan" && e.outcome === "pending" ? { ...e, outcome } : e));
-      });
+      this.patchSessionEvent(
+        session.id,
+        (event) => (event.type === "plan" && event.outcome === "pending" ? { ...event, outcome } : event),
+      );
       if (outcome === "accepted") {
-        await this.enqueueWorkspace(ws.id, () =>
+        this.queuePrompt(ws.id, () =>
           this.runPrompt(input.user, session, ws, {
             type: "prompt",
             text: "The plan was accepted. Continue implementing it.",
@@ -766,21 +793,19 @@ export class Platform {
       const pending = this.pendingPermissions.get(session.id);
       pending?.respond?.(pending.rpcId, outcome);
       this.pendingPermissions.delete(session.id);
-      this.store.update((d) => {
-        const s = d.sessions.find((x) => x.id === session.id);
-        if (!s) return;
-        s.events = s.events.map((e) => (e.type === "permission" && e.outcome === "pending" ? { ...e, outcome } : e));
-      });
+      this.patchSessionEvent(
+        session.id,
+        (event) => (event.type === "permission" && event.outcome === "pending" ? { ...event, outcome } : event),
+      );
       return;
     }
     if (input.command.type === "answer_question") {
       const answers = input.command.answers;
-      this.store.update((d) => {
-        const s = d.sessions.find((x) => x.id === session.id);
-        if (!s) return;
-        s.events = s.events.map((e) => (e.type === "question" ? { ...e, outcome: "answered" } : e));
-      });
-      await this.enqueueWorkspace(ws.id, () =>
+      this.patchSessionEvent(
+        session.id,
+        (event) => (event.type === "question" ? { ...event, outcome: "answered" } : event),
+      );
+      this.queuePrompt(ws.id, () =>
         this.runPrompt(input.user, session, ws, {
           type: "prompt",
           text: `Question answers: ${JSON.stringify(answers)}`,
@@ -789,6 +814,30 @@ export class Platform {
         }),
       );
     }
+  }
+
+  private patchSessionEvent(sessionId: string, patch: (event: SessionEvent) => SessionEvent): void {
+    let published: SessionEvent | undefined;
+    let workspaceId: string | undefined;
+    this.store.update((d) => {
+      const s = d.sessions.find((x) => x.id === sessionId);
+      if (!s) return;
+      workspaceId = s.workspaceId;
+      s.events = s.events.map((event) => {
+        const next = patch(event);
+        if (next !== event) published = next;
+        return next;
+      });
+    });
+    if (published && workspaceId) bus.publish({ ...published, sessionId, workspaceId });
+  }
+
+  private queuePrompt(workspaceId: string, fn: () => Promise<void>): void {
+    void this.enqueueWorkspace(workspaceId, fn).catch(() => undefined);
+  }
+
+  async flushWorkspace(workspaceId: string): Promise<void> {
+    await this.workspaceQueue.get(workspaceId);
   }
 
   private mutateHunks(sessionId: string, fn: (state: ReturnType<typeof foldEvents>) => ReturnType<typeof foldEvents>) {
@@ -805,7 +854,18 @@ export class Platform {
   }
 
   private async enqueueWorkspace<T>(workspaceId: string, fn: () => Promise<T>): Promise<T> {
-    if (!isFlagOn(this.flags(), "workspaceQueue")) return fn();
+    if (!isFlagOn(this.flags(), "workspaceQueue")) {
+      const work = fn();
+      const previous = this.workspaceQueue.get(workspaceId) ?? Promise.resolve();
+      this.workspaceQueue.set(
+        workspaceId,
+        Promise.all([previous, Promise.resolve(work)]).then(
+          () => undefined,
+          () => undefined,
+        ),
+      );
+      return work;
+    }
     const previous = this.workspaceQueue.get(workspaceId) ?? Promise.resolve();
     const next = previous.catch(() => undefined).then(fn);
     this.workspaceQueue.set(
@@ -943,7 +1003,7 @@ export class Platform {
     command: Extract<ClientCommand, { type: "prompt" }>,
   ): void {
     if (!isFlagOn(this.flags(), "usageLimits")) return;
-    const pendingTokens = estimateTokens(command.text) + command.mentions.length * 256;
+    const pendingTokens = estimateTokens(command.text) + estimateTokens((command.inspect ?? []).map((pin) => pin.note).join("\n")) + command.mentions.length * 256;
     const summary = this.usageSummary(user.id, {
       pendingTokens,
       provider: resolveSessionProvider(session.provider),
@@ -976,31 +1036,21 @@ export class Platform {
     command: Extract<ClientCommand, { type: "prompt" }>,
   ) {
     const flags = this.flags();
-    const existing = this.store.read().runLock[ws.id];
-    if (existing && !canAcquireLease(existing as { sessionId: string; userId: string; leaseUntil: string }, session.id)) {
-      throw new Error("Workspace is busy");
-    }
-    if (isFlagOn(flags, "transactionalReview") && hasPendingProposal(this.snapshot(session.id).hunks)) {
-      throw new Error("Workspace has a pending change proposal");
-    }
-    const lease = createLease(session.id, user.id);
-    this.store.update((d) => {
-      d.runLock[ws.id] = lease;
-    });
-
     const recipe = command.recipeId
       ? this.store.read().recipes.find((r) => r.id === command.recipeId)
       : undefined;
     const filled = recipe
       ? recipe.template.replaceAll("{{model}}", command.text)
       : command.text;
-    const agentText = currentRequestText(`${promptPrefixForMode(command.mode)}${filled}`);
+    const inspect = command.inspect ?? [];
+    const agentBody = withInspectPrompt(filled, inspect.map((pin) => pin.note));
+    const agentText = currentRequestText(`${promptPrefixForMode(command.mode)}${agentBody}`);
     const runId = randomUUID();
 
     if (session.events.length === 0) {
       this.store.update((d) => {
         const s = d.sessions.find((x) => x.id === session.id)!;
-        s.title = titleFromPrompt(filled);
+        s.title = titleFromPrompt(filled || inspect[0]?.label || "");
       });
     }
 
@@ -1011,7 +1061,36 @@ export class Platform {
       text: filled,
       attachments: command.attachments,
       mentions: command.mentions,
+      inspect,
       skill: command.skill ?? slashInvocation(filled) ?? undefined,
+    });
+
+    const existing = this.store.read().runLock[ws.id];
+    if (existing && !canAcquireLease(existing as { sessionId: string; userId: string; leaseUntil: string }, session.id)) {
+      this.append(session.id, {
+        type: "run_failure",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        v: 1,
+        kind: "provider_failed",
+        message: "Workspace is busy",
+      });
+      return;
+    }
+    if (isFlagOn(flags, "transactionalReview") && hasPendingProposal(this.snapshot(session.id).hunks)) {
+      this.append(session.id, {
+        type: "run_failure",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        v: 1,
+        kind: "provider_failed",
+        message: "Workspace has a pending change proposal",
+      });
+      return;
+    }
+    const lease = createLease(session.id, user.id);
+    this.store.update((d) => {
+      d.runLock[ws.id] = lease;
     });
     this.append(session.id, {
       type: "run",
@@ -1106,10 +1185,7 @@ export class Platform {
       run = undefined;
     }
     const model = this.providerConfig()[providerId]?.model?.trim() || undefined;
-    const candidates =
-      providerId === "mock"
-        ? []
-        : providerCredentialCandidates(providerId, this.providerRoster(providerId), process.env, this.envRoot());
+    const candidates = this.authCandidates(providerId);
     const tried = new Set<string>();
     let allowResume = true;
     const mcpServers = acpServersForWorktree({
@@ -1191,7 +1267,7 @@ export class Platform {
         respond: this.runs.get(session.id)?.respondPermission,
       });
     };
-    const startRun = async (apiKey?: string, keyRef?: string): Promise<ProviderRun> => {
+    const startRun = async (candidate?: CursorAuthCandidate | { kind: "key"; ref: string; value: string }): Promise<ProviderRun> => {
       const provider = this.providerFactory(providerId);
       const next = await provider.start({
         cwd: ws.worktree,
@@ -1200,7 +1276,8 @@ export class Platform {
         sandbox: isFlagOn(flags, "sandboxedAgent"),
         sandboxProfile: resolveSandboxProfile(flags),
         mcpServers,
-        apiKey,
+        apiKey: candidate?.kind === "key" ? candidate.value : undefined,
+        home: candidate?.kind === "cli" ? candidate.home : undefined,
         model,
         onEvent,
         onPermission,
@@ -1208,7 +1285,7 @@ export class Platform {
       this.runs.set(session.id, next);
       this.runModes.set(session.id, mode);
       this.runFingerprints.set(session.id, fingerprint);
-      if (keyRef) this.runKeyRefs.set(session.id, keyRef);
+      if (candidate?.ref) this.runKeyRefs.set(session.id, candidate.ref);
       if (next.models?.length) this.rememberProviderModels(providerId, next.models);
       if (next.acpSessionId) {
         this.store.update((d) => {
@@ -1225,17 +1302,23 @@ export class Platform {
         if (tried.has(candidate.ref)) continue;
         tried.add(candidate.ref);
         try {
-          return await startRun(candidate.value, candidate.ref);
+          return await startRun(candidate);
         } catch (error) {
           lastError = error;
           const message = formatAgentError(error);
-          if (!isProviderKeyFailure(message)) throw error;
-          this.recordProviderKeyFailure(providerId, candidate.ref, message);
+          if (!this.applyAuthSlotFailure(providerId, candidate, message, session.id)) throw error;
           allowResume = false;
-          this.dropProviderRun(session.id);
+          this.append(session.id, {
+            type: "run_failure",
+            id: randomUUID(),
+            at: new Date().toISOString(),
+            v: 1,
+            kind: "provider_failover",
+            message: "The Cursor account ran out of credit; trying the next one.",
+          });
         }
       }
-      throw lastError ?? new Error("No provider API key is available");
+      throw lastError ?? new Error("No Cursor CLI account or API key is available");
     };
     try {
       this.promptText.reset(session.id);
@@ -1252,10 +1335,17 @@ export class Platform {
       } catch (error) {
         const message = formatAgentError(error);
         const failedRef = this.runKeyRefs.get(session.id);
-        if (!this.promptTouched.has(session.id) && failedRef && isProviderKeyFailure(message) && candidates.length) {
-          this.recordProviderKeyFailure(providerId, failedRef, message);
+        const failed = candidates.find((row) => row.ref === failedRef);
+        if (failedRef && failed && this.applyAuthSlotFailure(providerId, failed, message, session.id)) {
           allowResume = false;
-          this.dropProviderRun(session.id);
+          this.append(session.id, {
+            type: "run_failure",
+            id: randomUUID(),
+            at: new Date().toISOString(),
+            v: 1,
+            kind: "provider_failover",
+            message: "The Cursor account ran out of credit; trying the next one.",
+          });
           run = await startWithFailover();
           this.promptTouched.delete(session.id);
           this.promptText.reset(session.id);
@@ -1265,7 +1355,7 @@ export class Platform {
         }
       }
       const usedRef = this.runKeyRefs.get(session.id);
-      if (usedRef) this.recordProviderKeySuccess(providerId, usedRef);
+      if (usedRef) this.recordAuthSlotSuccess(providerId, usedRef);
       this.flushPromptText(session.id);
       try {
         const changed = changedWorktreePaths(statesBefore, await worktreeFileStates(ws.worktree));
@@ -1335,7 +1425,8 @@ export class Platform {
       this.flushPromptText(session.id);
       const message = formatAgentError(error);
       const failedRef = this.runKeyRefs.get(session.id);
-      if (failedRef && isProviderKeyFailure(message)) this.recordProviderKeyFailure(providerId, failedRef, message);
+      const failed = candidates.find((row) => row.ref === failedRef);
+      if (failedRef && failed) this.applyAuthSlotFailure(providerId, failed, message, session.id);
       this.dropProviderRun(session.id);
       this.append(session.id, {
         type: "assistant_message",
@@ -1495,7 +1586,7 @@ export class Platform {
     })[0];
     return {
       githubConfigured: Boolean(loadGitHubAppCredentials() || hasGitHubOAuth()),
-      cursorKey: hasCursorApiKey(process.env, this.envRoot()),
+      cursorKey: hasCursorApiKey(process.env, this.envRoot()) || this.cursorCliAccounts().some((row) => row.loggedIn),
       publicUrl: atelierPublicUrl(),
       users: db.users.length,
       running: workspaces.filter((row) => row.status === "running").length,
@@ -1523,8 +1614,41 @@ export class Platform {
     const parsed = UsageProfileSchema.array().min(1).parse(profiles);
     const ids = new Set(parsed.map((row) => row.id));
     if (ids.size !== parsed.length) throw new Error("Duplicate profile id");
+    const previous = this.usageProfiles();
+    const removed = previous.filter((row) => !ids.has(row.id));
+    if (removed.length) {
+      const occupied = this.store.read().users.some((user) =>
+        removed.some((row) => this.usageProfileFor(user).id === row.id),
+      );
+      if (occupied) throw new Error("Cannot remove a profile that still has people");
+    }
     this.store.update((d) => {
       d.usageProfiles = parsed.map((row) => ({ ...d.usageProfiles.find((current) => current.id === row.id), ...row }));
+    });
+    return this.usageProfiles();
+  }
+
+  deleteUsageProfile(actor: UserRecord, profileId: string, migrateTo?: string): UsageProfile[] {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const profiles = this.usageProfiles();
+    if (!profiles.some((row) => row.id === profileId)) throw new Error("Profile not found");
+    if (profiles.length <= 1) throw new Error("Cannot delete the last usage profile");
+    const remaining = profiles.filter((row) => row.id !== profileId);
+    const assignedIds = this.store.read().users
+      .filter((user) => this.usageProfileFor(user).id === profileId)
+      .map((user) => user.id);
+    if (assignedIds.length) {
+      if (!migrateTo) throw new Error("migrateTo required");
+      if (!remaining.some((row) => row.id === migrateTo)) throw new Error("Profile not found");
+    }
+    this.store.update((d) => {
+      if (assignedIds.length && migrateTo) {
+        const moving = new Set(assignedIds);
+        for (const user of d.users) {
+          if (moving.has(user.id)) user.usageProfileId = migrateTo;
+        }
+      }
+      d.usageProfiles = remaining;
     });
     return this.usageProfiles();
   }
@@ -1892,18 +2016,61 @@ export class Platform {
     return hydrateProviderKeys(id, this.providerConfig()[id]?.keys ?? [], process.env, this.envRoot());
   }
 
+  cursorCliAccounts(): CursorCliAccount[] {
+    this.ensureCursorCliRoster();
+    return this.providerConfig().cursor?.cliAccounts ?? [];
+  }
+
+  private ensureCursorCliRoster(): void {
+    if (process.env.VITEST && !process.env.ATELIER_CURSOR_HOME) return;
+    const { migrated } = migrateLegacyCursorHome();
+    const current = this.providerConfig().cursor?.cliAccounts ?? [];
+    if (current.length || !migrated) return;
+    this.store.update((d) => {
+      const previous = d.providers.cursor ?? { enabled: true };
+      d.providers = {
+        ...d.providers,
+        cursor: { ...previous, cliAccounts: [emptyCursorCliAccount("default", "Default")] },
+      };
+    });
+  }
+
+  private authCandidates(providerId: string): Array<CursorAuthCandidate | { kind: "key"; ref: string; value: string }> {
+    if (providerId === "mock") return [];
+    if (providerId === "cursor") {
+      return cursorAuthCandidates({
+        accounts: this.cursorCliAccounts(),
+        keys: this.providerRoster("cursor"),
+        credentials: listProviderCredentials("cursor", process.env, this.envRoot()),
+      });
+    }
+    return providerCredentialCandidates(providerId, this.providerRoster(providerId), process.env, this.envRoot()).map(
+      (row) => ({ kind: "key" as const, ref: row.ref, value: row.value }),
+    );
+  }
+
   getProviderSettings() {
     const config = this.providerConfig();
     const flags = this.flags();
     const implemented = new Set(implementedProviders());
+    const cliAccounts = this.cursorCliAccounts();
+    const login = this.cliLogin.state;
     return PROVIDER_CATALOG.filter((row) => row.id !== "mock" || process.env.VITEST).map((row) => {
       const roster = this.providerRoster(row.id);
       const stored = new Set(listProviderCredentials(row.id, process.env, this.envRoot()).map((item) => item.ref));
-      const health = inspectProviderHealth(row.id, flags, process.env, this.envRoot(), roster);
+      const health = inspectProviderHealth(
+        row.id,
+        flags,
+        process.env,
+        this.envRoot(),
+        roster,
+        row.id === "cursor" ? cliAccounts : undefined,
+      );
       const model = config[row.id]?.model?.trim() || "";
+      const discovered = config[row.id]?.models;
       const models = mergeProviderModels(
+        discovered?.length ? discovered : providerModelCatalog(row.id),
         providerModelCatalog(row.id),
-        config[row.id]?.models,
         model ? [{ id: model, label: model }] : [],
       );
       return {
@@ -1922,6 +2089,14 @@ export class Platform {
           present: stored.has(key.ref),
           usable: isProviderKeyUsable(key),
         })),
+        cliAccounts:
+          row.id === "cursor"
+            ? cliAccounts.map((account) => ({
+                ...account,
+                usable: isCursorCliAccountUsable(account),
+              }))
+            : undefined,
+        cliLogin: row.id === "cursor" ? login : undefined,
       };
     });
   }
@@ -1938,10 +2113,18 @@ export class Platform {
     moveKey?: "up" | "down";
     resetKey?: boolean;
     deleteKey?: boolean;
+    addCliAccount?: boolean;
+    cliLabel?: string;
+    cliAccountId?: string;
+    moveCli?: "up" | "down";
+    resetCli?: boolean;
+    deleteCli?: boolean;
+    cliEnabled?: boolean;
   }) {
     const id = input.id;
     const current = this.providerConfig()[id] ?? { enabled: id === "cursor" };
     let keys = hydrateProviderKeys(id, current.keys ?? [], process.env, this.envRoot());
+    let cliAccounts = [...(id === "cursor" ? this.cursorCliAccounts() : current.cliAccounts ?? [])];
     const secrets = readProviderSecrets(this.envRoot());
 
     if (input.apiKey != null && input.apiKey.trim()) {
@@ -1971,6 +2154,32 @@ export class Platform {
       }
     }
 
+    if (id === "cursor" && input.addCliAccount) {
+      const accountId = nextCursorCliAccountId(cliAccounts.map((row) => row.id));
+      ensureCursorAccountHome(accountId);
+      cliAccounts = [...cliAccounts, emptyCursorCliAccount(accountId, input.cliLabel?.trim() ?? "")];
+    }
+
+    if (id === "cursor" && input.cliAccountId) {
+      const index = cliAccounts.findIndex((row) => row.id === input.cliAccountId);
+      if (index < 0) throw new Error("Unknown Cursor CLI account");
+      if (input.deleteCli) {
+        if (this.cliLogin.state?.accountId === input.cliAccountId) this.cliLogin.stop();
+        removeCursorAccountHome(input.cliAccountId);
+        cliAccounts = cliAccounts.filter((row) => row.id !== input.cliAccountId);
+      } else if (input.resetCli) {
+        const reset = resetProviderKey({ ...emptyProviderKeyState(input.cliAccountId), ...cliAccounts[index]! });
+        cliAccounts[index] = { ...cliAccounts[index]!, failures: reset.failures, cooldownUntil: reset.cooldownUntil, lastError: reset.lastError, lastFailureKind: reset.lastFailureKind };
+      } else if (input.moveCli) {
+        cliAccounts = moveCursorCliAccount(cliAccounts, input.cliAccountId, input.moveCli);
+      } else {
+        const row = { ...cliAccounts[index]! };
+        if (input.cliEnabled != null) row.enabled = input.cliEnabled;
+        if (input.cliLabel != null) row.label = input.cliLabel;
+        cliAccounts[index] = row;
+      }
+    }
+
     this.store.update((d) => {
       const previous = d.providers[id] ?? { enabled: id === "cursor" };
       d.providers = {
@@ -1981,6 +2190,7 @@ export class Platform {
           model: input.model !== undefined ? input.model.trim() : previous.model,
           keys,
           models: previous.models,
+          cliAccounts: id === "cursor" ? cliAccounts : previous.cliAccounts,
         },
       };
     });
@@ -1991,15 +2201,181 @@ export class Platform {
     const keysByProvider = Object.fromEntries(
       PROVIDER_CATALOG.map((row) => [row.id, this.providerRoster(row.id)]),
     );
-    return listProviderHealth(this.flags(), process.env, this.envRoot(), keysByProvider);
+    return listProviderHealth(this.flags(), process.env, this.envRoot(), keysByProvider, this.cursorCliAccounts());
+  }
+
+  /** Probe Cursor CLI accounts and API keys so /admin sees failures before the first prompt. */
+  async probeCursorApiKeys(): Promise<void> {
+    if (process.env.VITEST) return;
+    this.ensureCursorCliRoster();
+    const credentials = listProviderCredentials("cursor", process.env, this.envRoot());
+    const accounts = this.cursorCliAccounts();
+    if (!credentials.length && !accounts.length) return;
+    let command: string;
+    try {
+      command = await ensureCursorAgent();
+    } catch (error) {
+      console.error("[atelier] Cursor agent CLI is required to probe API keys", error);
+      return;
+    }
+    if (accounts.length) {
+      const probed = await runCursorCliProbes({
+        command,
+        accounts: accounts.map((row) => ({ id: row.id, home: ensureCursorAccountHome(row.id) })),
+      });
+      for (const result of probed) {
+        this.patchCursorCliAccount(result.id, (account) => ({
+          ...account,
+          loggedIn: result.loggedIn,
+          account: result.account ?? (result.loggedIn ? account.account : null),
+        }));
+      }
+    }
+    if (!credentials.length) return;
+    const { keys, models } = await runCursorApiKeyProbes({ command, credentials });
+    for (const result of keys) {
+      if (result.ok) this.recordProviderKeySuccess("cursor", result.ref);
+      else if (result.kind !== "cli_login") {
+        this.recordProviderKeyFailure("cursor", result.ref, result.message ?? "Cursor API key probe failed");
+      }
+    }
+    if (models.length) {
+      this.store.update((d) => {
+        const previous = d.providers.cursor ?? { enabled: true };
+        d.providers = { ...d.providers, cursor: { ...previous, models } };
+      });
+    }
+    console.info("[atelier] probed Cursor API keys", {
+      ok: keys.filter((row) => row.ok).length,
+      failed: keys.filter((row) => !row.ok && row.kind !== "cli_login").length,
+      models: models.length,
+    });
+  }
+
+  async syncCursorCliLogin(): Promise<void> {
+    const login = this.cliLogin.state;
+    if (!login) return;
+    await this.refreshCursorCliAccount(login.accountId);
+    const account = this.cursorCliAccounts().find((row) => row.id === login.accountId);
+    if (account?.loggedIn) this.cliLogin.stop();
+  }
+
+  async startCursorCliLogin(accountId: string): Promise<{ started: true; loginUrl?: string; accountId: string }> {
+    const account = this.cursorCliAccounts().find((row) => row.id === accountId);
+    if (!account) throw new Error("Unknown Cursor CLI account");
+    const command = await ensureCursorAgent();
+    const home = ensureCursorAccountHome(accountId);
+    const env = cursorAgentEnv(process.env, { home, apiKey: false });
+    delete env.NO_OPEN_BROWSER;
+    const state = this.cliLogin.start({
+      accountId,
+      command,
+      env,
+      fallback: () => spawnCursorLoginAcp(command, env),
+    });
+    return { started: true, loginUrl: state.loginUrl, accountId: state.accountId };
+  }
+
+  async signOutCursorCli(accountId: string): Promise<void> {
+    const account = this.cursorCliAccounts().find((row) => row.id === accountId);
+    if (!account) throw new Error("Unknown Cursor CLI account");
+    if (this.cliLogin.state?.accountId === accountId) this.cliLogin.stop();
+    try {
+      const command = await ensureCursorAgent();
+      const home = ensureCursorAccountHome(accountId);
+      await defaultCursorProbeRun(command, ["logout"], cursorAgentEnv(process.env, { home, apiKey: false }));
+    } catch {
+      removeCursorAccountHome(accountId);
+      ensureCursorAccountHome(accountId);
+    }
+    this.patchCursorCliAccount(accountId, (row) => ({ ...row, loggedIn: false, account: null }));
+  }
+
+  private async refreshCursorCliAccount(accountId: string): Promise<void> {
+    const account = this.cursorCliAccounts().find((row) => row.id === accountId);
+    if (!account) return;
+    let command: string;
+    try {
+      command = await ensureCursorAgent();
+    } catch {
+      return;
+    }
+    const [result] = await runCursorCliProbes({
+      command,
+      accounts: [{ id: accountId, home: ensureCursorAccountHome(accountId) }],
+    });
+    if (!result) return;
+    this.patchCursorCliAccount(accountId, (row) => ({
+      ...row,
+      loggedIn: result.loggedIn,
+      account: result.account ?? (result.loggedIn ? row.account : null),
+    }));
   }
 
   private rememberProviderModels(id: string, models: ProviderModel[]) {
     if (!models.length) return;
     this.store.update((d) => {
       const previous = d.providers[id] ?? { enabled: id === "cursor" };
-      d.providers = { ...d.providers, [id]: { ...previous, models: mergeProviderModels(previous.models, models) } };
+      d.providers = { ...d.providers, [id]: { ...previous, models: mergeProviderModels(models, previous.models) } };
     });
+  }
+
+  private shouldRotateAuthSlot(message: string): boolean {
+    return isProviderKeyFailure(message) || isCursorCliLoggedOut(message);
+  }
+
+  private applyAuthSlotFailure(
+    providerId: string,
+    candidate: CursorAuthCandidate | { kind: "key"; ref: string; value: string },
+    message: string,
+    sessionId: string,
+  ): boolean {
+    if (!this.shouldRotateAuthSlot(message)) return false;
+    if (candidate.kind === "cli" && isCursorCliLoggedOut(message)) {
+      this.patchCursorCliAccount(candidate.id, (row) => markCursorCliLoggedOut(row));
+    } else {
+      this.recordAuthSlotFailure(providerId, candidate.ref, message);
+    }
+    this.dropProviderRun(sessionId);
+    return true;
+  }
+
+  private recordAuthSlotSuccess(id: string, ref: string) {
+    const cliId = parseCursorCliAuthRef(ref);
+    if (cliId) {
+      this.patchCursorCliAccount(cliId, (row) => {
+        const next = markProviderKeySuccess({ ...emptyProviderKeyState(cliId), ...row });
+        return {
+          ...row,
+          failures: next.failures,
+          lastUsedAt: next.lastUsedAt,
+          cooldownUntil: next.cooldownUntil,
+          lastError: next.lastError,
+          lastFailureKind: next.lastFailureKind,
+        };
+      });
+      return;
+    }
+    this.recordProviderKeySuccess(id, ref);
+  }
+
+  private recordAuthSlotFailure(id: string, ref: string, message: string) {
+    const cliId = parseCursorCliAuthRef(ref);
+    if (cliId) {
+      this.patchCursorCliAccount(cliId, (row) => {
+        const next = markProviderKeyFailure({ ...emptyProviderKeyState(cliId), ...row }, { message });
+        return {
+          ...row,
+          failures: next.failures,
+          lastFailureAt: next.lastFailureAt,
+          cooldownUntil: next.cooldownUntil,
+          lastError: next.lastError,
+          lastFailureKind: next.lastFailureKind,
+        };
+      });
+      return;
+    }
+    this.recordProviderKeyFailure(id, ref, message);
   }
 
   private recordProviderKeySuccess(id: string, ref: string) {
@@ -2018,6 +2394,17 @@ export class Platform {
       if (index >= 0) keys[index] = fn(keys[index]!);
       else keys.push(fn(emptyProviderKeyState(ref)));
       d.providers = { ...d.providers, [id]: { ...previous, keys } };
+    });
+  }
+
+  private patchCursorCliAccount(id: string, fn: (account: CursorCliAccount) => CursorCliAccount) {
+    this.store.update((d) => {
+      const previous = d.providers.cursor ?? { enabled: true };
+      const accounts = [...(previous.cliAccounts ?? [])];
+      const index = accounts.findIndex((row) => row.id === id);
+      if (index < 0) return;
+      accounts[index] = fn(accounts[index]!);
+      d.providers = { ...d.providers, cursor: { ...previous, cliAccounts: accounts } };
     });
   }
 

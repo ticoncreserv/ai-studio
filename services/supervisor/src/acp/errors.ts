@@ -31,3 +31,12 @@ function formatRpcData(data: unknown): string {
 export function toAgentError(error: unknown): Error {
   return error instanceof Error ? error : new Error(formatAgentError(error));
 }
+
+const UNAUTHENTICATED = /unauthenticated|not authenticated|not logged in|authentication required|unauthorized/i;
+
+/** True when session/new failed because the agent has no credentials yet. */
+export function isAcpUnauthenticated(error: unknown): boolean {
+  const code = error && typeof error === "object" && "code" in error ? Number((error as { code: unknown }).code) : NaN;
+  if (code === 401) return true;
+  return UNAUTHENTICATED.test(formatAgentError(error));
+}

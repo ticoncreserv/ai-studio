@@ -12,6 +12,11 @@ export default defineNitroPlugin(async () => {
     });
   }
   const platform = getPlatform();
+  if (!process.env.VITEST) {
+    await platform.probeCursorApiKeys().catch((error) => {
+      console.error("[atelier] Cursor API key probe failed", error);
+    });
+  }
   void platform.sweepForeignWorktrees().catch((error) => {
     console.error("[atelier] failed to sweep fixture worktrees", error);
   });

@@ -21,6 +21,7 @@ export const defaultFlags: Record<FeatureFlag, boolean> = {
   claudeProvider: false,
   geminiProvider: false,
   grokProvider: false,
+  codexProvider: false,
   providerCanary: false,
   usageMetering: true,
   usageLimits: true,

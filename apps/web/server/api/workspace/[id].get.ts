@@ -14,7 +14,10 @@ export default defineEventHandler(async (event) => {
   const canEditWorkspace = platform().canAccessWorkspace(user, workspace, "edit");
   return {
     user: { ...user, platformAdmin: platform().isPlatformAdmin(user) },
-    workspace,
+    workspace: {
+      ...workspace,
+      previewProcessRunning: Boolean(workspace.port && platform().runtime.isRunning(id)),
+    },
     sessions,
     session,
     snapshot: session ? foldEvents(session.events) : null,

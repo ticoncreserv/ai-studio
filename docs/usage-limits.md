@@ -13,9 +13,8 @@ Locked configuration:
 
 ## 1. Problem
 
-The Cursor key is global: `var/env/providers.env` holds one `CURSOR_API_KEY` and every signed-in
-user prompts through it (`readProviderCredential` → `applyProviderCredential` →
-`CursorProvider.start`). Billing lands on one account, so a single user can consume the whole
+The Cursor credential is global: signed-in CLI accounts live under `var/cursor-home/<id>/` and `var/env/providers.env` holds `CURSOR_API_KEY` (and `_2`…). Every signed-in
+user prompts through that host roster (`cursorAuthCandidates` → `CursorProvider.start`). Billing lands on whichever CLI account or key ran the prompt, so a single user can consume the whole
 budget and nothing in the studio notices.
 
 We need three assignable **usage profiles** with token limits, an admin screen to edit those

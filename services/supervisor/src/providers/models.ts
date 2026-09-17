@@ -13,6 +13,7 @@ export interface ProviderModelTransport {
 
 export const PROVIDER_MODEL_TRANSPORT: Record<ProviderId, ProviderModelTransport> = {
   cursor: { flag: "--model" },
+  codex: {},
   claude: { env: ["ANTHROPIC_MODEL"] },
   gemini: { flag: "--model", env: ["GEMINI_MODEL"] },
   grok: { flag: "--model", env: ["GROK_DEFAULT_MODEL"] },
@@ -26,8 +27,20 @@ export const PROVIDER_MODEL_TRANSPORT: Record<ProviderId, ProviderModelTransport
 export const PROVIDER_MODEL_CATALOG: Record<ProviderId, ProviderModel[]> = {
   cursor: [
     { id: "auto", label: "Auto" },
-    { id: "gpt-5", label: "GPT-5" },
-    { id: "sonnet-4-thinking", label: "Sonnet 4 (thinking)" },
+    { id: "composer-2.5", label: "Composer 2.5" },
+    { id: "composer-2.5-fast", label: "Composer 2.5 Fast" },
+    { id: "gpt-5.3-codex", label: "Codex 5.3" },
+    { id: "gpt-5.2", label: "GPT-5.2" },
+    { id: "cursor-grok-4.6-high", label: "Cursor Grok 4.6" },
+    { id: "claude-opus-5-high", label: "Claude Opus 5" },
+    { id: "claude-sonnet-5-thinking-high", label: "Claude Sonnet 5 Thinking" },
+    { id: "gemini-3.7-flash-high", label: "Gemini 3.7 Flash" },
+  ],
+  codex: [
+    { id: "gpt-5.4", label: "GPT-5.4" },
+    { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+    { id: "gpt-5.2", label: "GPT-5.2" },
+    { id: "gpt-5.1-codex", label: "GPT-5.1 Codex" },
   ],
   claude: [
     { id: "default", label: "Default" },
@@ -37,12 +50,15 @@ export const PROVIDER_MODEL_CATALOG: Record<ProviderId, ProviderModel[]> = {
   ],
   gemini: [
     { id: "auto", label: "Auto" },
+    { id: "gemini-3-flash", label: "Gemini 3 Flash" },
+    { id: "gemini-3-pro", label: "Gemini 3 Pro" },
     { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
     { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   ],
   grok: [
-    { id: "grok-build", label: "Grok Build" },
     { id: "grok-4.5", label: "Grok 4.5" },
+    { id: "grok-4", label: "Grok 4" },
+    { id: "grok-build", label: "Grok Build" },
   ],
   mock: [{ id: "mock-1", label: "Mock 1" }],
 };

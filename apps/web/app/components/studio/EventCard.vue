@@ -10,6 +10,7 @@ import {
   FileText,
   GitBranch,
   GitCommit,
+  Scan,
   Shield,
   ThumbsDown,
   ThumbsUp,
@@ -20,7 +21,7 @@ import { visiblePromptText } from "@atelier/domain";
 import { renderMarkdown, splitDiffLines } from "~/utils/markdown";
 import { mcpServerFromToolName, slashInvocation } from "~/utils/slash";
 
-const props = defineProps<{ event: SessionEvent; enter?: boolean; failed?: boolean }>();
+const props = defineProps<{ event: SessionEvent; enter?: boolean; failed?: boolean; commandBusy?: boolean }>();
 const emit = defineEmits<{
   command: [payload: { type: string; [key: string]: unknown }];
   reuse: [text: string];
@@ -109,6 +110,28 @@ function fileName(path: string) {
 function isImage(path: string) {
   return /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(path);
 }
+
+const acting = ref<string | null>(null);
+
+watch(
+  () => props.commandBusy,
+  (busy, wasBusy) => {
+    if (wasBusy && !busy) acting.value = null;
+  },
+);
+
+const actionsLocked = computed(() => Boolean(acting.value || props.commandBusy));
+
+function isActing(key: string) {
+  return acting.value === key;
+}
+
+function act(key: string, payload?: { type: string; [key: string]: unknown }) {
+  if (actionsLocked.value) return;
+  acting.value = key;
+  if (payload) emit("command", payload);
+  else emit("retry");
+}
 </script>
 
 <template>
@@ -118,7 +141,15 @@ function isImage(path: string) {
       class="cx-turn-user group relative"
       :class="enter && 'cx-turn-enter'"
     >
-      <div v-if="event.attachments?.length" class="mb-2 flex flex-wrap gap-1.5">
+      <div v-if="event.attachments?.length || event.inspect?.length" class="mb-2 flex flex-wrap gap-1.5">
+        <span
+          v-for="pin in event.inspect ?? []"
+          :key="pin.note"
+          class="cx-pill max-w-full"
+        >
+          <Scan class="h-3 w-3 shrink-0" />
+          <span class="min-w-0 truncate font-mono">{{ pin.label }}</span>
+        </span>
         <!-- Uploads live on the worktree filesystem, so there is no URL to preview. -->
         <span
           v-for="path in event.attachments"
@@ -133,7 +164,7 @@ function isImage(path: string) {
       <span v-if="invokedSkill" class="cx-pill mb-1.5">
         /{{ invokedSkill }}
       </span>
-      <p class="whitespace-pre-wrap pr-5" :class="clampPrompt && 'cx-turn-clamp'">{{ visiblePromptText(event.text) }}</p>
+      <p v-if="visiblePromptText(event.text)" class="whitespace-pre-wrap pr-5" :class="clampPrompt && 'cx-turn-clamp'">{{ visiblePromptText(event.text) }}</p>
       <button
         v-if="clampPrompt || promptOpen"
         type="button"
@@ -145,11 +176,11 @@ function isImage(path: string) {
       <p v-if="event.mentions?.length" class="mt-1.5 font-mono text-[11px] text-ink-400">
         {{ event.mentions.map((name) => `#${name}`).join(" ") }}
       </p>
-      <p v-if="failed" class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-amber-200/80">
+      <p v-if="failed" class="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-amber-200/80">
         <span>{{ t("chat.promptFailedHint") }}</span>
-        <button type="button" class="text-coral-400 hover:text-coral-300" @click="emit('retry')">
+        <UiButton size="xs" variant="ghost" :disabled="actionsLocked" :loading="isActing('retry')" @click="act('retry')">
           {{ t("chat.retryPrompt") }}
-        </button>
+        </UiButton>
       </p>
       <button
         type="button"
@@ -219,10 +250,22 @@ function isImage(path: string) {
         >
           {{ t("chat.diffPending") }}
         </UiBadge>
-        <UiIconButton :label="t('chat.acceptFile')" size="sm" @click="emit('command', { type: 'accept_file', filePath: event.filePath })">
+        <UiIconButton
+          :label="t('chat.acceptFile')"
+          size="sm"
+          :disabled="actionsLocked"
+          :loading="isActing('accept-file')"
+          @click="act('accept-file', { type: 'accept_file', filePath: event.filePath })"
+        >
           <Check class="h-3.5 w-3.5" />
         </UiIconButton>
-        <UiIconButton :label="t('chat.rejectFile')" size="sm" @click="emit('command', { type: 'reject_file', filePath: event.filePath })">
+        <UiIconButton
+          :label="t('chat.rejectFile')"
+          size="sm"
+          :disabled="actionsLocked"
+          :loading="isActing('reject-file')"
+          @click="act('reject-file', { type: 'reject_file', filePath: event.filePath })"
+        >
           <X class="h-3.5 w-3.5" />
         </UiIconButton>
       </div>
@@ -238,9 +281,20 @@ function isImage(path: string) {
             <pre class="flex-1 whitespace-pre-wrap">{{ line.text }}</pre>
           </div>
         </div>
-        <div v-if="hunk.status === 'pending'" class="flex justify-end gap-1.5 px-2 py-1.5">
-          <UiButton size="sm" variant="outline" @click="emit('command', { type: 'reject_hunk', hunkId: hunk.id })">{{ t("chat.rejectHunk") }}</UiButton>
-          <UiButton size="sm" @click="emit('command', { type: 'accept_hunk', hunkId: hunk.id })">{{ t("chat.acceptHunk") }}</UiButton>
+        <div v-if="hunk.status === 'pending'" class="cx-chat-actions px-2 py-1.5">
+          <UiButton
+            size="xs"
+            variant="outline"
+            :disabled="actionsLocked"
+            :loading="isActing(`reject-hunk:${hunk.id}`)"
+            @click="act(`reject-hunk:${hunk.id}`, { type: 'reject_hunk', hunkId: hunk.id })"
+          >{{ t("chat.rejectHunk") }}</UiButton>
+          <UiButton
+            size="xs"
+            :disabled="actionsLocked"
+            :loading="isActing(`accept-hunk:${hunk.id}`)"
+            @click="act(`accept-hunk:${hunk.id}`, { type: 'accept_hunk', hunkId: hunk.id })"
+          >{{ t("chat.acceptHunk") }}</UiButton>
         </div>
         <p v-else class="px-2 py-1 text-[11px] text-ink-400">
           {{ hunk.status === "accepted" ? t("chat.diffAccepted") : t("chat.diffRejected") }}
@@ -266,9 +320,20 @@ function isImage(path: string) {
       <h3 v-if="event.name" class="mt-1 text-[13px] font-medium text-ink-950">{{ event.name }}</h3>
       <p v-if="event.overview" class="mt-1 text-[12px] leading-relaxed text-ink-500">{{ event.overview }}</p>
       <pre class="mt-2 whitespace-pre-wrap font-sans text-[12.5px] leading-[1.6] text-ink-700">{{ event.plan }}</pre>
-      <div v-if="event.outcome === 'pending'" class="mt-3 flex justify-end gap-1.5">
-        <UiButton size="sm" variant="outline" @click="emit('command', { type: 'decide_plan', outcome: 'rejected' })">{{ t("chat.rejectPlan") }}</UiButton>
-        <UiButton size="sm" @click="emit('command', { type: 'decide_plan', outcome: 'accepted' })">{{ t("chat.acceptPlan") }}</UiButton>
+      <div v-if="event.outcome === 'pending'" class="cx-chat-actions mt-2.5">
+        <UiButton
+          size="xs"
+          variant="outline"
+          :disabled="actionsLocked"
+          :loading="isActing('reject-plan')"
+          @click="act('reject-plan', { type: 'decide_plan', outcome: 'rejected' })"
+        >{{ t("chat.rejectPlan") }}</UiButton>
+        <UiButton
+          size="xs"
+          :disabled="actionsLocked"
+          :loading="isActing('accept-plan')"
+          @click="act('accept-plan', { type: 'decide_plan', outcome: 'accepted' })"
+        >{{ t("chat.acceptPlan") }}</UiButton>
       </div>
       <p v-else class="mt-2 text-[11px] text-ink-400">
         {{ event.outcome === "accepted" ? t("chat.planAccepted") : t("chat.planRejected") }}
@@ -280,17 +345,30 @@ function isImage(path: string) {
         <TriangleAlert class="mt-[2px] h-3.5 w-3.5 shrink-0" />
         <p class="min-w-0 flex-1">{{ event.message }}</p>
       </div>
-      <div class="mt-2 flex justify-end">
-        <UiButton size="sm" variant="outline" @click="emit('command', { type: 'fix_error', eventId: event.id })">{{ t("chat.fixThis") }}</UiButton>
+      <div class="cx-chat-actions mt-2">
+        <UiButton
+          size="xs"
+          variant="outline"
+          :disabled="actionsLocked"
+          :loading="isActing('fix-error')"
+          @click="act('fix-error', { type: 'fix_error', eventId: event.id })"
+        >{{ t("chat.fixThis") }}</UiButton>
       </div>
     </div>
 
     <div v-else-if="event.type === 'checkpoint'" class="cx-summary">
       <GitCommit class="h-3 w-3 shrink-0" />
       <span class="min-w-0 truncate">{{ t("chat.checkpoint") }} · {{ event.label }}</span>
-      <button type="button" class="ml-auto shrink-0 text-coral-400 hover:text-coral-300" @click="emit('command', { type: 'restore_checkpoint', checkpointId: event.id })">
+      <UiButton
+        size="xs"
+        variant="ghost"
+        class="ml-auto shrink-0"
+        :disabled="actionsLocked"
+        :loading="isActing('restore')"
+        @click="act('restore', { type: 'restore_checkpoint', checkpointId: event.id })"
+      >
         {{ t("chat.restore") }}
-      </button>
+      </UiButton>
     </div>
 
     <div v-else-if="event.type === 'permission'" class="cx-panel p-3">
@@ -298,10 +376,27 @@ function isImage(path: string) {
         <Shield class="h-3.5 w-3.5" /> {{ t("chat.permissionTitle") }}
       </p>
       <div class="markdown-body mt-1.5 text-ink-950" v-html="html" />
-      <div v-if="event.outcome === 'pending'" class="mt-3 flex flex-wrap justify-end gap-1.5">
-        <UiButton size="sm" variant="outline" @click="emit('command', { type: 'decide_permission', outcome: 'reject-once' })">{{ t("chat.rejectOnce") }}</UiButton>
-        <UiButton size="sm" variant="soft" @click="emit('command', { type: 'decide_permission', outcome: 'allow-once' })">{{ t("chat.allowOnce") }}</UiButton>
-        <UiButton size="sm" @click="emit('command', { type: 'decide_permission', outcome: 'allow-always' })">{{ t("chat.allowAlways") }}</UiButton>
+      <div v-if="event.outcome === 'pending'" class="cx-chat-actions mt-2.5">
+        <UiButton
+          size="xs"
+          variant="outline"
+          :disabled="actionsLocked"
+          :loading="isActing('reject-once')"
+          @click="act('reject-once', { type: 'decide_permission', outcome: 'reject-once' })"
+        >{{ t("chat.rejectOnce") }}</UiButton>
+        <UiButton
+          size="xs"
+          variant="soft"
+          :disabled="actionsLocked"
+          :loading="isActing('allow-once')"
+          @click="act('allow-once', { type: 'decide_permission', outcome: 'allow-once' })"
+        >{{ t("chat.allowOnce") }}</UiButton>
+        <UiButton
+          size="xs"
+          :disabled="actionsLocked"
+          :loading="isActing('allow-always')"
+          @click="act('allow-always', { type: 'decide_permission', outcome: 'allow-always' })"
+        >{{ t("chat.allowAlways") }}</UiButton>
       </div>
     </div>
 
@@ -317,15 +412,22 @@ function isImage(path: string) {
     <p v-else-if="event.type === 'conflict'" class="cx-summary">{{ t("chat.conflict") }} · {{ event.message }}</p>
     <div v-else-if="event.type === 'proposal'" class="cx-summary">
       <span class="min-w-0 truncate">{{ t("chat.proposal") }} · {{ event.files.join(", ") }}</span>
-      <button type="button" class="ml-auto shrink-0 text-coral-400 hover:text-coral-300" @click="emit('command', { type: 'discard_proposal' })">
+      <UiButton
+        size="xs"
+        variant="ghost"
+        class="ml-auto shrink-0"
+        :disabled="actionsLocked"
+        :loading="isActing('discard')"
+        @click="act('discard', { type: 'discard_proposal' })"
+      >
         {{ t("chat.discardProposal") }}
-      </button>
+      </UiButton>
     </div>
     <p v-else-if="event.type === 'validation'" class="cx-summary">
       {{ t("chat.validation", { status: event.status }) }} · {{ event.command }}
     </p>
     <p v-else-if="event.type === 'run_failure'" class="cx-summary cx-warn">
-      {{ t("chat.runFailure", { message: event.message }) }}
+      {{ event.kind === "provider_failover" ? t("chat.providerFailover") : t("chat.runFailure", { message: event.message }) }}
     </p>
     <p v-else-if="event.type === 'push'" class="cx-summary">
       {{ t("chat.pushStatus", { status: event.status }) }} · {{ event.message }}

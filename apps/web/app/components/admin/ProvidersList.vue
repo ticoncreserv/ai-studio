@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronUp, RotateCcw, Trash2 } from "@lucide/vue";
+import { ChevronDown, ChevronUp, LogIn, LogOut, Plus, RotateCcw, Trash2, X } from "@lucide/vue";
 
 type ProviderKeyRow = {
   ref: string;
@@ -16,6 +16,20 @@ type ProviderKeyRow = {
 
 type ProviderModelRow = { id: string; label: string; description?: string };
 
+type ProviderCliAccountRow = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  loggedIn: boolean;
+  account: string | null;
+  usable: boolean;
+  failures: number;
+  cooldownUntil: string | null;
+  lastError: string | null;
+  lastFailureKind: string | null;
+  lastUsedAt: string | null;
+};
+
 type ProviderRow = {
   id: string;
   label: string;
@@ -28,6 +42,8 @@ type ProviderRow = {
   model?: string;
   models?: ProviderModelRow[];
   keys?: ProviderKeyRow[];
+  cliAccounts?: ProviderCliAccountRow[];
+  cliLogin?: { accountId: string; loginUrl?: string; startedAt: number } | null;
 };
 
 const props = defineProps<{
@@ -46,14 +62,19 @@ const emit = defineEmits<{
   save: [id: string];
   model: [id: string, model: string];
   key: [payload: { id: string; keyRef: string; keyEnabled?: boolean; moveKey?: "up" | "down"; resetKey?: boolean; deleteKey?: boolean }];
+  cli: [payload: { id: string; addCliAccount?: boolean; cliLabel?: string; cliAccountId?: string; moveCli?: "up" | "down"; resetCli?: boolean; deleteCli?: boolean; cliEnabled?: boolean }];
+  login: [id: string];
+  logout: [id: string];
 }>();
 
 const { t } = useI18n();
 const drafts = reactive<Record<string, string>>({});
 const labelDrafts = reactive<Record<string, string>>({});
 const modelDrafts = reactive<Record<string, string>>({});
+const addOpen = reactive<Record<string, boolean>>({});
 
 const keyed = computed(() => props.providers.filter((provider) => provider.implemented));
+const cursor = computed(() => props.providers.find((provider) => provider.id === "cursor"));
 
 watch(
   () => props.keys,
@@ -110,8 +131,22 @@ function setModel(id: string, value: string) {
   emit("update:models", { ...props.models, [id]: value });
 }
 
+function pickModel(id: string, value: string) {
+  setModel(id, value);
+  emit("model", id, value);
+}
+
 function canSave(id: string) {
   return Boolean(keyValue(id).trim()) && !props.busy;
+}
+
+function toggleAddKey(id: string) {
+  addOpen[id] = !addOpen[id];
+}
+
+function saveKey(id: string) {
+  emit("save", id);
+  addOpen[id] = false;
 }
 
 function keyStatus(key: ProviderKeyRow) {
@@ -120,6 +155,48 @@ function keyStatus(key: ProviderKeyRow) {
   if (!key.usable && key.failures >= 5) return t("admin.providerKeyExhausted");
   if (!key.usable) return t("admin.providerKeyCooldown");
   return t("admin.hasKey");
+}
+
+function providerDetail(provider: ProviderRow) {
+  if (provider.health === "disabled" || !provider.message) return "";
+  if (provider.health === "unconfigured") {
+    return provider.id === "cursor" ? t("admin.providerMessage.unconfiguredCursor") : t("admin.providerMessage.unconfigured");
+  }
+  if (provider.health === "unavailable") return t("admin.providerMessage.binaryMissing");
+  if (/cooling down|exhausted/i.test(provider.message)) {
+    return provider.id === "cursor" ? t("admin.providerMessage.cursorCooldown") : t("admin.providerMessage.keysCooldown");
+  }
+  if (/sandbox is required/i.test(provider.message)) return t("admin.providerMessage.sandboxRequired");
+  return provider.message;
+}
+
+function keyErrorText(key: ProviderKeyRow) {
+  if (!key.lastError) return "";
+  if (key.lastFailureKind === "auth") return t("admin.providerFailure.auth");
+  if (key.lastFailureKind === "quota") return t("admin.providerFailure.quota");
+  if (key.lastFailureKind === "rate_limit") return t("admin.providerFailure.rateLimit");
+  return key.lastError;
+}
+
+function cliStatus(account: ProviderCliAccountRow) {
+  if (!account.enabled) return t("admin.providerKeyDisabled");
+  if (!account.usable && account.failures >= 5) return t("admin.providerKeyExhausted");
+  if (!account.usable && account.loggedIn) return t("admin.providerKeyCooldown");
+  if (account.loggedIn && account.account) return t("admin.cursorCli.signedInAs", { account: account.account });
+  if (account.loggedIn) return t("admin.cursorCli.ready");
+  return t("admin.cursorCli.notSignedIn");
+}
+
+function credentialLabel(provider: ProviderRow) {
+  if (provider.id === "cursor" && (provider.cliAccounts ?? []).some((account) => account.loggedIn)) {
+    return t("admin.cursorCli.ready");
+  }
+  return provider.hasKey ? t("admin.hasKey") : t("admin.noKey");
+}
+
+function addCli() {
+  emit("cli", { id: "cursor", addCliAccount: true, cliLabel: labelValue("cursor").trim() || undefined });
+  labelDrafts.cursor = "";
 }
 </script>
 
@@ -138,10 +215,10 @@ function keyStatus(key: ProviderKeyRow) {
             </div>
             <p class="cx-row-desc">
               <span class="font-mono">{{ provider.id }}</span>
-              <span v-if="provider.implemented"> · {{ provider.hasKey ? t("admin.hasKey") : t("admin.noKey") }}</span>
+              <span v-if="provider.implemented"> · {{ credentialLabel(provider) }}</span>
               <span v-else> · {{ t("admin.providerSoonHint") }}</span>
             </p>
-            <p v-if="provider.message" class="cx-row-desc">{{ provider.message }}</p>
+            <p v-if="providerDetail(provider)" class="cx-row-desc">{{ providerDetail(provider) }}</p>
           </div>
           <UiSwitch
             :model-value="provider.enabled"
@@ -161,23 +238,117 @@ function keyStatus(key: ProviderKeyRow) {
             <p class="cx-row-title">{{ provider.label }}</p>
             <p class="cx-row-desc">{{ t("admin.providerModelDefault") }}</p>
           </div>
-          <div class="flex shrink-0 items-center gap-1.5">
+          <UiSelect
+            :model-value="modelValue(provider.id)"
+            :options="provider.models ?? []"
+            :placeholder="t('admin.providerModelPlaceholder')"
+            :aria-label="`${provider.label} · ${t('admin.providerModel')}`"
+            :disabled="busy"
+            @update:model-value="pickModel(provider.id, $event)"
+          />
+        </div>
+      </div>
+    </section>
+
+    <section v-if="cursor?.implemented" class="cx-section">
+      <p class="cx-section-label">{{ t("admin.cursorCli.title") }}</p>
+      <p class="cx-section-note">{{ t("admin.cursorCli.hint") }}</p>
+      <div class="cx-panel">
+        <div class="cx-row">
+          <div class="min-w-0">
+            <p class="cx-row-title">{{ cursor.label }}</p>
+            <p class="cx-row-desc">{{ t("admin.cursorCli.keysFallback") }}</p>
+          </div>
+          <div class="flex shrink-0 flex-wrap items-center gap-1.5">
             <input
-              :value="modelValue(provider.id)"
-              :list="`provider-models-${provider.id}`"
+              :value="labelValue('cursor')"
+              type="text"
               autocomplete="off"
               spellcheck="false"
-              class="cx-field w-[190px]"
-              :placeholder="t('admin.providerModelPlaceholder')"
-              :aria-label="`${provider.label} · ${t('admin.providerModel')}`"
-              @input="setModel(provider.id, ($event.target as HTMLInputElement).value)"
+              class="cx-field w-[140px]"
+              :placeholder="t('admin.cursorCli.labelPlaceholder')"
+              :aria-label="`${cursor.label} · ${t('admin.cursorCli.add')}`"
+              @input="setLabel('cursor', ($event.target as HTMLInputElement).value)"
             />
-            <datalist :id="`provider-models-${provider.id}`">
-              <option v-for="item in provider.models ?? []" :key="item.id" :value="item.id">{{ item.label }}</option>
-            </datalist>
-            <UiButton size="sm" variant="outline" :disabled="busy" @click="emit('model', provider.id, modelValue(provider.id))">
-              {{ t("admin.saveModel") }}
+            <UiButton size="sm" variant="outline" class="shrink-0" :disabled="busy" @click="addCli">
+              <Plus class="h-3.5 w-3.5" />
+              {{ t("admin.cursorCli.add") }}
             </UiButton>
+          </div>
+        </div>
+        <div v-for="(account, index) in cursor.cliAccounts ?? []" :key="account.id" class="cx-row cx-row-wrap">
+          <div class="min-w-0">
+            <p class="cx-row-title">{{ account.label || account.id }}</p>
+            <p class="cx-row-desc">{{ cliStatus(account) }}</p>
+            <p v-if="cursor.cliLogin?.accountId === account.id" class="cx-row-desc">{{ t("admin.cursorCli.signingIn") }}</p>
+            <a
+              v-if="cursor.cliLogin?.accountId === account.id && cursor.cliLogin.loginUrl"
+              class="cx-link mt-1 inline-block text-[12px]"
+              :href="cursor.cliLogin.loginUrl"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {{ t("admin.cursorCli.loginUrl") }}
+            </a>
+          </div>
+          <div class="cx-row-actions flex shrink-0 items-center gap-1">
+            <UiSwitch
+              :model-value="account.enabled"
+              :label="`${account.id} · ${t('admin.enabled')}`"
+              @update:model-value="emit('cli', { id: 'cursor', cliAccountId: account.id, cliEnabled: $event })"
+            />
+            <UiIconButton
+              size="sm"
+              :label="t('admin.moveKeyUp')"
+              :disabled="busy || index === 0"
+              @click="emit('cli', { id: 'cursor', cliAccountId: account.id, moveCli: 'up' })"
+            >
+              <ChevronUp class="h-3.5 w-3.5" />
+            </UiIconButton>
+            <UiIconButton
+              size="sm"
+              :label="t('admin.moveKeyDown')"
+              :disabled="busy || index === (cursor.cliAccounts?.length ?? 0) - 1"
+              @click="emit('cli', { id: 'cursor', cliAccountId: account.id, moveCli: 'down' })"
+            >
+              <ChevronDown class="h-3.5 w-3.5" />
+            </UiIconButton>
+            <UiButton
+              v-if="!account.loggedIn"
+              size="sm"
+              variant="outline"
+              :disabled="busy"
+              @click="emit('login', account.id)"
+            >
+              <LogIn class="h-3.5 w-3.5" />
+              {{ t("admin.cursorCli.signIn") }}
+            </UiButton>
+            <UiButton
+              v-else
+              size="sm"
+              variant="outline"
+              :disabled="busy"
+              @click="emit('logout', account.id)"
+            >
+              <LogOut class="h-3.5 w-3.5" />
+              {{ t("admin.cursorCli.signOut") }}
+            </UiButton>
+            <UiIconButton
+              size="sm"
+              :label="t('admin.resetKey')"
+              :disabled="busy || (!account.failures && !account.cooldownUntil)"
+              @click="emit('cli', { id: 'cursor', cliAccountId: account.id, resetCli: true })"
+            >
+              <RotateCcw class="h-3.5 w-3.5" />
+            </UiIconButton>
+            <UiIconButton
+              size="sm"
+              :label="t('admin.cursorCli.delete')"
+              :disabled="busy"
+              @click="emit('cli', { id: 'cursor', cliAccountId: account.id, deleteCli: true })"
+            >
+              <Trash2 class="h-3.5 w-3.5" />
+            </UiIconButton>
           </div>
         </div>
       </div>
@@ -199,6 +370,17 @@ function keyStatus(key: ProviderKeyRow) {
               }}
             </p>
           </div>
+          <UiButton
+            size="sm"
+            variant="outline"
+            class="shrink-0"
+            :aria-expanded="Boolean(addOpen[provider.id])"
+            @click="toggleAddKey(provider.id)"
+          >
+            <X v-if="addOpen[provider.id]" class="h-3.5 w-3.5" />
+            <Plus v-else class="h-3.5 w-3.5" />
+            {{ addOpen[provider.id] ? t("admin.cancelAddKey") : t("admin.addKey") }}
+          </UiButton>
         </div>
         <div v-for="(key, index) in provider.keys ?? []" :key="key.ref" class="cx-row cx-row-wrap">
           <div class="min-w-0">
@@ -207,7 +389,7 @@ function keyStatus(key: ProviderKeyRow) {
               <span class="font-mono">{{ key.ref }}</span>
               · {{ keyStatus(key) }}
             </p>
-            <p v-if="key.lastError" class="cx-row-desc">{{ key.lastError }}</p>
+            <p v-if="keyErrorText(key)" class="cx-row-desc">{{ keyErrorText(key) }}</p>
           </div>
           <div class="cx-row-actions flex shrink-0 items-center gap-1">
             <UiSwitch
@@ -249,7 +431,7 @@ function keyStatus(key: ProviderKeyRow) {
             </UiIconButton>
           </div>
         </div>
-        <div class="cx-row cx-row-wrap">
+        <div v-if="addOpen[provider.id]" class="cx-row cx-row-wrap">
           <div class="min-w-0">
             <p class="cx-row-title">{{ t("admin.addKey") }}</p>
             <p class="cx-row-desc">{{ t("admin.apiKeyPlaceholder") }}</p>
@@ -275,7 +457,7 @@ function keyStatus(key: ProviderKeyRow) {
               :aria-label="`${provider.label} · ${t('admin.apiKey')}`"
               @input="setKey(provider.id, ($event.target as HTMLInputElement).value)"
             />
-            <UiButton size="sm" variant="outline" :disabled="!canSave(provider.id)" @click="emit('save', provider.id)">
+            <UiButton size="sm" variant="outline" :disabled="!canSave(provider.id)" @click="saveKey(provider.id)">
               {{ t("admin.saveProvider") }}
             </UiButton>
           </div>

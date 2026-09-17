@@ -24,6 +24,8 @@ export interface AgentProvider {
     mcpServers?: Array<{ name: string; command?: string; args?: string[]; env?: Array<{ name: string; value: string }>; type?: "http" | "sse"; url?: string; headers?: Array<{ name: string; value: string }> }>;
     /** One key from the provider's pool. Omitted means the first stored key. */
     apiKey?: string;
+    /** Isolated Cursor CLI HOME. Omitted on API-key runs. */
+    home?: string;
     /** Admin-pinned default model. Omitted means the agent's own default. */
     model?: string;
     onPermission?: (event: SessionEvent, rpcId: number) => void;
@@ -40,6 +42,17 @@ export const PROVIDER_CATALOG: ProviderCapability[] = [
     images: true,
     todos: true,
     plans: true,
+    questions: true,
+  },
+  {
+    id: "codex",
+    label: "Codex",
+    command: "npx",
+    args: ["-y", "@agentclientprotocol/codex-acp"],
+    modes: ["agent", "ask"],
+    images: true,
+    todos: true,
+    plans: false,
     questions: true,
   },
   {

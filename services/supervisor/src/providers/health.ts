@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import type { FeatureFlag, ProviderHealth, ProviderId, ProviderKeyState, SandboxProfile } from "@atelier/contracts";
-import { isFlagOn, isProviderKeyUsable, resolveSandboxProfile } from "@atelier/domain";
+import type { CursorCliAccount, FeatureFlag, ProviderHealth, ProviderId, ProviderKeyState, SandboxProfile } from "@atelier/contracts";
+import { isCursorCliAccountUsable, isFlagOn, isProviderKeyUsable, resolveSandboxProfile } from "@atelier/domain";
 import { hasProviderCredential, listProviderCredentials } from "./credentials.js";
 import { PROVIDER_CATALOG } from "./types.js";
 import { findBubblewrap, findDocker, resolveSandboxBackend } from "./sandbox.js";
@@ -15,6 +15,7 @@ export function providerFlag(id: ProviderId): FeatureFlag | null {
   if (id === "claude") return "claudeProvider";
   if (id === "gemini") return "geminiProvider";
   if (id === "grok") return "grokProvider";
+  if (id === "codex") return "codexProvider";
   return null;
 }
 
@@ -24,6 +25,7 @@ export function inspectProviderHealth(
   env: NodeJS.ProcessEnv = process.env,
   envRoot?: string,
   keys?: ProviderKeyState[],
+  cliAccounts?: CursorCliAccount[],
 ): ProviderHealth {
   const capability = PROVIDER_CATALOG.find((row) => row.id === id);
   const sandbox = resolveSandboxProfile(flags, env);
@@ -44,13 +46,22 @@ export function inspectProviderHealth(
   const flag = providerFlag(id);
   const enabledFlag = id === "cursor" || (isFlagOn(flags, "multiProvider") && (!flag || isFlagOn(flags, flag)));
   const credentials = listProviderCredentials(id, env, envRoot);
-  const hasCredential = credentials.length > 0 || hasProviderCredential(id, env, envRoot);
-  const binary = id === "claude" ? commandOnPath("npx", env) : commandOnPath(capability.command, env);
+  const hasKey = credentials.length > 0 || hasProviderCredential(id, env, envRoot);
+  const hasCli = id === "cursor" && Boolean(cliAccounts?.some((account) => account.loggedIn));
+  const hasCredential = hasKey || hasCli;
+  const binary = capability.command === "npx" ? commandOnPath("npx", env) : commandOnPath(capability.command, env);
   if (!enabledFlag) {
     return { id, status: "disabled", binary, hasCredential, sandbox, message: "Provider flag is off" };
   }
   if (!hasCredential) {
-    return { id, status: "unconfigured", binary, hasCredential, sandbox, message: "API key is not set" };
+    return {
+      id,
+      status: "unconfigured",
+      binary,
+      hasCredential,
+      sandbox,
+      message: id === "cursor" ? "Sign in a Cursor CLI account or add an API key" : "API key is not set",
+    };
   }
   if (!binary) {
     return { id, status: "unavailable", binary, hasCredential, sandbox, message: `${capability.command} is not on PATH` };
@@ -65,21 +76,37 @@ export function inspectProviderHealth(
       message: "Sandbox is required but no backend is available",
     };
   }
-  if (keys?.length && credentials.length) {
-    const usable = credentials.some((cred) => {
-      const state = keys.find((key) => key.ref === cred.ref);
+  const keyUsable =
+    !credentials.length ||
+    credentials.some((cred) => {
+      const state = keys?.find((key) => key.ref === cred.ref);
       return !state || isProviderKeyUsable(state);
     });
-    if (!usable) {
+  const cliUsable = Boolean(cliAccounts?.some((account) => isCursorCliAccountUsable(account)));
+  const cliCooling = Boolean(cliAccounts?.some((account) => account.loggedIn && !isCursorCliAccountUsable(account)));
+  if (id === "cursor") {
+    if (cliUsable || (hasKey && keyUsable)) {
+      return { id, status: "available", binary, hasCredential, sandbox };
+    }
+    if (cliCooling || hasKey) {
       return {
         id,
         status: "degraded",
         binary,
         hasCredential,
         sandbox,
-        message: "All API keys are cooling down or exhausted",
+        message: "All Cursor CLI accounts and API keys are cooling down or exhausted",
       };
     }
+  } else if (keys?.length && credentials.length && !keyUsable) {
+    return {
+      id,
+      status: "degraded",
+      binary,
+      hasCredential,
+      sandbox,
+      message: "All API keys are cooling down or exhausted",
+    };
   }
   return { id, status: "available", binary, hasCredential, sandbox };
 }
@@ -89,9 +116,10 @@ export function listProviderHealth(
   env: NodeJS.ProcessEnv = process.env,
   envRoot?: string,
   keysByProvider?: Record<string, ProviderKeyState[]>,
+  cliAccounts?: CursorCliAccount[],
 ): ProviderHealth[] {
   return PROVIDER_CATALOG.filter((row) => row.id !== "mock" || env.VITEST).map((row) =>
-    inspectProviderHealth(row.id, flags, env, envRoot, keysByProvider?.[row.id]),
+    inspectProviderHealth(row.id, flags, env, envRoot, keysByProvider?.[row.id], row.id === "cursor" ? cliAccounts : undefined),
   );
 }
 
@@ -101,9 +129,10 @@ export function isProviderSelectable(
   env: NodeJS.ProcessEnv = process.env,
   envRoot?: string,
   keys?: ProviderKeyState[],
+  cliAccounts?: CursorCliAccount[],
 ): boolean {
   if (id === "mock") return Boolean(env.VITEST);
-  const health = inspectProviderHealth(id, flags, env, envRoot, keys);
+  const health = inspectProviderHealth(id, flags, env, envRoot, keys, cliAccounts);
   return health.status === "available" || health.status === "degraded";
 }
 

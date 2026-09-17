@@ -1,4 +1,4 @@
-import type { ProviderKeyState, ProviderModel, SessionEvent } from "@atelier/contracts";
+import type { CursorCliAccount, ProviderKeyState, ProviderModel, SessionEvent } from "@atelier/contracts";
 import type { DbShape, ProviderConfig, SessionRecord } from "./store.js";
 
 export interface StoreRows {
@@ -19,6 +19,7 @@ export interface StoreRows {
     model: string;
     keys: ProviderKeyState[];
     models: ProviderModel[];
+    cliAccounts: CursorCliAccount[];
   }>;
   presence: DbShape["presence"];
   leases: Array<{ workspaceId: string; sessionId: string; userId: string; leaseUntil?: string; heartbeatAt?: string }>;
@@ -56,6 +57,7 @@ export function flattenDb(db: DbShape): StoreRows {
       model: row.model ?? "",
       keys: row.keys ?? [],
       models: row.models ?? [],
+      cliAccounts: row.cliAccounts ?? [],
     })),
     presence: db.presence,
     leases: Object.entries(db.runLock)
@@ -102,6 +104,7 @@ export function assembleDb(rows: StoreRows, base: DbShape): DbShape {
           if (row.model) next.model = row.model;
           if (row.keys?.length) next.keys = row.keys;
           if (row.models?.length) next.models = row.models;
+          if (row.cliAccounts?.length) next.cliAccounts = row.cliAccounts;
           return [row.id, next];
         }),
       ),

@@ -1,4 +1,4 @@
-import type { ProviderKeyState, ProviderModel } from "@atelier/contracts";
+import type { CursorCliAccount, ProviderKeyState, ProviderModel } from "@atelier/contracts";
 import { boolean, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -51,6 +51,7 @@ export const workspaces = pgTable("workspaces", {
   warmedAt: timestamp("warmed_at"),
   lastActiveAt: timestamp("last_active_at"),
   bytes: integer("bytes"),
+  hibernatedByUser: boolean("hibernated_by_user"),
 });
 
 export const sessions = pgTable("sessions", {
@@ -123,6 +124,7 @@ export const providerSettings = pgTable("provider_settings", {
   model: text("model"),
   keys: jsonb("keys").$type<ProviderKeyState[]>().default([]),
   models: jsonb("models").$type<ProviderModel[]>().default([]),
+  cliAccounts: jsonb("cli_accounts").$type<CursorCliAccount[]>().default([]),
 });
 
 export const presence = pgTable("presence", {

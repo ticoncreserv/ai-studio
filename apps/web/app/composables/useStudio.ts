@@ -1,5 +1,5 @@
-import { foldEvents } from "@atelier/domain";
-import type { AgentMode, ClientCommand, SessionEvent, Viewport } from "@atelier/contracts";
+import { foldEvents, shouldAutoResumePreview } from "@atelier/domain";
+import type { AgentMode, ClientCommand, InspectPin, SessionEvent, Viewport } from "@atelier/contracts";
 import type {
   PreviewDebug,
   PreviewTool,
@@ -12,20 +12,33 @@ import type {
   StudioSkill,
 } from "~/types/studio";
 import {
-  hasProgressAfterLastUser,
+  CHAT_POLL_CONNECTED_MS,
+  CHAT_POLL_DISCONNECTED_MS,
+  CHAT_SOCKET_PING_MS,
+  CHAT_RECONNECT_MIN_MS,
+  isComposerBusy,
+  isLiveSessionEvent,
+  isSessionRunActive,
   mergePendingTurn,
+  mergeSessionEvents,
+  nextReconnectDelay,
+  shouldShowWorking,
   upsertSessionEvent,
   userMessageCount,
+  workingSinceMs,
   type PendingUserTurn,
   type QueuedPrompt,
 } from "~/utils/chat-events";
 import { nextPreviewEventId, shouldReloadPreviewOnCommand, shouldReloadPreviewOnEvent } from "~/utils/preview-reload";
-import { insertSlashCommand, mergeSlashCatalog, removeSlashCommand, slashInvocation, slashMatches, slashQuery } from "~/utils/slash";
+import { committedSlashSkill, insertSlashCommand, mergeSlashCatalog, removeSlashCommand, resolvedSlashSkill, slashMatches, slashQuery } from "~/utils/slash";
+import { previewToolAfterEscape } from "~/utils/studio-shortcuts";
+import { mergeInspectPins, toInspectPin, type PreviewInspectTarget } from "~/utils/preview-inspect";
 
 export function useStudio() {
   const { t, locale, setLocale } = useI18n();
   const route = useRoute();
   const rel = useRelativeTime();
+  const { signOut } = useSignOut();
   const workspaceId = computed(() => String(route.params.workspace));
 
   const data = ref<StudioPayload | null>(null);
@@ -44,19 +57,18 @@ export function useStudio() {
   const spectator = ref(false);
   const toast = ref("");
   const streamingText = ref("");
-  const sending = ref(false);
+  const promptSubmitting = ref(false);
   const pendingTurn = ref<PendingUserTurn | null>(null);
   const queue = ref<QueuedPrompt[]>([]);
-  const workingSince = ref<number | null>(null);
-  const previewBusy = ref(false);
+  const previewBusy = ref(true);
   const previewKey = ref(0);
   const lastPreviewEventId = ref("");
   const toolMode = ref<PreviewTool>("select");
   const mode = ref<AgentMode>("agent");
   const recipeId = ref("");
   const attachments = ref<StudioAttachment[]>([]);
-  const mobileTab = ref<"chat" | "preview">("chat");
-  const debugOpen = ref(false);
+  const inspectPins = ref<InspectPin[]>([]);
+  const mobileTab = ref<"chat" | "preview">("preview");
   const previewDebug = ref<PreviewDebug | null>(null);
   const questionAnswers = ref<Record<string, string[]>>({});
 
@@ -68,7 +80,17 @@ export function useStudio() {
       { type: "assistant_delta", id: "live", at: new Date().toISOString(), text: streamingText.value },
     ];
   });
-  const showWorking = computed(() => sending.value && !hasProgressAfterLastUser(events.value));
+  const sending = computed(() =>
+    isComposerBusy({
+      events: events.value,
+      pendingStatus: pendingTurn.value?.status,
+      submitting: promptSubmitting.value,
+    }),
+  );
+  const showWorking = computed(() => shouldShowWorking({ inFlight: sending.value, events: events.value }));
+  const workingSince = computed(() =>
+    workingSinceMs({ inFlight: sending.value, pending: pendingTurn.value, events: events.value }),
+  );
   const failedEventId = computed(() => (pendingTurn.value?.status === "failed" ? pendingTurn.value.id : ""));
   const enterEventId = computed(() => pendingTurn.value?.id ?? "");
   const snapshot = computed(() => foldEvents(events.value));
@@ -84,17 +106,32 @@ export function useStudio() {
     return typeof fromQuery === "string" && fromQuery ? fromQuery : undefined;
   }
 
+  let loadedSessionId: string | undefined;
+
   async function refresh() {
     loadError.value = false;
     try {
-      data.value = await $fetch<StudioPayload>(`/api/workspace/${workspaceId.value}`, {
+      const payload = await $fetch<StudioPayload>(`/api/workspace/${workspaceId.value}`, {
         query: { q: query.value || undefined, session: activeSessionId() },
       });
+      if (payload.session?.id && payload.session.id === loadedSessionId) {
+        payload.events = mergeSessionEvents(
+          (payload.events ?? []) as SessionEvent[],
+          (data.value?.events ?? []) as SessionEvent[],
+        );
+        if (payload.session) payload.session.events = payload.events;
+      }
+      loadedSessionId = payload.session?.id;
+      data.value = payload;
       hydratePresence();
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode;
       const disabled = (err as { data?: { disabled?: boolean; message?: string } }).data?.disabled
         || (err as { statusMessage?: string }).statusMessage === "disabled";
+      if (status === 401) {
+        await navigateTo("/");
+        return;
+      }
       if (status === 403 && disabled) {
         await navigateTo("/disabled");
         return;
@@ -110,16 +147,90 @@ export function useStudio() {
   }
 
   let socket: WebSocket | null = null;
+  let pingTimer: ReturnType<typeof setInterval> | undefined;
+  let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let reconnectDelay = CHAT_RECONNECT_MIN_MS;
+  let socketGeneration = 0;
+  let chatUnmounted = false;
+
+  function socketIsOpen() {
+    return socket?.readyState === WebSocket.OPEN;
+  }
+
+  function clearChatTimers() {
+    if (pingTimer) clearInterval(pingTimer);
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    pingTimer = undefined;
+    reconnectTimer = undefined;
+  }
+
+  function schedulePoll() {
+    if (!import.meta.client || chatUnmounted) return;
+    if (pollTimer) clearInterval(pollTimer);
+    const ms = socketIsOpen() ? CHAT_POLL_CONNECTED_MS : CHAT_POLL_DISCONNECTED_MS;
+    pollTimer = setInterval(() => {
+      void refresh();
+    }, ms);
+  }
+
+  function scheduleReconnect() {
+    if (chatUnmounted) return;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      socket = null;
+      connectSocket();
+    }, reconnectDelay);
+    reconnectDelay = nextReconnectDelay(reconnectDelay);
+  }
+
   function connectSocket() {
-    socket?.close();
     const sessionId = data.value?.session?.id;
-    if (!sessionId || !import.meta.client) return;
+    if (!sessionId || !import.meta.client || chatUnmounted) return;
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    socket = new WebSocket(`${proto}://${location.host}/_ws?session=${sessionId}`);
-    socket.onmessage = (frame) => {
-      const event = JSON.parse(String(frame.data)) as SessionEvent;
-      ingestSessionEvent(event);
+    const url = `${proto}://${location.host}/_ws?session=${encodeURIComponent(sessionId)}`;
+    if (socket && socket.url === url && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+    const generation = ++socketGeneration;
+    clearChatTimers();
+    socket?.close();
+    socket = new WebSocket(url);
+    socket.onopen = () => {
+      if (generation !== socketGeneration || chatUnmounted) return;
+      reconnectDelay = CHAT_RECONNECT_MIN_MS;
+      pingTimer = setInterval(() => {
+        if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" }));
+      }, CHAT_SOCKET_PING_MS);
+      void refresh();
+      schedulePoll();
     };
+    socket.onmessage = (frame) => {
+      if (generation !== socketGeneration) return;
+      let payload: unknown;
+      try {
+        payload = JSON.parse(String(frame.data));
+      } catch {
+        return;
+      }
+      if (!isLiveSessionEvent(payload)) return;
+      ingestSessionEvent(payload);
+    };
+    socket.onclose = () => {
+      if (generation !== socketGeneration || chatUnmounted) return;
+      clearChatTimers();
+      scheduleReconnect();
+      schedulePoll();
+    };
+    socket.onerror = () => {
+      socket?.close();
+    };
+  }
+
+  function onVisibility() {
+    if (document.visibilityState !== "visible") return;
+    connectSocket();
+    void refresh();
   }
 
   function onKey(e: KeyboardEvent) {
@@ -143,6 +254,11 @@ export function useStudio() {
       slashOpen.value = false;
       dialog.value = null;
       sheet.value = null;
+      const nextTool = previewToolAfterEscape(toolMode.value);
+      if (nextTool !== toolMode.value) {
+        e.preventDefault();
+        toolMode.value = nextTool;
+      }
     }
   }
 
@@ -151,18 +267,10 @@ export function useStudio() {
       type?: string;
       source?: string;
       message?: string;
-      timeMs?: number;
-      queries?: number;
-      memoryMb?: number;
-      nPlusOne?: boolean;
-    };
-    if (payload?.type === "atelier-preview-metrics") {
-      previewDebug.value = {
-        timeMs: payload.timeMs,
-        queries: payload.queries,
-        memoryMb: payload.memoryMb,
-        nPlusOne: payload.nPlusOne,
-      };
+    } & PreviewDebug;
+    if (payload?.type === "atelier-preview-metrics" && payload.source === "atelier-preview") {
+      const { type: _type, source: _source, message: _message, ...snapshot } = payload;
+      previewDebug.value = snapshot;
       return;
     }
     if (payload?.type !== "atelier-preview-error") return;
@@ -179,18 +287,29 @@ export function useStudio() {
 
   onMounted(async () => {
     await refresh();
-    if (data.value && data.value.workspace.status !== "running") {
-      void resume().catch(() => undefined);
+    if (data.value && shouldAutoResumePreview(data.value.workspace)) {
+      void resume().catch(() => {
+        previewBusy.value = false;
+      });
+    } else {
+      previewBusy.value = false;
     }
     connectSocket();
+    schedulePoll();
     window.addEventListener("keydown", onKey);
     window.addEventListener("message", onPreviewMessage);
+    document.addEventListener("visibilitychange", onVisibility);
   });
 
   onBeforeUnmount(() => {
+    chatUnmounted = true;
+    socketGeneration += 1;
+    clearChatTimers();
+    if (pollTimer) clearInterval(pollTimer);
     socket?.close();
     window.removeEventListener("keydown", onKey);
     window.removeEventListener("message", onPreviewMessage);
+    document.removeEventListener("visibilitychange", onVisibility);
   });
 
   watch(
@@ -198,11 +317,26 @@ export function useStudio() {
     () => connectSocket(),
   );
 
+  watch([previewKey, previewSrc], () => {
+    previewDebug.value = null;
+  });
+
   watch(
     () => userMessageCount((data.value?.events ?? []) as SessionEvent[]),
     (count) => {
       const pending = pendingTurn.value;
       if (pending?.status === "sending" && count >= pending.waitUntilCount) pendingTurn.value = null;
+    },
+  );
+
+  watch(
+    () => isSessionRunActive(events.value),
+    (active, wasActive) => {
+      if (wasActive !== true || active) return;
+      const next = queue.value[0];
+      if (!next || pendingTurn.value?.status === "failed") return;
+      queue.value = queue.value.slice(1);
+      void runPromptDraft(next);
     },
   );
 
@@ -224,8 +358,6 @@ export function useStudio() {
       lastPreviewEventId.value = event.id;
       previewKey.value += 1;
     }
-    if (event.type === "tool_call" && event.status === "running") return;
-    void refresh();
   }
 
   function persistedUserCount() {
@@ -238,15 +370,22 @@ export function useStudio() {
   }
 
   function clearRunState() {
-    sending.value = false;
-    workingSince.value = null;
+    promptSubmitting.value = false;
     streamingText.value = "";
   }
 
   let runGeneration = 0;
 
+  const commandBusy = ref(false);
+
+  function commandLocksTimeline(command: ClientCommand) {
+    return command.type !== "prompt" && command.type !== "fix_error";
+  }
+
   async function sendCommand(command: ClientCommand) {
     if (!data.value?.session?.id) return;
+    const lockTimeline = commandLocksTimeline(command);
+    if (lockTimeline) commandBusy.value = true;
     try {
       await $fetch(`/api/sessions/${data.value.session.id}/command`, {
         method: "POST",
@@ -261,8 +400,11 @@ export function useStudio() {
         previewKey.value += 1;
       }
     } catch (error) {
+      await refresh();
       if (command.type === "prompt") throw error;
       flash(t("chat.promptFailed"));
+    } finally {
+      if (lockTimeline) commandBusy.value = false;
     }
   }
 
@@ -270,6 +412,7 @@ export function useStudio() {
     text: string;
     attachments: string[];
     mentions: string[];
+    inspect: InspectPin[];
     recipeId?: string;
     skill?: string;
     mode: AgentMode;
@@ -278,18 +421,20 @@ export function useStudio() {
   async function submit() {
     if (spectator.value) return;
     const text = prompt.value.trim();
-    if (!text && !recipeId.value) return;
+    if (!text && !recipeId.value && !inspectPins.value.length) return;
     const mentions = [...text.matchAll(/@([\w./-]+)/g)].map((m) => m[1]!);
     const draft: PromptDraft = {
       text,
       attachments: attachments.value.map((file) => file.path),
       mentions,
+      inspect: inspectPins.value,
       recipeId: recipeId.value || undefined,
-      skill: slashInvocation(text) ?? undefined,
+      skill: resolvedSlashSkill(text, slashCatalog.value.map((row) => row.name)) ?? undefined,
       mode: mode.value,
     };
     prompt.value = "";
     attachments.value = [];
+    inspectPins.value = [];
     recipeId.value = "";
     resetComposerFocus();
     if (sending.value) {
@@ -303,22 +448,23 @@ export function useStudio() {
     const generation = ++runGeneration;
     pendingTurn.value = {
       id: `pending-${crypto.randomUUID()}`,
-      text: draft.text,
       at: new Date().toISOString(),
+      text: draft.text,
       attachments: draft.attachments,
       mentions: draft.mentions,
+      inspect: draft.inspect,
       skill: draft.skill,
       waitUntilCount: persistedUserCount() + 1,
       status: "sending",
     };
-    sending.value = true;
-    workingSince.value = Date.now();
+    promptSubmitting.value = true;
     try {
       await sendCommand({
         type: "prompt",
         text: draft.text,
         attachments: draft.attachments,
         mentions: draft.mentions,
+        inspect: draft.inspect,
         recipeId: draft.recipeId,
         skill: draft.skill,
         mode: draft.mode,
@@ -332,17 +478,8 @@ export function useStudio() {
       if (pendingTurn.value) pendingTurn.value = { ...pendingTurn.value, status: "failed" };
       const blocked = (error as { data?: { usageLimit?: boolean } }).data?.usageLimit === true;
       flash(blocked ? t("chat.usageBlocked") : t("chat.promptFailed"));
-      if (blocked) void refresh();
     } finally {
-      if (generation !== runGeneration) return;
-      const next = queue.value[0];
-      if (next && pendingTurn.value?.status !== "failed") {
-        queue.value = queue.value.slice(1);
-        await runPromptDraft(next);
-        return;
-      }
-      sending.value = false;
-      if (pendingTurn.value?.status !== "failed") workingSince.value = null;
+      if (generation === runGeneration) promptSubmitting.value = false;
     }
   }
 
@@ -364,6 +501,7 @@ export function useStudio() {
       text: pending.text,
       attachments: pending.attachments,
       mentions: pending.mentions,
+      inspect: pending.inspect ?? [],
       skill: pending.skill,
       mode: mode.value,
     });
@@ -420,17 +558,23 @@ export function useStudio() {
 
   async function newSession() {
     resetConversationUi();
+    loadedSessionId = undefined;
     const created = await $fetch<{ id: string }>("/api/sessions", {
       method: "POST",
       body: { workspaceId: workspaceId.value, provider: data.value?.preferredProvider ?? data.value?.session?.provider ?? "cursor" },
     });
-    if (data.value) data.value.session = { ...(data.value.session as StudioPayload["session"]), ...created, title: "", events: [], provider: data.value.preferredProvider ?? data.value.session?.provider ?? "cursor", createdAt: new Date().toISOString() };
+    if (data.value) {
+      data.value.events = [];
+      data.value.session = { ...(data.value.session as StudioPayload["session"]), ...created, title: "", events: [], provider: data.value.preferredProvider ?? data.value.session?.provider ?? "cursor", createdAt: new Date().toISOString() };
+    }
     await refresh();
   }
 
   async function selectSession(id: string) {
     if (!data.value) return;
     resetConversationUi();
+    loadedSessionId = undefined;
+    data.value.events = [];
     data.value.session = data.value.sessions.find((s) => s.id === id) ?? data.value.session;
     await refresh();
   }
@@ -465,13 +609,16 @@ export function useStudio() {
   });
 
   const slashQueryText = computed(() => slashQuery(prompt.value));
+  const slashCatalog = computed(() => {
+    const catalog = data.value?.flags?.skills !== false ? (data.value?.skills ?? []) : [];
+    return mergeSlashCatalog(catalog, availableCommands.value);
+  });
   const slashHits = computed(() => {
     const queryText = slashQueryText.value;
     if (queryText === null) return [];
-    const catalog = data.value?.flags?.skills !== false ? (data.value?.skills ?? []) : [];
-    return slashMatches(mergeSlashCatalog(catalog, availableCommands.value), queryText);
+    return slashMatches(slashCatalog.value, queryText);
   });
-  const skillChip = computed(() => slashInvocation(prompt.value));
+  const skillChip = computed(() => committedSlashSkill(prompt.value, slashCatalog.value.map((row) => row.name)));
 
   function insertSkill(name: string) {
     prompt.value = insertSlashCommand(prompt.value, name);
@@ -616,15 +763,16 @@ export function useStudio() {
     }
   }
 
-  async function signOut() {
-    await $fetch("/api/auth/logout", { method: "POST" });
-    await navigateTo("/");
-  }
-
-  function addPreviewNote(detail: string) {
-    prompt.value = prompt.value ? `${prompt.value}\n${detail}` : detail;
+  function addInspectPins(targets: PreviewInspectTarget[]) {
+    if (!targets.length) return;
+    inspectPins.value = mergeInspectPins(inspectPins.value, targets.map(toInspectPin));
     flash(t("preview.pinAdded"));
     mobileTab.value = "chat";
+    resetComposerFocus();
+  }
+
+  function removeInspectPin(note: string) {
+    inspectPins.value = inspectPins.value.filter((pin) => pin.note !== note);
   }
 
   function statusTone(status: string) {
@@ -680,8 +828,8 @@ export function useStudio() {
     mode,
     recipeId,
     attachments,
+    inspectPins,
     mobileTab,
-    debugOpen,
     previewDebug,
     questionAnswers,
     events,
@@ -705,6 +853,7 @@ export function useStudio() {
     deleteUserMcp,
     refresh,
     sendCommand,
+    commandBusy,
     submit,
     cancelRun,
     dropQueue,
@@ -722,7 +871,8 @@ export function useStudio() {
     hibernate,
     resume,
     signOut,
-    addPreviewNote,
+    addInspectPins,
+    removeInspectPin,
     statusTone,
     statusLabel,
     useSuggestion,

@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ProviderId } from "@atelier/contracts";
-import { foldEvents } from "@atelier/domain";
+import type { ProviderId, SessionEvent } from "@atelier/contracts";
+import { emptyCursorCliAccount, foldEvents, shouldAutoResumePreview } from "@atelier/domain";
 import { formatAgentError } from "./acp/errors.js";
+import { bus } from "./bus.js";
 import { Platform } from "./platform.js";
 import type { AgentProvider } from "./providers/types.js";
 import { JsonStore, type UserRecord } from "./store.js";
@@ -20,6 +21,11 @@ function platform(providerFactory?: (id: ProviderId) => AgentProvider): Platform
   dirs.push(dir);
   process.env.ATELIER_WORKTREE_ROOT = join(dir, "workspaces");
   return new Platform(new JsonStore(join(dir, "platform.json")), providerFactory);
+}
+
+async function settleSession(p: Platform, sessionId: string) {
+  const session = p.store.read().sessions.find((row) => row.id === sessionId);
+  if (session) await p.flushWorkspace(session.workspaceId);
 }
 
 afterEach(() => {
@@ -74,6 +80,7 @@ describe("platform", () => {
       sessionId: session.id,
       command: { type: "prompt", text: "Create an Inertia quotes page", attachments: [], mentions: ["quotes"] },
     });
+    await settleSession(p, session.id);
     const state = p.snapshot(session.id);
     expect(state.messages.some((m) => m.role === "user")).toBe(true);
     expect(state.hunks.length).toBeGreaterThan(0);
@@ -116,6 +123,7 @@ describe("platform", () => {
       sessionId: session.id,
       command: { type: "prompt", text: "Create app/PromptCreated.php", attachments: [], mentions: [] },
     });
+    await settleSession(p, session.id);
 
     expect(readFileSync(join(ws.worktree, "app", "PromptCreated.php"), "utf8")).toContain("return 'created'");
     expect(p.snapshot(session.id).hunks.length).toBeGreaterThan(0);
@@ -167,14 +175,16 @@ describe("platform", () => {
       sessionId: session.id,
       command: { type: "prompt", text: "Create app/PromptCreated.php", attachments: [], mentions: [] },
     });
+    await settleSession(p, session.id);
     expect(p.snapshot(session.id).proposal?.files).toContain("app/PromptCreated.php");
-    await expect(
-      p.handleCommand({
-        user,
-        sessionId: session.id,
-        command: { type: "prompt", text: "another change", attachments: [], mentions: [] },
-      }),
-    ).rejects.toThrow(/pending change proposal/);
+    await p.handleCommand({
+      user,
+      sessionId: session.id,
+      command: { type: "prompt", text: "another change", attachments: [], mentions: [] },
+    });
+    await settleSession(p, session.id);
+    const blocked = p.store.read().sessions.find((row) => row.id === session.id)?.events ?? [];
+    expect(blocked.some((event) => event.type === "run_failure" && event.message.includes("pending change proposal"))).toBe(true);
     await p.handleCommand({ user, sessionId: session.id, command: { type: "discard_proposal" } });
     expect(existsSync(join(ws.worktree, "app", "PromptCreated.php"))).toBe(false);
     expect(p.snapshot(session.id).run?.status).toBe("rejected");
@@ -183,6 +193,7 @@ describe("platform", () => {
       sessionId: session.id,
       command: { type: "prompt", text: "Create app/PromptCreated.php again", attachments: [], mentions: [] },
     });
+    await settleSession(p, session.id);
     expect(existsSync(join(ws.worktree, "app", "PromptCreated.php"))).toBe(true);
   });
 
@@ -204,8 +215,79 @@ describe("platform", () => {
       sessionId: session.id,
       command: { type: "prompt", text: "Find the quotes list", attachments: [], mentions: [] },
     });
+    await settleSession(p, session.id);
     expect(p.sessions(ws.id, "quotes").length).toBeGreaterThan(0);
     expect(foldEvents(p.sessions(ws.id)[0]!.events).messages.length).toBeGreaterThan(0);
+  });
+
+  it("returns from handleCommand before the provider prompt finishes", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let finished = false;
+    const p = platform(() => ({
+      capability: {
+        id: "mock",
+        label: "Slow",
+        command: "mock",
+        args: [],
+        modes: ["agent"],
+        images: false,
+        todos: false,
+        plans: false,
+        questions: false,
+      },
+      start: async () => ({
+        prompt: async () => {
+          await blocked;
+          finished = true;
+        },
+        cancel: async () => undefined,
+        stop: () => undefined,
+      }),
+    }));
+    const user = await p.loginDev("async-prompt");
+    const ws = await p.ensureWorkspace(user);
+    const session = p.createSession(ws.id, "mock");
+    await p.handleCommand({
+      user,
+      sessionId: session.id,
+      command: { type: "prompt", text: "Stay open", attachments: [], mentions: [] },
+    });
+    expect(finished).toBe(false);
+    release();
+    await settleSession(p, session.id);
+    expect(finished).toBe(true);
+  });
+
+  it("publishes permission decisions on the session bus", async () => {
+    const p = platform();
+    const user = await p.loginDev("perm-bus");
+    const ws = await p.ensureWorkspace(user);
+    const session = p.createSession(ws.id, "mock");
+    p.append(session.id, {
+      type: "permission",
+      id: "perm-1",
+      at: new Date().toISOString(),
+      toolCallId: "c1",
+      title: "laravel-boost-database-query: database-query",
+      options: ["allow-once", "reject-once"],
+      outcome: "pending",
+    });
+    const seen: SessionEvent[] = [];
+    const unsub = bus.subscribe(session.id, (event) => {
+      seen.push(event);
+    });
+    await p.handleCommand({
+      user,
+      sessionId: session.id,
+      command: { type: "decide_permission", outcome: "allow-once" },
+    });
+    unsub();
+    expect(seen.some((event) => event.type === "permission" && event.outcome === "allow-once")).toBe(true);
+    const stored = p.store.read().sessions.find((row) => row.id === session.id)?.events ?? [];
+    expect(stored.some((event) => event.type === "permission" && event.outcome === "allow-once")).toBe(true);
   });
 
   it("creates invite and share tokens", async () => {
@@ -307,6 +389,53 @@ describe("platform", () => {
     expect(running.vitePort).toBeUndefined();
     await expect(p.adminHibernate(ws.id)).rejects.toThrow(/already hibernat/i);
     await expect(p.adminHibernate("missing-workspace")).rejects.toThrow(/not found/i);
+  });
+
+  it("pins user hibernate so reopening the workspace does not auto-resume", async () => {
+    const p = platform();
+    const user = await p.loginDev("katia");
+    const ws = await p.ensureWorkspace(user);
+
+    const idle = await p.hibernate(ws.id);
+    expect(idle.hibernatedByUser).toBeFalsy();
+    expect(shouldAutoResumePreview(idle)).toBe(true);
+
+    const pinned = await p.hibernate(ws.id, { byUser: true });
+    expect(pinned.status).toBe("hibernated");
+    expect(pinned.hibernatedByUser).toBe(true);
+    expect(shouldAutoResumePreview(pinned)).toBe(false);
+
+    const stillPinned = await p.hibernate(ws.id);
+    expect(stillPinned.hibernatedByUser).toBe(true);
+    expect(shouldAutoResumePreview(stillPinned)).toBe(false);
+
+    const warmedPinned = await p.warmForUser(user);
+    expect(warmedPinned.status).toBe("hibernated");
+    expect(warmedPinned.hibernatedByUser).toBe(true);
+    expect(shouldAutoResumePreview(warmedPinned)).toBe(false);
+
+    p.store.update((db) => {
+      const row = db.workspaces.find((item) => item.id === ws.id)!;
+      row.hibernatedByUser = false;
+    });
+    const idleAgain = p.requireWorkspace(ws.id);
+    expect(shouldAutoResumePreview(idleAgain)).toBe(true);
+    const warmed = await p.warmForUser(user);
+    expect(warmed.status).toBe("ready");
+    expect(shouldAutoResumePreview(warmed)).toBe(true);
+  });
+
+  it("does not mark a running workspace ready when warming for a user", async () => {
+    const p = platform();
+    const user = await p.loginDev("lara");
+    const ws = await p.ensureWorkspace(user);
+    p.store.update((db) => {
+      const row = db.workspaces.find((item) => item.id === ws.id)!;
+      row.status = "running";
+      row.desired = "running";
+    });
+    const warmed = await p.warmForUser(user);
+    expect(warmed.status).toBe("running");
   });
 
   it("surfaces JSON-RPC ACP failures instead of 'The Cursor agent failed.'", () => {
@@ -644,6 +773,7 @@ describe("platform", () => {
         sessionId: session.id,
         command: { type: "prompt", text: "Hello", attachments: [], mentions: [] },
       });
+      await settleSession(p, session.id);
       expect(started).toEqual(["bad-key", "good-key"]);
       const events = p.store.read().sessions.find((row) => row.id === session.id)?.events ?? [];
       expect(events.some((event) => event.type === "assistant_message" && event.text.includes("good-key"))).toBe(true);
@@ -656,6 +786,71 @@ describe("platform", () => {
       else process.env.ANTHROPIC_API_KEY = previousKey;
       if (previousPath === undefined) delete process.env.PATH;
       else process.env.PATH = previousPath;
+    }
+  });
+
+  it("fails over from a Cursor CLI account to the next account then an API key", async () => {
+    const previousKey = process.env.CURSOR_API_KEY;
+    const previousHome = process.env.ATELIER_CURSOR_HOME;
+    const started: string[] = [];
+    const factory = (id: ProviderId): AgentProvider => ({
+      capability: { id, label: id, command: "mock", args: [], modes: ["agent", "plan", "ask"], images: true, todos: true, plans: true, questions: true },
+      async start(input) {
+        const slot = input.home?.split("/").pop() ?? input.apiKey ?? "";
+        started.push(slot);
+        if (slot === "default") throw new Error("not logged in");
+        if (slot === "account-2") throw new Error("You've hit your usage limit");
+        return {
+          prompt: async () => {
+            input.onEvent({
+              type: "assistant_message",
+              id: "a1",
+              at: new Date().toISOString(),
+              text: `used ${slot}`,
+              streaming: false,
+            });
+          },
+          cancel: async () => undefined,
+          stop: () => undefined,
+        };
+      },
+    });
+    try {
+      delete process.env.CURSOR_API_KEY;
+      const p = platform(factory);
+      process.env.ATELIER_CURSOR_HOME = join(dirs[dirs.length - 1]!, "cursor-home");
+      p.store.update((db) => {
+        db.providers.cursor = {
+          enabled: true,
+          cliAccounts: [
+            { ...emptyCursorCliAccount("default"), loggedIn: true, account: "one@example.com" },
+            { ...emptyCursorCliAccount("account-2"), loggedIn: true, account: "two@example.com" },
+          ],
+        };
+      });
+      p.saveProviderSettings({ id: "cursor", apiKey: "crsr-fallback", label: "fallback" });
+      const user = addUser(p, "cursor-cli");
+      const ws = await p.ensureWorkspace(user);
+      const session = p.createSession(ws.id, "cursor");
+      await p.handleCommand({
+        user,
+        sessionId: session.id,
+        command: { type: "prompt", text: "Hello", attachments: [], mentions: [] },
+      });
+      await settleSession(p, session.id);
+      expect(started).toEqual(["default", "account-2", "crsr-fallback"]);
+      const events = p.store.read().sessions.find((row) => row.id === session.id)?.events ?? [];
+      expect(events.some((event) => event.type === "assistant_message" && event.text.includes("crsr-fallback"))).toBe(true);
+      expect(events.some((event) => event.type === "run_failure" && event.kind === "provider_failover")).toBe(true);
+      const settings = p.getProviderSettings().find((row) => row.id === "cursor");
+      expect(settings?.cliAccounts?.find((row) => row.id === "default")?.loggedIn).toBe(false);
+      expect(settings?.cliAccounts?.find((row) => row.id === "account-2")?.lastFailureKind).toBe("quota");
+      expect(settings?.keys[0]?.failures).toBe(0);
+    } finally {
+      if (previousKey === undefined) delete process.env.CURSOR_API_KEY;
+      else process.env.CURSOR_API_KEY = previousKey;
+      if (previousHome === undefined) delete process.env.ATELIER_CURSOR_HOME;
+      else process.env.ATELIER_CURSOR_HOME = previousHome;
     }
   });
 });

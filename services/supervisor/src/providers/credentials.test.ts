@@ -29,8 +29,11 @@ describe("provider credentials", () => {
     expect(providerSecretKey("claude")).toBe("ANTHROPIC_API_KEY");
     expect(providerSecretKey("gemini")).toBe("GEMINI_API_KEY");
     expect(providerSecretKey("grok")).toBe("XAI_API_KEY");
+    expect(providerSecretKey("codex")).toBe("CODEX_API_KEY");
     expect(credentialKeepKeys("claude")).toEqual(["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"]);
+    expect(credentialKeepKeys("codex")).toEqual(["CODEX_API_KEY", "OPENAI_API_KEY"]);
     expect(readProviderCredential("claude", { CLAUDE_API_KEY: "alias" })).toBe("alias");
+    expect(readProviderCredential("codex", { OPENAI_API_KEY: "sk" })).toBe("sk");
     expect(hasProviderCredential("gemini", { GOOGLE_API_KEY: "g" })).toBe(true);
   });
 
