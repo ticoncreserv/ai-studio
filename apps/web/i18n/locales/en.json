@@ -478,9 +478,6 @@
     "warn": "{reason} — {remaining} tokens left this month.",
     "reason": {
       "monthly": "monthly token limit",
-      "daily": "daily token limit",
-      "perRun": "per-run token limit",
-      "cost": "monthly cost limit",
       "provider": "this provider is not allowed on your profile"
     }
   },
@@ -710,12 +707,8 @@
     "usageLastPlan": "Keep at least one plan.",
     "usageOccupied": "Move people off this plan before deleting it.",
     "usageMigrateRequired": "Choose a plan to move people onto.",
-    "usageLedgerHint": "{daily} / day · {run} / run · {tools}",
-    "usageLedgerTools": "{count} tool calls",
-    "usageNoCap": "no cap",
-    "usageNoToolCap": "no tool cap",
-    "usageNoMonthlyCap": "No monthly cap. Zero on a field means no limit.",
-    "usageZeroHintShort": "Zero means no limit on that field.",
+    "usageNoMonthlyCap": "No monthly cap. Zero means unlimited.",
+    "usageZeroHintShort": "Zero means no monthly cap.",
     "usageEnforcement": "When over",
     "usageEnforcementBlock": "Block",
     "usageEnforcementWarn": "Warn",
@@ -726,20 +719,10 @@
       "context_peak": "Provider context"
     },
     "usageLimit": {
-      "monthlyTokens": "Tokens per month",
-      "dailyTokens": "Tokens per day",
-      "perRunTokens": "Tokens per run",
-      "perRunToolCalls": "Tool calls per run",
-      "monthlyCostUsd": "Cost cap per month (USD)"
-    },
-    "usageLimitShort": {
-      "dailyTokens": "Per day",
-      "perRunTokens": "Per run",
-      "perRunToolCalls": "Tool calls",
-      "monthlyCostUsd": "USD / month"
+      "monthlyTokens": "Tokens per month"
     },
     "usageWarnAt": "Warn at (%)",
-    "usageZeroHint": "Zero means no limit. The local count misses what the agent reads inside its own loop, so a provider that reports context is counted too.",
+    "usageZeroHint": "Zero means no monthly cap. The local count misses what the agent reads inside its own loop, so a provider that reports context is counted too.",
     "usageSaveProfiles": "Save plans",
     "usageState": {
       "allow": "Within limits",
@@ -748,7 +731,6 @@
     },
     "usageOfLimit": "{used} of {limit} tokens",
     "usageUnlimited": "{used} tokens · no limit",
-    "usageCost": "US$ {cost}",
     "usageGranted": "{tokens} granted",
     "usageGrant": "Grant",
     "usageGrantPlaceholder": "Extra tokens",

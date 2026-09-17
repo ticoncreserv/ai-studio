@@ -136,13 +136,9 @@ export type UsageMeter = z.infer<typeof UsageMeterSchema>;
 export const UsageEnforcementSchema = z.enum(["block", "warn"]);
 export type UsageEnforcement = z.infer<typeof UsageEnforcementSchema>;
 
-/** `0` means unlimited on every numeric limit. */
+/** `0` means unlimited. Extra stored fields from older profiles are stripped. */
 export const UsageLimitsSchema = z.object({
   monthlyTokens: z.number().int().min(0),
-  dailyTokens: z.number().int().min(0),
-  perRunTokens: z.number().int().min(0),
-  perRunToolCalls: z.number().int().min(0),
-  monthlyCostUsd: z.number().min(0),
 });
 export type UsageLimits = z.infer<typeof UsageLimitsSchema>;
 
@@ -158,7 +154,7 @@ export const UsageProfileSchema = z.object({
 });
 export type UsageProfile = z.infer<typeof UsageProfileSchema>;
 
-export const UsageLimitReasonSchema = z.enum(["monthly", "daily", "perRun", "cost", "provider"]);
+export const UsageLimitReasonSchema = z.enum(["monthly", "provider"]);
 export type UsageLimitReason = z.infer<typeof UsageLimitReasonSchema>;
 
 export const UsageDecisionSchema = z.object({
@@ -177,8 +173,6 @@ export const UsageSummarySchema = z.object({
   periodKey: z.string(),
   dayKey: z.string(),
   periodTokens: z.number(),
-  dayTokens: z.number(),
-  periodCostUsd: z.number(),
   grantedTokens: z.number(),
   runs: z.number(),
   limits: UsageLimitsSchema,

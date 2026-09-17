@@ -478,9 +478,6 @@
     "warn": "{reason} — {remaining} tokens restantes neste mês.",
     "reason": {
       "monthly": "limite mensal de tokens",
-      "daily": "limite diário de tokens",
-      "perRun": "limite de tokens por execução",
-      "cost": "limite mensal de custo",
       "provider": "este provedor não é permitido no seu perfil"
     }
   },
@@ -710,12 +707,8 @@
     "usageLastPlan": "Mantenha pelo menos um plano.",
     "usageOccupied": "Mova as pessoas deste plano antes de excluí-lo.",
     "usageMigrateRequired": "Escolha um plano para onde mover as pessoas.",
-    "usageLedgerHint": "{daily} / dia · {run} / execução · {tools}",
-    "usageLedgerTools": "{count} ferramentas",
-    "usageNoCap": "sem teto",
-    "usageNoToolCap": "sem teto de ferramentas",
-    "usageNoMonthlyCap": "Sem teto mensal. Zero em um campo significa sem limite.",
-    "usageZeroHintShort": "Zero significa sem limite naquele campo.",
+    "usageNoMonthlyCap": "Sem teto mensal. Zero significa ilimitado.",
+    "usageZeroHintShort": "Zero significa sem teto mensal.",
     "usageEnforcement": "Ao exceder",
     "usageEnforcementBlock": "Bloquear",
     "usageEnforcementWarn": "Avisar",
@@ -726,20 +719,10 @@
       "context_peak": "Contexto do provedor"
     },
     "usageLimit": {
-      "monthlyTokens": "Tokens por mês",
-      "dailyTokens": "Tokens por dia",
-      "perRunTokens": "Tokens por execução",
-      "perRunToolCalls": "Chamadas de ferramenta por execução",
-      "monthlyCostUsd": "Teto de custo por mês (USD)"
-    },
-    "usageLimitShort": {
-      "dailyTokens": "Por dia",
-      "perRunTokens": "Por execução",
-      "perRunToolCalls": "Ferramentas",
-      "monthlyCostUsd": "US$ / mês"
+      "monthlyTokens": "Tokens por mês"
     },
     "usageWarnAt": "Avisar em (%)",
-    "usageZeroHint": "Zero significa sem limite. A contagem local não vê o que o agente lê no próprio loop, então o contexto informado pelo provedor também é considerado.",
+    "usageZeroHint": "Zero significa sem teto mensal. A contagem local não vê o que o agente lê no próprio loop, então o contexto informado pelo provedor também é considerado.",
     "usageSaveProfiles": "Salvar planos",
     "usageState": {
       "allow": "Dentro do limite",
@@ -748,7 +731,6 @@
     },
     "usageOfLimit": "{used} de {limit} tokens",
     "usageUnlimited": "{used} tokens · sem limite",
-    "usageCost": "US$ {cost}",
     "usageGranted": "{tokens} concedidos",
     "usageGrant": "Conceder",
     "usageGrantPlaceholder": "Tokens extras",

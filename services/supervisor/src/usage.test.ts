@@ -187,7 +187,7 @@ describe("platform metering", () => {
     expect(ledger[0]!.costUsd).toBeCloseTo(0.045);
     expect(ledger[1]!.costUsd).toBeCloseTo(0.015);
     expect(p.store.read().sessions.find((row) => row.id === seated.sessionId)?.costBaselineUsd).toBeCloseTo(0.06);
-    expect(p.usageSummary(seated.user.id).periodCostUsd).toBeCloseTo(0.06);
+    expect(p.store.read().usageLedger.reduce((sum, row) => sum + row.costUsd, 0)).toBeCloseTo(0.06);
   });
 
   it("skips the ledger when metering is off", async () => {
@@ -215,7 +215,7 @@ describe("platform enforcement", () => {
     const { user, sessionId } = await seatedUser(p, "blocked");
     const admin = await p.loginDev("ticoncreserv");
     p.saveUsageProfiles(admin, p.usageProfiles().map((row) =>
-      row.id === "standard" ? { ...row, limits: { ...row.limits, monthlyTokens: 1, dailyTokens: 0, perRunTokens: 0 } } : row,
+      row.id === "standard" ? { ...row, limits: { monthlyTokens: 1 } } : row,
     ));
 
     await expect(
@@ -233,7 +233,7 @@ describe("platform enforcement", () => {
     const { user, workspaceId, sessionId } = await seatedUser(p, "granted");
     const admin = await p.loginDev("ticoncreserv");
     p.saveUsageProfiles(admin, p.usageProfiles().map((row) =>
-      row.id === "standard" ? { ...row, limits: { ...row.limits, monthlyTokens: 1, dailyTokens: 0, perRunTokens: 0 } } : row,
+      row.id === "standard" ? { ...row, limits: { monthlyTokens: 1 } } : row,
     ));
     await expect(
       p.handleCommand({ user, sessionId, command: { type: "prompt", text: "Build it", attachments: [], mentions: [] } }),
@@ -245,19 +245,19 @@ describe("platform enforcement", () => {
     expect(p.usageSummary(user.id).grantedTokens).toBe(1_000_000);
   });
 
-  it("stops a run that crosses the per-run token cap", async () => {
+  it("stops a run that crosses the monthly token cap", async () => {
     const p = platform(scriptedProvider((emit) => {
       emit({ type: "assistant_delta", id: "d1", at: "t", text: "z".repeat(40_000) });
       emit({ type: "assistant_delta", id: "d2", at: "t", text: "z".repeat(40_000) });
     }));
-    const seated = await seatedUser(p, "per-run");
+    const seated = await seatedUser(p, "monthly-mid-run");
     const admin = await p.loginDev("ticoncreserv");
     p.saveUsageProfiles(admin, p.usageProfiles().map((row) =>
-      row.id === "standard" ? { ...row, limits: { ...row.limits, perRunTokens: 5_000 } } : row,
+      row.id === "standard" ? { ...row, limits: { monthlyTokens: 5_000 } } : row,
     ));
 
     await promptAndFlush(p, seated, "Write a lot");
-    expect(p.snapshot(seated.sessionId).budgetCut).toContain("per-run");
+    expect(p.snapshot(seated.sessionId).budgetCut).toContain("monthly");
   });
 
   it("does not block when the limits flag is off", async () => {

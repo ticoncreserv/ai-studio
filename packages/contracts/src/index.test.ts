@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClientCommandSchema, CursorCliAccountSchema, FeatureFlagSchema, ProviderCapabilitySchema, ProviderHealthSchema, ProviderKeyStateSchema, SessionEventSchema } from "./index.js";
+import { ClientCommandSchema, CursorCliAccountSchema, FeatureFlagSchema, ProviderCapabilitySchema, ProviderHealthSchema, ProviderKeyStateSchema, SessionEventSchema, UsageLimitsSchema } from "./index.js";
 
 describe("contracts", () => {
   it("parses a prompt command and a diff event", () => {
@@ -112,5 +112,15 @@ describe("contracts", () => {
       questions: true,
       model: "gpt-5",
     }).model).toBe("gpt-5");
+  });
+
+  it("keeps only monthly tokens on a usage limit object", () => {
+    expect(UsageLimitsSchema.parse({
+      monthlyTokens: 5_000_000,
+      dailyTokens: 500_000,
+      perRunTokens: 200_000,
+      perRunToolCalls: 40,
+      monthlyCostUsd: 12,
+    })).toEqual({ monthlyTokens: 5_000_000 });
   });
 });

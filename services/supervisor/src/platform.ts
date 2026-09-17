@@ -83,9 +83,9 @@ import {
   moveCursorCliAccount,
   nextCursorCliAccountId,
   parseCursorCliAuthRef,
+  normalizeUsageProfile,
   resolveUsageProfile,
   rollupFromEntries,
-  runBudgetFromProfile,
   splitExpiredEntries,
   summarizeUsage,
   usagePeriodKey,
@@ -210,7 +210,13 @@ export class Platform {
   private readonly pendingPermissions = new Map<string, { rpcId: number; respond: ProviderRun["respondPermission"] }>();
   private readonly promptText = new PromptTextBuffer();
   private readonly workspaceQueue = new Map<string, Promise<unknown>>();
-  private readonly runMeters = new Map<string, { meter: RunMeter; profile: UsageProfile; enforce: boolean }>();
+  private readonly runMeters = new Map<string, {
+    meter: RunMeter;
+    profile: UsageProfile;
+    enforce: boolean;
+    periodTokens: number;
+    limitTokens: number;
+  }>();
   private readonly runKeyRefs = new Map<string, string>();
   private readonly promptTouched = new Set<string>();
   private readonly cliLogin = new CursorCliLoginLock();
@@ -1009,12 +1015,11 @@ export class Platform {
       provider: resolveSessionProvider(session.provider),
     });
     if (summary.decision.decision !== "block") return;
-    const reason = summary.decision.reason === "perRun" ? "tokens" : "period";
     this.append(session.id, {
       type: "budget",
       id: randomUUID(),
       at: new Date().toISOString(),
-      reason,
+      reason: "period",
       message: `Prompt blocked: ${summary.decision.reason} token limit reached`,
     });
     this.append(session.id, {
@@ -1158,10 +1163,17 @@ export class Platform {
     const usageProfile = this.usageProfileFor(user);
     const usageLimitsOn = isFlagOn(flags, "usageLimits");
     const meter = createRunMeter(packed.usedTokens);
+    const usageNow = this.usageSummary(user.id);
     // The ACP process and its `onEvent` closure outlive a single prompt, so the
     // meter for the current run has to be looked up per event, not captured.
-    this.runMeters.set(session.id, { meter, profile: usageProfile, enforce: usageLimitsOn });
-    const budget = usageLimitsOn ? runBudgetFromProfile(usageProfile) : defaultBudget();
+    this.runMeters.set(session.id, {
+      meter,
+      profile: usageProfile,
+      enforce: usageLimitsOn,
+      periodTokens: usageNow.periodTokens,
+      limitTokens: usageNow.limitTokens,
+    });
+    const budget = defaultBudget();
     const span = startSpan("agent.prompt", { sessionId: session.id, workspaceId: ws.id, mode: command.mode ?? "agent" });
     const budgetTimer = setTimeout(() => {
       this.append(session.id, {
@@ -1214,14 +1226,19 @@ export class Platform {
           if (current) d.runLock[ws.id] = heartbeatLease(createLease(current.sessionId, current.userId));
         });
       }
-      const perRunTokens = metered?.profile.limits.perRunTokens ?? 0;
-      if (metered?.enforce && perRunTokens > 0 && meterBillableTokens(metered.meter, metered.profile) > perRunTokens) {
+      const monthlyCap = metered?.limitTokens ?? 0;
+      if (
+        metered?.enforce
+        && metered.profile.enforcement === "block"
+        && monthlyCap > 0
+        && metered.periodTokens + meterBillableTokens(metered.meter, metered.profile) > monthlyCap
+      ) {
         this.append(session.id, {
           type: "budget",
           id: randomUUID(),
           at: new Date().toISOString(),
-          reason: "tokens",
-          message: "Run stopped: per-run token limit reached",
+          reason: "period",
+          message: "Run stopped: monthly token limit reached",
         });
         void this.runs.get(session.id)?.cancel();
         return;
@@ -1602,7 +1619,8 @@ export class Platform {
 
   usageProfiles(): UsageProfile[] {
     const stored = this.store.read().usageProfiles;
-    return stored.length ? stored : defaultUsageProfiles();
+    const rows = stored.length ? stored : defaultUsageProfiles();
+    return rows.map(normalizeUsageProfile);
   }
 
   usageProfileFor(user: { id: string; usageProfileId?: string }): UsageProfile {
