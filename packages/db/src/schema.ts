@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -11,6 +11,7 @@ export const users = pgTable("users", {
   accessPending: boolean("access_pending").default(false),
   platformAdmin: boolean("platform_admin"),
   disabled: boolean("disabled").default(false),
+  usageProfileId: text("usage_profile_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -57,6 +58,7 @@ export const sessions = pgTable("sessions", {
   title: text("title").notNull(),
   provider: text("provider").notNull(),
   acpSessionId: text("acp_session_id"),
+  costBaselineUsd: numeric("cost_baseline_usd", { precision: 12, scale: 6 }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -164,6 +166,60 @@ export const mcpPrefs = pgTable("mcp_prefs", {
 export const diskUsage = pgTable("disk_usage", {
   workspaceId: text("workspace_id").primaryKey(),
   bytes: integer("bytes").notNull(),
+});
+
+export const usageProfiles = pgTable("usage_profiles", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  monthlyTokens: integer("monthly_tokens").notNull().default(0),
+  dailyTokens: integer("daily_tokens").notNull().default(0),
+  perRunTokens: integer("per_run_tokens").notNull().default(0),
+  perRunToolCalls: integer("per_run_tool_calls").notNull().default(0),
+  monthlyCostUsd: numeric("monthly_cost_usd", { precision: 12, scale: 4 }).notNull().default("0"),
+  enforcement: text("enforcement").notNull().default("block"),
+  warnAtPercent: integer("warn_at_percent").notNull().default(80),
+  meter: text("meter").notNull().default("max"),
+  providers: jsonb("providers").notNull().$type<string[]>().default([]),
+});
+
+export const usageLedger = pgTable("usage_ledger", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  sessionId: text("session_id").notNull(),
+  runId: text("run_id").notNull(),
+  provider: text("provider").notNull(),
+  at: timestamp("at").notNull(),
+  periodKey: text("period_key").notNull(),
+  dayKey: text("day_key").notNull(),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  estimatedTokens: integer("estimated_tokens").notNull().default(0),
+  contextPeakTokens: integer("context_peak_tokens").notNull().default(0),
+  costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+  toolCalls: integer("tool_calls").notNull().default(0),
+  source: text("source").notNull().default("estimated"),
+});
+
+export const usageRollups = pgTable("usage_rollups", {
+  userId: text("user_id").notNull(),
+  periodKey: text("period_key").notNull(),
+  tokens: integer("tokens").notNull().default(0),
+  costUsd: numeric("cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
+  runs: integer("runs").notNull().default(0),
+  lastRunAt: timestamp("last_run_at"),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.userId, table.periodKey] }),
+}));
+
+export const usageGrants = pgTable("usage_grants", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  periodKey: text("period_key").notNull(),
+  tokens: integer("tokens").notNull(),
+  reason: text("reason").notNull().default(""),
+  byUserId: text("by_user_id").notNull(),
+  at: timestamp("at").defaultNow(),
 });
 
 export const storeMutex = pgTable("store_mutex", {

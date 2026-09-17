@@ -22,6 +22,8 @@ export const defaultFlags: Record<FeatureFlag, boolean> = {
   geminiProvider: false,
   grokProvider: false,
   providerCanary: false,
+  usageMetering: true,
+  usageLimits: true,
 };
 
 export function isFlagOn(flags: Record<string, boolean>, flag: FeatureFlag): boolean {

@@ -1,7 +1,13 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Role, SessionEvent, WorkspaceStatus } from "@atelier/contracts";
-import { defaultFlags } from "@atelier/domain";
+import type { Role, SessionEvent, UsageProfile, WorkspaceStatus } from "@atelier/contracts";
+import {
+  defaultFlags,
+  defaultUsageProfiles,
+  type UsageGrant,
+  type UsageLedgerEntry,
+  type UsageRollup,
+} from "@atelier/domain";
 
 export interface UserRecord {
   id: string;
@@ -14,6 +20,7 @@ export interface UserRecord {
   accessPending?: boolean;
   platformAdmin?: boolean;
   disabled?: boolean;
+  usageProfileId?: string;
 }
 
 export interface WorkspaceRecord {
@@ -42,6 +49,8 @@ export interface SessionRecord {
   provider: string;
   createdAt: string;
   acpSessionId?: string;
+  /** Last cumulative cost the provider reported for this session. */
+  costBaselineUsd?: number;
 }
 
 export interface InviteRecord {
@@ -101,6 +110,10 @@ export interface DbShape {
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;
   skillPrefs: Array<{ userId: string; name: string; enabled: boolean }>;
   mcpPrefs: Array<{ userId: string; name: string; enabled: boolean }>;
+  usageProfiles: UsageProfile[];
+  usageLedger: UsageLedgerEntry[];
+  usageRollups: UsageRollup[];
+  usageGrants: UsageGrant[];
 }
 
 function mergeById<T extends { id: string }>(current: T[] | undefined, defaults: T[]): T[] {
@@ -172,6 +185,10 @@ const emptyDb = (): DbShape => ({
   migrationLog: [],
   skillPrefs: [],
   mcpPrefs: [],
+  usageProfiles: defaultUsageProfiles(),
+  usageLedger: [],
+  usageRollups: [],
+  usageGrants: [],
 });
 
 export interface PlatformStore {
@@ -215,6 +232,10 @@ export class JsonStore implements PlatformStore {
       migrationLog: raw.migrationLog ?? [],
       skillPrefs: raw.skillPrefs ?? [],
       mcpPrefs: raw.mcpPrefs ?? [],
+      usageProfiles: mergeById(raw.usageProfiles, base.usageProfiles),
+      usageLedger: raw.usageLedger ?? [],
+      usageRollups: raw.usageRollups ?? [],
+      usageGrants: raw.usageGrants ?? [],
     };
   }
 

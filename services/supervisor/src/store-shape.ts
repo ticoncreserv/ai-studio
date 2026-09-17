@@ -19,6 +19,10 @@ export interface StoreRows {
   migrationLog: DbShape["migrationLog"];
   skillPrefs: DbShape["skillPrefs"];
   mcpPrefs: DbShape["mcpPrefs"];
+  usageProfiles: DbShape["usageProfiles"];
+  usageLedger: DbShape["usageLedger"];
+  usageRollups: DbShape["usageRollups"];
+  usageGrants: DbShape["usageGrants"];
 }
 
 export function flattenDb(db: DbShape): StoreRows {
@@ -48,6 +52,10 @@ export function flattenDb(db: DbShape): StoreRows {
     migrationLog: db.migrationLog,
     skillPrefs: db.skillPrefs,
     mcpPrefs: db.mcpPrefs,
+    usageProfiles: db.usageProfiles,
+    usageLedger: db.usageLedger,
+    usageRollups: db.usageRollups,
+    usageGrants: db.usageGrants,
   };
 }
 
@@ -80,6 +88,10 @@ export function assembleDb(rows: StoreRows, base: DbShape): DbShape {
     migrationLog: rows.migrationLog,
     skillPrefs: rows.skillPrefs,
     mcpPrefs: rows.mcpPrefs,
+    usageProfiles: rows.usageProfiles.length ? rows.usageProfiles : base.usageProfiles,
+    usageLedger: rows.usageLedger,
+    usageRollups: rows.usageRollups,
+    usageGrants: rows.usageGrants,
   };
 }
 
@@ -97,6 +109,10 @@ export function compareStoreShapes(left: DbShape, right: DbShape): string[] {
     "migrationLog",
     "skillPrefs",
     "mcpPrefs",
+    "usageProfiles",
+    "usageLedger",
+    "usageRollups",
+    "usageGrants",
   ];
   for (const key of keys) {
     if (JSON.stringify(left[key]) !== JSON.stringify(right[key])) mismatches.push(String(key));
