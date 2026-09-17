@@ -65,6 +65,7 @@ const {
   insertMention,
   attachFiles,
   toggleSpectator,
+  setProvider,
   saveRules,
   saveUserEnv,
   hibernate,
@@ -186,7 +187,7 @@ function onFixDebug() {
           @fork="newSession"
           @retry="retryFailed"
         >
-          <p v-if="data.agent?.error" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ t("chat.cursorRequired") }}</p>
+          <p v-if="data.agent?.error" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ t("chat.providerRequired") }}</p>
           <StudioComposer
             v-model="prompt"
             :mode="mode"
@@ -197,6 +198,7 @@ function onFixDebug() {
             :spectator-enabled="!!data?.flags?.spectator"
             :sending="sending"
             :provider="data.session?.provider ?? data.preferredProvider"
+            :providers="data.providers"
             :attachments="attachments"
             :placeholder="sending || events.length ? t('chat.followUp') : t('chat.placeholder')"
             :mentions-open="mentionsOpen"
@@ -226,6 +228,7 @@ function onFixDebug() {
             @remove-attachment="attachments = attachments.filter((a) => a.path !== $event)"
             @toggle-spectator="toggleSpectator"
             @drop-queue="dropQueue"
+            @update:provider="setProvider"
           />
         </StudioChatPane>
       </div>

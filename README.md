@@ -12,7 +12,7 @@ This repository is the **platform**. The target app stays in `ticoncreserv/app`.
 - `services/supervisor` — ACP sessions, GitHub clone, Laravel preview, reconciler
 - `packages/contracts` — Zod events and commands
 - `packages/domain` — pure reducer, FSM, rules, permissions, schema guard
-- `packages/db` — future Drizzle/Postgres schema. The running studio does not need `DATABASE_URL` or `REDIS_URL`; it persists to `var/platform.json` and runs jobs in-process.
+- `packages/db` — Drizzle schema for a future Postgres primary. Default persist is `var/platform.json`. `ATELIER_STORE=postgres|shadow` (or flags `postgresStore` / `postgresShadowRead`) writes a flattened snapshot to `var/platform.pg.json` until a live `DATABASE_URL` exists. Jobs still run in-process.
 
 ## Run locally
 
@@ -27,6 +27,7 @@ Required in `.env` before opening a workspace:
 
 - GitHub App: `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_INSTALLATION_ID` (or `var/github-app.json` from `/setup/github`)
 - Cursor: `CURSOR_API_KEY`
+- Optional extra agents (off by default): `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY`, `GEMINI_API_KEY` / `GOOGLE_API_KEY`, `XAI_API_KEY`
 - Public origin: `ATELIER_PUBLIC_URL` (preview `APP_URL` and OAuth callbacks)
 
 Locally the web app listens on [http://127.0.0.1:43123](http://127.0.0.1:43123). That port is only the current bind — production uses `ATELIER_PUBLIC_URL` as a dedicated https origin. `pnpm dev` also answers on `http://localhost` (port 80) and `http://localhost:8080` so local GitHub callbacks that omit the port do not 404.
@@ -91,7 +92,7 @@ Three Laravel layers sit under the platform `.env`:
 | `var/env/users/{userId}.env` | Per-user overlay. Edited in workspace settings. Overrides the shared file. |
 | `var/workspaces/{workspaceId}/.env` | Generated file Laravel reads. Isolation (`APP_URL`, `SESSION_COOKIE`, prefixes) always wins. |
 
-On every preview start the studio writes the worktree `.env` as `.env.example` → global → user overlay → isolation. Homologation `10.x` hosts stay as they are in those layers. `DATABASE_URL` and `REDIS_URL` in the platform `.env` are unused (JSON store + in-process queue).
+On every preview start the studio writes the worktree `.env` as `.env.example` → global → user overlay → isolation. Homologation `10.x` hosts stay as they are in those layers. `REDIS_URL` is unused (in-process queue). `DATABASE_URL` is unused unless the postgres store is selected; without a live SQL host the studio writes `var/platform.pg.json`.
 
 ## Admin
 
@@ -115,8 +116,14 @@ Platform (`/admin`) and user (workspace sheets) layers live under `var/skills` a
 
 ## ACP
 
-`agent acp --trust` is the only production provider. The process stays up across prompts (`session/load` + stored `acpSessionId`). Mode is `--mode plan|ask`. Merged MCP servers from the worktree are passed to `session/new` (stdio always; `http`/`sse` when the agent advertises those capabilities). Slash commands advertised by the agent (`available_commands_update`) appear in the `/` menu. Permissions are shown in the UI before `acp.respond`. After each run the studio reads `git status` / diff from the worktree — Cursor writes files directly.
+Cursor (`agent --trust acp`) is the default production provider. Claude (`npx -y @agentclientprotocol/claude-agent-acp`), Gemini (`gemini --acp`), and Grok (`grok --no-auto-update agent stdio`) share the same JSON-RPC client (`initialize` / `authenticate` / `session/new|load|prompt`, `session/cancel` as a notification). Extra providers stay off until `/admin` turns on `multiProvider` plus `claudeProvider` / `geminiProvider` / `grokProvider`, the admin enables the row, and the CLI plus API key exist. `providerCanary` keeps extra agents out of workspace pickers unless `ATELIER_PROVIDER_CANARY=1`.
+
+The process stays up across prompts (`session/load` + stored `acpSessionId`). Mode is `--mode plan|ask` when the agent advertises those modes. Merged MCP servers from the worktree are passed to `session/new` (stdio always; `http`/`sse` when the agent advertises those capabilities). Slash commands advertised by the agent (`available_commands_update`) appear in the `/` menu. Permissions are shown in the UI before `acp.respond`. After each run the studio reads `git status` / diff from the worktree.
+
+Sandbox profiles: `disabled` when `sandboxedAgent` is off, `best-effort` (default) wraps with bubblewrap or `ATELIER_SANDBOX_IMAGE` when present, `required` (`sandboxRequired` or `ATELIER_SANDBOX_PROFILE=required`) fails closed if no backend exists. Host secrets are stripped from the agent env except the selected provider key.
 
 ## Feature flags
 
-`publish`, `multiProvider`, `spectator`, `recipes`, `skills`, and `mcp` live in the platform store and are flipped in `/admin` without a deploy.
+Flags live in the platform store and are flipped in `/admin` without a deploy. Defaults stay off for `publish`, extra providers, postgres, required sandbox, live evals, and auto-push.
+
+Live ACP evals (`pnpm eval`) stay on transcript + worktree gold unless `ATELIER_LIVE_EVAL=1`. Missing CLIs skip instead of failing CI.

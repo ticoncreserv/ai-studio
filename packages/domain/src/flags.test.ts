@@ -9,6 +9,14 @@ describe("flags budget quota", () => {
     expect(isFlagOn(defaultFlags, "spectator")).toBe(true);
     expect(isFlagOn(defaultFlags, "transactionalReview")).toBe(true);
     expect(isFlagOn(defaultFlags, "autoPush")).toBe(false);
+    expect(isFlagOn(defaultFlags, "sandboxRequired")).toBe(false);
+    expect(isFlagOn(defaultFlags, "postgresStore")).toBe(false);
+    expect(isFlagOn(defaultFlags, "claudeProvider")).toBe(false);
+    expect(isFlagOn(defaultFlags, "geminiProvider")).toBe(false);
+    expect(isFlagOn(defaultFlags, "grokProvider")).toBe(false);
+    expect(isFlagOn(defaultFlags, "providerCanary")).toBe(false);
+    expect(isFlagOn(defaultFlags, "postgresShadowRead")).toBe(false);
+    expect(isFlagOn(defaultFlags, "realProviderEvals")).toBe(false);
   });
 
   it("cuts a run when tool calls exceed the budget", () => {

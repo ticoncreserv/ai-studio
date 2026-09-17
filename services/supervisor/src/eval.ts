@@ -1,11 +1,16 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foldEvents } from "@atelier/domain";
+import type { ProviderId, SessionEvent } from "@atelier/contracts";
+import { defaultFlags, foldEvents } from "@atelier/domain";
 import { git } from "./runtime/git-ops.js";
 import { resolveWorktreePath } from "./runtime/process.js";
 import { commitWorktree, createProposalCommit, worktreeDiffEvents, worktreeFingerprint } from "./runtime/worktree-diff.js";
 import { loadTranscript } from "./transcripts.js";
+import { startProcessAcp } from "./providers/process-acp.js";
+import { PROVIDER_CATALOG } from "./providers/types.js";
+import { createProvider } from "./providers/index.js";
+import { inspectProviderHealth } from "./providers/health.js";
 
 export interface GoldTask {
   id: string;
@@ -98,10 +103,95 @@ export async function runWorktreeGold() {
   }
 }
 
+export interface LiveEvalResult {
+  id: string;
+  ok: boolean;
+  skipped?: boolean;
+  reason?: string;
+  failures: string[];
+  hunks: number;
+  tools: number;
+}
+
+export function liveEvalEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.ATELIER_LIVE_EVAL === "1";
+}
+
+export { fakeAcpAgentSource } from "./acp/fake-agent.js";
+
+export async function runLiveAcpEval(env: NodeJS.ProcessEnv = process.env): Promise<LiveEvalResult> {
+  if (!liveEvalEnabled(env)) {
+    return { id: "live-acp", ok: true, skipped: true, reason: "ATELIER_LIVE_EVAL is not set", failures: [], hunks: 0, tools: 0 };
+  }
+  const dir = mkdtempSync(join(tmpdir(), "atelier-live-eval-"));
+  const user = { name: "Eval", email: "eval@example.com" };
+  try {
+    await git(dir, ["init"]);
+    writeFileSync(join(dir, "README.md"), "# live eval\n");
+    await git(dir, ["add", "-A"], user);
+    await git(dir, ["commit", "-m", "base"], user);
+    const command = env.ATELIER_LIVE_EVAL_COMMAND?.trim();
+    const args = env.ATELIER_LIVE_EVAL_ARGS?.trim() ? env.ATELIER_LIVE_EVAL_ARGS.trim().split(/\s+/) : [];
+    const events: SessionEvent[] = [];
+    if (command) {
+      const run = await startProcessAcp({
+        command,
+        args,
+        env,
+        cwd: dir,
+        capability: PROVIDER_CATALOG.find((row) => row.id === "mock")!,
+        sandboxProfile: "disabled",
+        onEvent: (event) => events.push(event),
+      });
+      await run.prompt([{ type: "text", text: "ping" }]);
+      await run.cancel();
+      run.stop();
+    } else {
+      const providerId = (env.ATELIER_LIVE_EVAL_PROVIDER ?? "cursor") as ProviderId;
+      const health = inspectProviderHealth(providerId, { ...defaultFlags, multiProvider: true, claudeProvider: true, geminiProvider: true, grokProvider: true }, env);
+      if (health.status !== "available" && health.status !== "degraded") {
+        return {
+          id: "live-acp",
+          ok: true,
+          skipped: true,
+          reason: health.message ?? `${providerId} is not ready`,
+          failures: [],
+          hunks: 0,
+          tools: 0,
+        };
+      }
+      const run = await createProvider(providerId).start({
+        cwd: dir,
+        sandboxProfile: "disabled",
+        onEvent: (event) => events.push(event),
+      });
+      await run.prompt([{ type: "text", text: "ping" }]);
+      await run.cancel();
+      run.stop();
+    }
+    const failures: string[] = [];
+    if (!events.some((event) => event.type === "assistant_delta" || event.type === "assistant_message")) {
+      failures.push("expected an assistant update from the live ACP session");
+    }
+    return { id: "live-acp", ok: failures.length === 0, failures, hunks: 0, tools: events.filter((event) => event.type === "tool_call").length };
+  } catch (error) {
+    return {
+      id: "live-acp",
+      ok: false,
+      failures: [error instanceof Error ? error.message : String(error)],
+      hunks: 0,
+      tools: 0,
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("eval.ts")) {
   const results = runEval();
   const worktree = await runWorktreeGold();
-  const all = [...results, worktree];
+  const live = await runLiveAcpEval();
+  const all = [...results, worktree, live];
   const failed = all.filter((r) => !r.ok);
   console.info(JSON.stringify({ passed: all.length - failed.length, failed: failed.length, results: all }, null, 2));
   if (failed.length) process.exit(1);

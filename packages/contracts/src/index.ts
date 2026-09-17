@@ -40,8 +40,39 @@ export const FeatureFlagSchema = z.enum([
   "autoPush",
   "workspaceQueue",
   "realProviderEvals",
+  "sandboxRequired",
+  "postgresStore",
+  "postgresShadowRead",
+  "claudeProvider",
+  "geminiProvider",
+  "grokProvider",
+  "providerCanary",
 ]);
 export type FeatureFlag = z.infer<typeof FeatureFlagSchema>;
+
+export const SandboxProfileSchema = z.enum(["disabled", "best-effort", "required"]);
+export type SandboxProfile = z.infer<typeof SandboxProfileSchema>;
+
+export const ProviderHealthStatusSchema = z.enum([
+  "unconfigured",
+  "unavailable",
+  "available",
+  "degraded",
+  "disabled",
+]);
+export type ProviderHealthStatus = z.infer<typeof ProviderHealthStatusSchema>;
+
+export const ProviderHealthSchema = z.object({
+  id: ProviderIdSchema,
+  status: ProviderHealthStatusSchema,
+  binary: z.boolean(),
+  hasCredential: z.boolean(),
+  sandbox: SandboxProfileSchema,
+  version: z.string().optional(),
+  authMethod: z.string().optional(),
+  message: z.string().optional(),
+});
+export type ProviderHealth = z.infer<typeof ProviderHealthSchema>;
 
 export const AgentRunStatusSchema = z.enum([
   "queued",

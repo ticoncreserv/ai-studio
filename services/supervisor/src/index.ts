@@ -1,12 +1,15 @@
 export { Platform, getPlatform, viewports } from "./platform.js";
 export { JsonStore, defaultStorePath } from "./store.js";
-export type { UserRecord, WorkspaceRecord, SessionRecord } from "./store.js";
+export type { UserRecord, WorkspaceRecord, SessionRecord, PlatformStore } from "./store.js";
+export { createPlatformStore } from "./store-factory.js";
 export { bus, EventBus } from "./bus.js";
 export type { BusListener } from "./bus.js";
 export { authorizeSessionSocket } from "./ws-auth.js";
 export { AcpSession } from "./acp/session.js";
-export { createProvider, listProviders, MockProvider, CursorProvider, PROVIDER_CATALOG } from "./providers/index.js";
-export { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
+export { createProvider, listProviders, MockProvider, CursorProvider, ClaudeProvider, GeminiProvider, GrokProvider, PROVIDER_CATALOG } from "./providers/index.js";
+export { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider, implementedProviders } from "./providers/env.js";
+export { inspectProviderHealth, listProviderHealth } from "./providers/health.js";
+export { wrapSandbox, sanitizeAgentEnv } from "./providers/sandbox.js";
 export { ensureCursorAgent, findCursorAgentBinary } from "./providers/ensure-agent.js";
 export type { AgentProvider, ProviderRun } from "./providers/types.js";
 export { ProcessRuntime, DockerRuntime, applyHunkToWorktree, resolveWorktreePath } from "./runtime/process.js";

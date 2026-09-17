@@ -5,6 +5,9 @@ type ProviderRow = {
   enabled: boolean;
   implemented: boolean;
   hasKey: boolean;
+  health?: "unconfigured" | "unavailable" | "available" | "degraded" | "disabled";
+  sandbox?: string;
+  message?: string;
 };
 
 const props = defineProps<{
@@ -59,6 +62,7 @@ function canSave(id: string) {
             <div class="flex flex-wrap items-center gap-1.5">
               <p class="cx-row-title">{{ provider.label }}</p>
               <UiBadge v-if="!provider.implemented">{{ t("admin.comingSoon") }}</UiBadge>
+              <UiBadge v-else-if="provider.health">{{ t(`admin.providerHealth.${provider.health}`) }}</UiBadge>
             </div>
             <p class="cx-row-desc">
               <span class="font-mono">{{ provider.id }}</span>

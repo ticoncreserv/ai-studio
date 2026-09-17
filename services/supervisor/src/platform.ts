@@ -20,6 +20,7 @@ import {
   evaluatePermission,
   foldEvents,
   isFlagOn,
+  resolveSandboxProfile,
   isPlatformAdmin as matchPlatformAdmin,
   mapGitHubPermission,
   packPrompt,
@@ -53,12 +54,15 @@ import {
   type McpEntry,
 } from "@atelier/domain";
 import { bus } from "./bus.js";
-import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
+import { type PlatformStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
+import { createPlatformStore } from "./store-factory.js";
 import { hasCursorApiKey, implementedProviders, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
+import { providerSecretKey } from "./providers/credentials.js";
+import { inspectProviderHealth, isProviderSelectable, listProviderHealth } from "./providers/health.js";
 import { findCursorAgentBinary } from "./providers/ensure-agent.js";
 import { createProvider, listProviders as catalogProviders } from "./providers/index.js";
 import { PROVIDER_CATALOG, type AgentProvider } from "./providers/types.js";
-import { fixtureAppDir, repoRoot } from "./paths.js";
+import { fixtureAppDir } from "./paths.js";
 import { applyPatchHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
 import { worktreeDivergence } from "./migrations.js";
 import { defaultWorkspaceSpec, isolationEnv, PREVIEW_SIDE_EFFECTS, validateEnvContract } from "./runtime/spec.js";
@@ -134,7 +138,7 @@ import {
 } from "./mcp/layers.js";
 
 export class Platform {
-  readonly store: JsonStore;
+  readonly store: PlatformStore;
   readonly runtime: WorkspaceRuntime;
   private readonly runs = new Map<string, ProviderRun>();
   private readonly runModes = new Map<string, "agent" | "plan" | "ask">();
@@ -144,7 +148,7 @@ export class Platform {
   private readonly workspaceQueue = new Map<string, Promise<unknown>>();
 
   constructor(
-    store = new JsonStore(join(repoRoot(), "var", "platform.json")),
+    store: PlatformStore = createPlatformStore(),
     private readonly providerFactory: (id: ProviderId) => AgentProvider = createProvider,
   ) {
     this.store = store;
@@ -198,13 +202,17 @@ export class Platform {
   }
 
   listProviders() {
+    const flags = this.flags();
     const enabled = this.providerConfig();
     const implemented = implementedProviders();
+    const canaryOk = !isFlagOn(flags, "providerCanary") || process.env.ATELIER_PROVIDER_CANARY === "1";
     return catalogProviders().filter((provider) => {
       if (!implemented.includes(provider.id)) return false;
       if (provider.id === "mock") return Boolean(process.env.VITEST);
-      if (provider.id !== "cursor") return false;
-      return enabled.cursor?.enabled !== false;
+      if (provider.id === "cursor") return enabled.cursor?.enabled !== false;
+      if (!canaryOk) return false;
+      if (enabled[provider.id]?.enabled !== true) return false;
+      return isProviderSelectable(provider.id, flags, process.env, this.envRoot());
     });
   }
 
@@ -464,6 +472,8 @@ export class Platform {
   }
 
   setSessionProvider(sessionId: string, provider: ProviderId): SessionRecord {
+    const available = this.listProviders().some((row) => row.id === provider);
+    if (!available) throw new Error(`Provider ${provider} is not available`);
     this.store.update((d) => {
       const session = d.sessions.find((s) => s.id === sessionId);
       if (session) session.provider = provider;
@@ -994,7 +1004,9 @@ export class Platform {
     }, budget.maxDurationMs);
     const providerId = resolveSessionProvider(session.provider);
     if (providerId !== session.provider) this.setSessionProvider(session.id, providerId);
-    const mode = command.mode ?? "agent";
+    const capability = PROVIDER_CATALOG.find((row) => row.id === providerId);
+    const requestedMode = command.mode ?? "agent";
+    const mode = capability?.modes.includes(requestedMode) ? requestedMode : "agent";
     const fingerprint = this.workspaceToolsFingerprint(ws);
     let run = this.runs.get(session.id);
     if (run && (this.runModes.get(session.id) !== mode || this.runFingerprints.get(session.id) !== fingerprint)) {
@@ -1013,6 +1025,7 @@ export class Platform {
           resumeSessionId: session.acpSessionId,
           mode,
           sandbox: isFlagOn(flags, "sandboxedAgent"),
+          sandboxProfile: resolveSandboxProfile(flags),
           mcpServers: acpServersForWorktree({
             worktree: ws.worktree,
             storeDir: this.storeDir(),
@@ -1294,7 +1307,7 @@ export class Platform {
     })[0];
     return {
       githubConfigured: Boolean(loadGitHubAppCredentials() || hasGitHubOAuth()),
-      cursorKey: hasCursorApiKey(),
+      cursorKey: hasCursorApiKey(process.env, this.envRoot()),
       publicUrl: atelierPublicUrl(),
       users: db.users.length,
       running: workspaces.filter((row) => row.status === "running").length,
@@ -1590,15 +1603,21 @@ export class Platform {
 
   getProviderSettings() {
     const config = this.providerConfig();
-    const secrets = readProviderSecrets(this.envRoot());
-    const implemented = new Set(["cursor", ...(process.env.VITEST ? ["mock"] : [])]);
-    return PROVIDER_CATALOG.filter((row) => row.id !== "mock" || process.env.VITEST).map((row) => ({
-      id: row.id,
-      label: row.label,
-      enabled: row.id === "cursor" ? config.cursor?.enabled !== false : Boolean(config[row.id]?.enabled),
-      implemented: implemented.has(row.id),
-      hasKey: row.id === "cursor" ? hasCursorApiKey() : Boolean(secrets[`${row.id.toUpperCase()}_API_KEY`]?.trim()),
-    }));
+    const flags = this.flags();
+    const implemented = new Set(implementedProviders());
+    return PROVIDER_CATALOG.filter((row) => row.id !== "mock" || process.env.VITEST).map((row) => {
+      const health = inspectProviderHealth(row.id, flags, process.env, this.envRoot());
+      return {
+        id: row.id,
+        label: row.label,
+        enabled: row.id === "cursor" ? config.cursor?.enabled !== false : Boolean(config[row.id]?.enabled),
+        implemented: implemented.has(row.id),
+        hasKey: health.hasCredential,
+        health: health.status,
+        sandbox: health.sandbox,
+        message: health.message,
+      };
+    });
   }
 
   saveProviderSettings(input: { id: string; enabled?: boolean; apiKey?: string }) {
@@ -1609,12 +1628,16 @@ export class Platform {
     }
     if (input.apiKey != null) {
       const secrets = readProviderSecrets(this.envRoot());
-      const keyName = input.id === "cursor" ? "CURSOR_API_KEY" : `${input.id.toUpperCase()}_API_KEY`;
+      const keyName = providerSecretKey(input.id);
       if (input.apiKey.trim()) secrets[keyName] = input.apiKey.trim();
       else delete secrets[keyName];
       writeProviderSecrets(secrets, this.envRoot());
     }
     return this.getProviderSettings();
+  }
+
+  providerHealth() {
+    return listProviderHealth(this.flags(), process.env, this.envRoot());
   }
 
   saveFlags(next: Record<string, boolean>) {
@@ -1680,18 +1703,16 @@ export class Platform {
   }
 
   agentStatus() {
-    const ready = hasCursorApiKey();
-    const cli = findCursorAgentBinary();
-    return {
-      ready: ready && Boolean(cli || process.env.VITEST),
-      provider: this.preferredProvider(),
-      error:
-        process.env.VITEST || (ready && cli)
-          ? null
-          : !ready
-            ? "CURSOR_API_KEY is not set"
-            : "Cursor agent CLI is not installed",
-    };
+    const listed = this.listProviders();
+    const preferred = this.preferredProvider();
+    const id = listed.some((row) => row.id === preferred) ? preferred : listed[0]?.id ?? preferred;
+    if (process.env.VITEST) return { ready: true, provider: id, error: null };
+    const health = inspectProviderHealth(id, this.flags(), process.env, this.envRoot());
+    if (id === "cursor" && health.hasCredential && !findCursorAgentBinary()) {
+      return { ready: false, provider: id, error: "Cursor agent CLI is not installed" };
+    }
+    const ready = health.status === "available" || health.status === "degraded";
+    return { ready, provider: id, error: ready ? null : health.message ?? "Provider is not ready" };
   }
 
   skillCatalog(workspaceId: string, actor: UserRecord) {
@@ -2114,7 +2135,7 @@ export function getPlatform(): Platform {
     typeof current.skillCatalog !== "function" ||
     typeof current.mcpCatalog !== "function"
   ) {
-    const created = new Platform();
+    const created = new Platform(createPlatformStore());
     globalThis.__atelierPlatform = created;
     return created;
   }

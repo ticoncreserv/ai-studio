@@ -15,6 +15,13 @@ export const defaultFlags: Record<FeatureFlag, boolean> = {
   autoPush: false,
   workspaceQueue: true,
   realProviderEvals: false,
+  sandboxRequired: false,
+  postgresStore: false,
+  postgresShadowRead: false,
+  claudeProvider: false,
+  geminiProvider: false,
+  grokProvider: false,
+  providerCanary: false,
 };
 
 export function isFlagOn(flags: Record<string, boolean>, flag: FeatureFlag): boolean {
