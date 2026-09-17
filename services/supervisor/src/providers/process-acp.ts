@@ -1,4 +1,11 @@
 import type { ProviderCapability, SandboxProfile, SessionEvent } from "@atelier/contracts";
+import {
+  configOptionId,
+  currentModelId,
+  findModelOption,
+  modelOptionValues,
+  resolveModelValue,
+} from "../acp/config-options.js";
 import { eventsFromAcpUpdate, permissionFromAcp } from "../acp/events.js";
 import { AcpSession, selectAuthMethod, type AcpPromptBlock } from "../acp/session.js";
 import { wrapSandbox } from "./sandbox.js";
@@ -15,6 +22,8 @@ export interface ProcessAcpLaunch {
   resumeSessionId?: string;
   sandboxProfile?: SandboxProfile;
   mcpServers?: AcpMcpServer[];
+  /** Admin-pinned model. Applied over ACP when the agent advertises the option. */
+  model?: string;
   onEvent: (event: SessionEvent) => void;
   onPermission?: (event: SessionEvent, rpcId: number) => void;
 }
@@ -58,8 +67,12 @@ export async function startProcessAcp(input: ProcessAcpLaunch): Promise<Provider
   } else {
     await acp.newSession(input.cwd, servers);
   }
+  await applyModelOption(acp, input.model);
+  const modelOption = findModelOption(acp.configOptions);
   return {
     acpSessionId: acp.sessionId ?? undefined,
+    models: modelOptionValues(modelOption),
+    modelId: currentModelId(modelOption),
     prompt: async (blocks: AcpPromptBlock[]) => {
       await acp.prompt(blocks);
     },
@@ -69,6 +82,24 @@ export async function startProcessAcp(input: ProcessAcpLaunch): Promise<Provider
       acp.respond(rpcId, { outcome: { outcome: "selected", optionId: outcome } });
     },
   };
+}
+
+/**
+ * Pins the admin default over ACP. Agents that do not advertise a model option keep
+ * whatever the launch flag or env var already selected, so a rejection is not fatal.
+ */
+async function applyModelOption(acp: AcpSession, model?: string): Promise<void> {
+  const wanted = model?.trim();
+  if (!wanted) return;
+  const option = findModelOption(acp.configOptions);
+  if (!option) return;
+  const value = resolveModelValue(option, wanted);
+  if (currentModelId(option) === value) return;
+  try {
+    await acp.setConfigOption(configOptionId(option), value);
+  } catch (error) {
+    console.warn("[atelier] agent rejected model", value, error instanceof Error ? error.message : error);
+  }
 }
 
 export function processAcpProvider(
@@ -90,6 +121,7 @@ export function processAcpProvider(
         resumeSessionId: input.resumeSessionId,
         sandboxProfile: input.sandboxProfile ?? (input.sandbox ? "best-effort" : "disabled"),
         mcpServers: input.mcpServers,
+        model: input.model,
         onEvent: input.onEvent,
         onPermission: input.onPermission,
       });

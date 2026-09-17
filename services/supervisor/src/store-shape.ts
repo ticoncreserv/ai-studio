@@ -1,5 +1,5 @@
-import type { SessionEvent } from "@atelier/contracts";
-import type { DbShape, SessionRecord } from "./store.js";
+import type { ProviderKeyState, ProviderModel, SessionEvent } from "@atelier/contracts";
+import type { DbShape, ProviderConfig, SessionRecord } from "./store.js";
 
 export interface StoreRows {
   users: DbShape["users"];
@@ -13,7 +13,13 @@ export interface StoreRows {
   rules: DbShape["rules"];
   members: DbShape["members"];
   flags: Array<{ key: string; enabled: boolean }>;
-  providers: Array<{ id: string; enabled: boolean }>;
+  providers: Array<{
+    id: string;
+    enabled: boolean;
+    model: string;
+    keys: ProviderKeyState[];
+    models: ProviderModel[];
+  }>;
   presence: DbShape["presence"];
   leases: Array<{ workspaceId: string; sessionId: string; userId: string; leaseUntil?: string; heartbeatAt?: string }>;
   migrationLog: DbShape["migrationLog"];
@@ -44,7 +50,13 @@ export function flattenDb(db: DbShape): StoreRows {
     rules: db.rules,
     members: db.members,
     flags: Object.entries(db.flags).map(([key, enabled]) => ({ key, enabled })),
-    providers: Object.entries(db.providers).map(([id, row]) => ({ id, enabled: row.enabled })),
+    providers: Object.entries(db.providers).map(([id, row]) => ({
+      id,
+      enabled: row.enabled,
+      model: row.model ?? "",
+      keys: row.keys ?? [],
+      models: row.models ?? [],
+    })),
     presence: db.presence,
     leases: Object.entries(db.runLock)
       .filter((entry): entry is [string, NonNullable<(typeof db.runLock)[string]>] => Boolean(entry[1]))
@@ -82,7 +94,18 @@ export function assembleDb(rows: StoreRows, base: DbShape): DbShape {
     rules: rows.rules.length ? rows.rules : base.rules,
     members: rows.members,
     flags: { ...base.flags, ...Object.fromEntries(rows.flags.map((row) => [row.key, row.enabled])) },
-    providers: { ...base.providers, ...Object.fromEntries(rows.providers.map((row) => [row.id, { enabled: row.enabled }])) },
+    providers: {
+      ...base.providers,
+      ...Object.fromEntries(
+        rows.providers.map((row) => {
+          const next: ProviderConfig = { enabled: row.enabled };
+          if (row.model) next.model = row.model;
+          if (row.keys?.length) next.keys = row.keys;
+          if (row.models?.length) next.models = row.models;
+          return [row.id, next];
+        }),
+      ),
+    },
     presence: rows.presence,
     runLock: Object.fromEntries(rows.leases.map(({ workspaceId, ...lease }) => [workspaceId, lease])),
     migrationLog: rows.migrationLog,

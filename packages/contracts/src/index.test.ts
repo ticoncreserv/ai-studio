@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClientCommandSchema, FeatureFlagSchema, ProviderHealthSchema, SessionEventSchema } from "./index.js";
+import { ClientCommandSchema, FeatureFlagSchema, ProviderCapabilitySchema, ProviderHealthSchema, ProviderKeyStateSchema, SessionEventSchema } from "./index.js";
 
 describe("contracts", () => {
   it("parses a prompt command and a diff event", () => {
@@ -60,13 +60,26 @@ describe("contracts", () => {
   it("parses sandbox and provider health contracts", () => {
     expect(FeatureFlagSchema.parse("sandboxRequired")).toBe("sandboxRequired");
     expect(FeatureFlagSchema.parse("claudeProvider")).toBe("claudeProvider");
-    const health = ProviderHealthSchema.parse({
+    expect(ProviderHealthSchema.parse({
       id: "claude",
       status: "unconfigured",
       binary: false,
       hasCredential: false,
       sandbox: "best-effort",
-    });
-    expect(health.status).toBe("unconfigured");
+    }).status).toBe("unconfigured");
+    const key = ProviderKeyStateSchema.parse({ ref: "CURSOR_API_KEY" });
+    expect(key).toMatchObject({ enabled: true, failures: 0, cooldownUntil: null });
+    expect(ProviderCapabilitySchema.parse({
+      id: "cursor",
+      label: "Cursor",
+      command: "agent",
+      args: ["acp"],
+      modes: ["agent"],
+      images: true,
+      todos: true,
+      plans: true,
+      questions: true,
+      model: "gpt-5",
+    }).model).toBe("gpt-5");
   });
 });

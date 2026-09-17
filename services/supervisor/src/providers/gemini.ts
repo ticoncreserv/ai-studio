@@ -1,5 +1,6 @@
 import type { SessionEvent } from "@atelier/contracts";
 import { applyProviderCredential, credentialKeepKeys, hasProviderCredential } from "./credentials.js";
+import { applyModelEnv, modelArgs } from "./models.js";
 import { startProcessAcp } from "./process-acp.js";
 import { sanitizeAgentEnv } from "./sandbox.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
@@ -17,13 +18,22 @@ export class GeminiProvider implements AgentProvider {
     sandbox?: boolean;
     sandboxProfile?: import("@atelier/contracts").SandboxProfile;
     mcpServers?: Parameters<typeof startProcessAcp>[0]["mcpServers"];
+    apiKey?: string;
+    model?: string;
     onPermission?: (event: SessionEvent, rpcId: number) => void;
   }): Promise<ProviderRun> {
-    const env = sanitizeAgentEnv(applyProviderCredential("gemini", process.env), credentialKeepKeys("gemini"));
+    const env = applyModelEnv(
+      "gemini",
+      sanitizeAgentEnv(
+        applyProviderCredential("gemini", process.env, undefined, input.apiKey),
+        credentialKeepKeys("gemini"),
+      ),
+      input.model,
+    );
     if (!hasProviderCredential("gemini", env)) throw new Error("GEMINI_API_KEY is not set");
     return startProcessAcp({
       command: this.capability.command,
-      args: this.capability.args,
+      args: [...this.capability.args, ...modelArgs("gemini", input.model)],
       env,
       cwd: input.cwd,
       capability: this.capability,
@@ -31,6 +41,7 @@ export class GeminiProvider implements AgentProvider {
       resumeSessionId: input.resumeSessionId,
       sandboxProfile: input.sandboxProfile ?? (input.sandbox ? "best-effort" : "disabled"),
       mcpServers: input.mcpServers ?? mcpServersFromWorktree(input.cwd),
+      model: input.model,
       onEvent: input.onEvent,
       onPermission: input.onPermission,
     });

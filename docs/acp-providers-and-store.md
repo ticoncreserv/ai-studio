@@ -19,12 +19,14 @@ The studio started as Cursor ACP (`agent --trust acp`) plus `var/platform.json`.
 
 | Provider | Command | Secret | Flag |
 | --- | --- | --- | --- |
-| Cursor | `agent --trust acp` | `CURSOR_API_KEY` | always (default) |
-| Claude | `npx -y @agentclientprotocol/claude-agent-acp` | `ANTHROPIC_API_KEY` (`CLAUDE_API_KEY` alias) | `multiProvider` + `claudeProvider` |
-| Gemini | `gemini --acp` | `GEMINI_API_KEY` (`GOOGLE_API_KEY` alias) | `multiProvider` + `geminiProvider` |
-| Grok | `grok --no-auto-update agent stdio` | `XAI_API_KEY` | `multiProvider` + `grokProvider` |
+| Cursor | `agent --trust acp` | `CURSOR_API_KEY` (`CURSOR_API_KEY_2`…) | always (default) |
+| Claude | `npx -y @agentclientprotocol/claude-agent-acp` | `ANTHROPIC_API_KEY` (`CLAUDE_API_KEY` alias, then `_2`…) | `multiProvider` + `claudeProvider` |
+| Gemini | `gemini --acp` | `GEMINI_API_KEY` (`GOOGLE_API_KEY` alias, then `_2`…) | `multiProvider` + `geminiProvider` |
+| Grok | `grok --no-auto-update agent stdio` | `XAI_API_KEY` (`XAI_API_KEY_2`…) | `multiProvider` + `grokProvider` |
 
-Workspace pickers also require the admin enable toggle and a healthy credential + CLI. `providerCanary` hides extras unless `ATELIER_PROVIDER_CANARY=1`.
+Workspace pickers also require the admin enable toggle and a healthy credential + CLI. `providerCanary` hides extras unless `ATELIER_PROVIDER_CANARY=1`. Extra keys live in `var/env/providers.env`. A failed key (401/403, quota, 429) is cooled down and the next key on the same provider is tried. The admin also pins a default model per provider; the composer shows it and does not offer a model picker.
+
+The default model is applied as a CLI flag or env var at spawn (`--model` for Cursor/Gemini/Grok, `ANTHROPIC_MODEL` / `GEMINI_MODEL` / `GROK_DEFAULT_MODEL`), then over ACP `session/set_config_option` when the agent advertises a `model` config option.
 
 ## Sandbox
 

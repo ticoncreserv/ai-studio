@@ -120,6 +120,10 @@ const providerLabel = computed(() => {
   return catalog.value.find((row) => row.id === props.provider)?.label ?? props.provider;
 });
 
+const providerModel = computed(() => catalog.value.find((row) => row.id === props.provider)?.model?.trim() ?? "");
+
+const providerLine = computed(() => (providerModel.value ? `${providerLabel.value} · ${providerModel.value}` : providerLabel.value));
+
 const activeRecipe = computed(() => props.recipes.find((recipe) => recipe.id === props.recipeId));
 
 const visibleModes = computed(() => {
@@ -359,7 +363,7 @@ onBeforeUnmount(() => recognition?.stop());
         >
           <Cpu class="h-3.5 w-3.5 shrink-0" />
           <span class="cx-menu-name shrink-0">{{ t("chat.model") }}</span>
-          <span class="cx-menu-desc">{{ providerLabel }}</span>
+          <span class="cx-menu-desc">{{ providerLine }}</span>
           <ChevronRight class="ml-auto h-3 w-3 shrink-0 text-ink-400 transition-transform" :class="providersOpen && 'rotate-90'" />
         </button>
         <button
@@ -376,7 +380,11 @@ onBeforeUnmount(() => recognition?.stop());
       <div v-else class="cx-menu-row">
         <Cpu class="h-3.5 w-3.5 shrink-0" />
         <span class="cx-menu-name shrink-0">{{ t("chat.model") }}</span>
-        <span class="cx-menu-desc">{{ providerLabel }}</span>
+        <span class="cx-menu-desc">{{ providerLine }}</span>
+      </div>
+      <div v-if="providerModel" class="cx-menu-row">
+        <span class="cx-menu-name shrink-0">{{ t("chat.providerModel") }}</span>
+        <span class="cx-menu-desc">{{ providerModel }}</span>
       </div>
       <template v-if="recipesEnabled">
         <button type="button" class="cx-menu-row" :data-active="recipesOpen || undefined" @click="recipesOpen = !recipesOpen">
@@ -573,9 +581,9 @@ onBeforeUnmount(() => recognition?.stop());
             {{ item.label }}
           </button>
         </div>
-        <span class="cx-pill min-w-0" :title="t('chat.model')">
+        <span class="cx-pill min-w-0" :title="providerModel ? t('chat.providerModel') : t('chat.model')">
           <Cpu class="h-3 w-3 shrink-0" />
-          <span class="truncate">{{ providerLabel }}</span>
+          <span class="truncate">{{ providerLine }}</span>
         </span>
         <span v-if="skillChip" class="cx-pill min-w-0" :title="t('chat.skillChip')">
           <Sparkles class="h-3 w-3 shrink-0" />

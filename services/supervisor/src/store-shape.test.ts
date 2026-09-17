@@ -27,6 +27,12 @@ describe("store shape", () => {
         role: "owner",
       });
       db.runLock.w1 = { sessionId: "s1", userId: "u1", leaseUntil: "t" };
+      db.providers.cursor = {
+        enabled: true,
+        model: "gpt-5",
+        keys: [{ ref: "CURSOR_API_KEY", label: "primary", enabled: true, failures: 0, lastUsedAt: null, lastFailureAt: null, cooldownUntil: null, lastError: null, lastFailureKind: null }],
+        models: [{ id: "gpt-5", label: "GPT-5" }],
+      };
       db.sessions.push({
         id: "s1",
         workspaceId: "w1",
@@ -39,6 +45,7 @@ describe("store shape", () => {
     const rows = flattenDb(json.read());
     expect(rows.events).toHaveLength(1);
     expect(rows.leases).toHaveLength(1);
+    expect(rows.providers.find((row) => row.id === "cursor")).toMatchObject({ model: "gpt-5" });
     const again = assembleDb(rows, json.read());
     expect(compareStoreShapes(json.read(), again)).toEqual([]);
     expect(again.sessions[0]?.events[0]).toMatchObject({ type: "user_message", text: "hi" });

@@ -22,11 +22,15 @@ describe("ACP client", () => {
     void acp.initialize();
     void acp.authenticate("cursor_login");
     acp.sessionId = "s1";
+    void acp.setConfigOption("model", "gpt-5");
     void acp.cancel();
     expect(sent[0]).toContain('"method":"initialize"');
     expect(sent[1]).toContain("cursor_login");
-    expect(sent[2]).toContain('"method":"session/cancel"');
-    expect(sent[2]).not.toMatch(/"id":\s*\d+/);
+    expect(sent[2]).toContain('"method":"session/set_config_option"');
+    expect(sent[2]).toContain('"configId":"model"');
+    expect(sent[2]).toContain("gpt-5");
+    expect(sent[3]).toContain('"method":"session/cancel"');
+    expect(sent[3]).not.toMatch(/"id":\s*\d+/);
   });
 
   it("rejects JSON-RPC errors as Error so the studio can surface the payload", async () => {

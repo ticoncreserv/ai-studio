@@ -4,6 +4,8 @@ import { dirname, extname, join } from "node:path";
 import type {
   ClientCommand,
   ProviderId,
+  ProviderKeyState,
+  ProviderModel,
   Role,
   SessionEvent,
   UsageProfile,
@@ -49,6 +51,9 @@ import {
   redactMcpEntry,
   isSkillName,
   isSecretMcpKey,
+  moveProviderKey,
+  nextProviderKeyRef,
+  resetProviderKey,
   canAcquireLease,
   createLease,
   heartbeatLease,
@@ -62,6 +67,11 @@ import {
   summarizeValidation,
   defaultUsageProfileId,
   defaultUsageProfiles,
+  emptyProviderKeyState,
+  isProviderKeyFailure,
+  isProviderKeyUsable,
+  markProviderKeyFailure,
+  markProviderKeySuccess,
   mergeRollups,
   resolveUsageProfile,
   rollupFromEntries,
@@ -75,13 +85,14 @@ import {
   type UsageLedgerEntry,
 } from "@atelier/domain";
 import { bus } from "./bus.js";
-import { type PlatformStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
+import { type PlatformStore, type ProviderConfig, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
 import { createPlatformStore } from "./store-factory.js";
 import { hasCursorApiKey, implementedProviders, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
-import { providerSecretKey } from "./providers/credentials.js";
+import { hydrateProviderKeys, isProviderKeyRef, listProviderCredentials, providerCredentialCandidates, providerSecretKey } from "./providers/credentials.js";
 import { inspectProviderHealth, isProviderSelectable, listProviderHealth } from "./providers/health.js";
 import { findCursorAgentBinary } from "./providers/ensure-agent.js";
 import { createProvider, listProviders as catalogProviders } from "./providers/index.js";
+import { mergeProviderModels, providerModelCatalog } from "./providers/models.js";
 import { PROVIDER_CATALOG, type AgentProvider } from "./providers/types.js";
 import { fixtureAppDir } from "./paths.js";
 import { applyPatchHunkToWorktree, DockerRuntime, ProcessRuntime, type WorkspaceRuntime } from "./runtime/process.js";
@@ -179,6 +190,8 @@ export class Platform {
   private readonly promptText = new PromptTextBuffer();
   private readonly workspaceQueue = new Map<string, Promise<unknown>>();
   private readonly runMeters = new Map<string, { meter: RunMeter; profile: UsageProfile; enforce: boolean }>();
+  private readonly runKeyRefs = new Map<string, string>();
+  private readonly promptTouched = new Set<string>();
 
   constructor(
     store: PlatformStore = createPlatformStore(),
@@ -239,14 +252,19 @@ export class Platform {
     const enabled = this.providerConfig();
     const implemented = implementedProviders();
     const canaryOk = !isFlagOn(flags, "providerCanary") || process.env.ATELIER_PROVIDER_CANARY === "1";
-    return catalogProviders().filter((provider) => {
-      if (!implemented.includes(provider.id)) return false;
-      if (provider.id === "mock") return Boolean(process.env.VITEST);
-      if (provider.id === "cursor") return enabled.cursor?.enabled !== false;
-      if (!canaryOk) return false;
-      if (enabled[provider.id]?.enabled !== true) return false;
-      return isProviderSelectable(provider.id, flags, process.env, this.envRoot());
-    });
+    return catalogProviders()
+      .filter((provider) => {
+        if (!implemented.includes(provider.id)) return false;
+        if (provider.id === "mock") return Boolean(process.env.VITEST);
+        if (provider.id === "cursor") return enabled.cursor?.enabled !== false;
+        if (!canaryOk) return false;
+        if (enabled[provider.id]?.enabled !== true) return false;
+        return isProviderSelectable(provider.id, flags, process.env, this.envRoot(), this.providerRoster(provider.id));
+      })
+      .map((provider) => {
+        const model = enabled[provider.id]?.model?.trim();
+        return model ? { ...provider, model } : provider;
+      });
   }
 
   roleFor(user: UserRecord, projectId = "concreserv"): Role {
@@ -1084,112 +1102,170 @@ export class Platform {
     const fingerprint = this.workspaceToolsFingerprint(ws);
     let run = this.runs.get(session.id);
     if (run && (this.runModes.get(session.id) !== mode || this.runFingerprints.get(session.id) !== fingerprint)) {
-      run.stop();
-      this.runs.delete(session.id);
-      this.runModes.delete(session.id);
-      this.runFingerprints.delete(session.id);
+      this.dropProviderRun(session.id);
       run = undefined;
     }
-    try {
-      this.promptText.reset(session.id);
-      if (!run) {
-        const provider = this.providerFactory(providerId);
-        run = await provider.start({
-          cwd: ws.worktree,
-          resumeSessionId: session.acpSessionId,
-          mode,
-          sandbox: isFlagOn(flags, "sandboxedAgent"),
-          sandboxProfile: resolveSandboxProfile(flags),
-          mcpServers: acpServersForWorktree({
-            worktree: ws.worktree,
-            storeDir: this.storeDir(),
-            userId: ws.userId,
-            prefs: this.store.read().mcpPrefs,
-          }),
-          onEvent: (event) => {
-            // The ACP process is reused across prompts, so this closure must
-            // write the session buffer — not a `let streamed` from the first start.
-            if (event.type === "assistant_delta") this.promptText.append(session.id, event.text);
-            const metered = this.runMeters.get(session.id);
-            if (metered) meterSessionEvent(metered.meter, event);
-            usage.toolCalls += event.type === "tool_call" ? 1 : 0;
-            if (event.type === "tool_call") {
-              this.store.update((d) => {
-                const current = d.runLock[ws.id];
-                if (current) d.runLock[ws.id] = heartbeatLease(createLease(current.sessionId, current.userId));
-              });
-            }
-            const perRunTokens = metered?.profile.limits.perRunTokens ?? 0;
-            if (metered?.enforce && perRunTokens > 0 && meterBillableTokens(metered.meter, metered.profile) > perRunTokens) {
-              this.append(session.id, {
-                type: "budget",
-                id: randomUUID(),
-                at: new Date().toISOString(),
-                reason: "tokens",
-                message: "Run stopped: per-run token limit reached",
-              });
-              void this.runs.get(session.id)?.cancel();
-              return;
-            }
-            const reason = budgetExceeded(budget, usage);
-            if (reason) {
-              this.append(session.id, {
-                type: "budget",
-                id: randomUUID(),
-                at: new Date().toISOString(),
-                reason,
-                message: `Run stopped: ${reason} budget exceeded`,
-              });
-              void this.runs.get(session.id)?.cancel();
-              return;
-            }
-            if (shouldFlushAssistantText(event)) this.flushPromptText(session.id);
-            this.append(session.id, event);
-          },
-          onPermission: (event, rpcId) => {
-            this.flushPromptText(session.id);
-            const title = event.type === "permission" ? event.title : "";
-            const decision = evaluatePermission(permissionRequestFromTitle(title, ws.worktree));
-            if (decision === "auto-deny" || decision === "auto-allow") {
-              const outcome = decision === "auto-deny" ? "reject-once" : "allow-once";
-              this.runs.get(session.id)?.respondPermission?.(rpcId, outcome);
-              this.append(session.id, event.type === "permission" ? { ...event, outcome } : event);
-              if (decision === "auto-deny") {
-                this.append(session.id, {
-                  type: "run_failure",
-                  id: randomUUID(),
-                  at: new Date().toISOString(),
-                  v: 1,
-                  kind: "permission_denied",
-                  message: title,
-                });
-              }
-              return;
-            }
-            this.append(session.id, event);
-            this.pendingPermissions.set(session.id, {
-              rpcId,
-              respond: this.runs.get(session.id)?.respondPermission,
-            });
-          },
+    const model = this.providerConfig()[providerId]?.model?.trim() || undefined;
+    const candidates =
+      providerId === "mock"
+        ? []
+        : providerCredentialCandidates(providerId, this.providerRoster(providerId), process.env, this.envRoot());
+    const tried = new Set<string>();
+    let allowResume = true;
+    const mcpServers = acpServersForWorktree({
+      worktree: ws.worktree,
+      storeDir: this.storeDir(),
+      userId: ws.userId,
+      prefs: this.store.read().mcpPrefs,
+    });
+    const onEvent = (event: SessionEvent) => {
+      if (
+        event.type === "assistant_delta" ||
+        event.type === "assistant_message" ||
+        event.type === "tool_call"
+      ) {
+        this.promptTouched.add(session.id);
+      }
+      // The ACP process is reused across prompts, so this closure must
+      // write the session buffer — not a `let streamed` from the first start.
+      if (event.type === "assistant_delta") this.promptText.append(session.id, event.text);
+      const metered = this.runMeters.get(session.id);
+      if (metered) meterSessionEvent(metered.meter, event);
+      usage.toolCalls += event.type === "tool_call" ? 1 : 0;
+      if (event.type === "tool_call") {
+        this.store.update((d) => {
+          const current = d.runLock[ws.id];
+          if (current) d.runLock[ws.id] = heartbeatLease(createLease(current.sessionId, current.userId));
         });
-        this.runs.set(session.id, run);
-        this.runModes.set(session.id, mode);
-        this.runFingerprints.set(session.id, fingerprint);
-        if (run.acpSessionId) {
-          this.store.update((d) => {
-            const row = d.sessions.find((s) => s.id === session.id);
-            if (row) row.acpSessionId = run!.acpSessionId;
+      }
+      const perRunTokens = metered?.profile.limits.perRunTokens ?? 0;
+      if (metered?.enforce && perRunTokens > 0 && meterBillableTokens(metered.meter, metered.profile) > perRunTokens) {
+        this.append(session.id, {
+          type: "budget",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          reason: "tokens",
+          message: "Run stopped: per-run token limit reached",
+        });
+        void this.runs.get(session.id)?.cancel();
+        return;
+      }
+      const reason = budgetExceeded(budget, usage);
+      if (reason) {
+        this.append(session.id, {
+          type: "budget",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          reason,
+          message: `Run stopped: ${reason} budget exceeded`,
+        });
+        void this.runs.get(session.id)?.cancel();
+        return;
+      }
+      if (shouldFlushAssistantText(event)) this.flushPromptText(session.id);
+      this.append(session.id, event);
+    };
+    const onPermission = (event: SessionEvent, rpcId: number) => {
+      this.flushPromptText(session.id);
+      const title = event.type === "permission" ? event.title : "";
+      const decision = evaluatePermission(permissionRequestFromTitle(title, ws.worktree));
+      if (decision === "auto-deny" || decision === "auto-allow") {
+        const outcome = decision === "auto-deny" ? "reject-once" : "allow-once";
+        this.runs.get(session.id)?.respondPermission?.(rpcId, outcome);
+        this.append(session.id, event.type === "permission" ? { ...event, outcome } : event);
+        if (decision === "auto-deny") {
+          this.append(session.id, {
+            type: "run_failure",
+            id: randomUUID(),
+            at: new Date().toISOString(),
+            v: 1,
+            kind: "permission_denied",
+            message: title,
           });
         }
+        return;
       }
+      this.append(session.id, event);
+      this.pendingPermissions.set(session.id, {
+        rpcId,
+        respond: this.runs.get(session.id)?.respondPermission,
+      });
+    };
+    const startRun = async (apiKey?: string, keyRef?: string): Promise<ProviderRun> => {
+      const provider = this.providerFactory(providerId);
+      const next = await provider.start({
+        cwd: ws.worktree,
+        resumeSessionId: allowResume ? session.acpSessionId : undefined,
+        mode,
+        sandbox: isFlagOn(flags, "sandboxedAgent"),
+        sandboxProfile: resolveSandboxProfile(flags),
+        mcpServers,
+        apiKey,
+        model,
+        onEvent,
+        onPermission,
+      });
+      this.runs.set(session.id, next);
+      this.runModes.set(session.id, mode);
+      this.runFingerprints.set(session.id, fingerprint);
+      if (keyRef) this.runKeyRefs.set(session.id, keyRef);
+      if (next.models?.length) this.rememberProviderModels(providerId, next.models);
+      if (next.acpSessionId) {
+        this.store.update((d) => {
+          const row = d.sessions.find((s) => s.id === session.id);
+          if (row) row.acpSessionId = next.acpSessionId;
+        });
+      }
+      return next;
+    };
+    const startWithFailover = async (): Promise<ProviderRun> => {
+      if (!candidates.length) return startRun();
+      let lastError: unknown;
+      for (const candidate of candidates) {
+        if (tried.has(candidate.ref)) continue;
+        tried.add(candidate.ref);
+        try {
+          return await startRun(candidate.value, candidate.ref);
+        } catch (error) {
+          lastError = error;
+          const message = formatAgentError(error);
+          if (!isProviderKeyFailure(message)) throw error;
+          this.recordProviderKeyFailure(providerId, candidate.ref, message);
+          allowResume = false;
+          this.dropProviderRun(session.id);
+        }
+      }
+      throw lastError ?? new Error("No provider API key is available");
+    };
+    try {
+      this.promptText.reset(session.id);
+      this.promptTouched.delete(session.id);
+      if (!run) run = await startWithFailover();
       const attachmentBlocks = this.attachmentBlocks(command.attachments, ws.worktree);
       meter.inputTokens += estimatePromptBlockTokens(attachmentBlocks);
       const blocks: AcpPromptBlock[] = [{ type: "text", text: packed.text }, ...attachmentBlocks];
       const statesBefore = await worktreeFileStates(ws.worktree);
       const fingerprintBefore = await worktreeFingerprint(ws.worktree);
       this.promptText.reset(session.id);
-      await run.prompt(blocks);
+      try {
+        await run.prompt(blocks);
+      } catch (error) {
+        const message = formatAgentError(error);
+        const failedRef = this.runKeyRefs.get(session.id);
+        if (!this.promptTouched.has(session.id) && failedRef && isProviderKeyFailure(message) && candidates.length) {
+          this.recordProviderKeyFailure(providerId, failedRef, message);
+          allowResume = false;
+          this.dropProviderRun(session.id);
+          run = await startWithFailover();
+          this.promptTouched.delete(session.id);
+          this.promptText.reset(session.id);
+          await run.prompt(blocks);
+        } else {
+          throw error;
+        }
+      }
+      const usedRef = this.runKeyRefs.get(session.id);
+      if (usedRef) this.recordProviderKeySuccess(providerId, usedRef);
       this.flushPromptText(session.id);
       try {
         const changed = changedWorktreePaths(statesBefore, await worktreeFileStates(ws.worktree));
@@ -1257,15 +1333,15 @@ export class Platform {
       }
     } catch (error) {
       this.flushPromptText(session.id);
-      run?.stop();
-      this.runs.delete(session.id);
-      this.runModes.delete(session.id);
-      this.runFingerprints.delete(session.id);
+      const message = formatAgentError(error);
+      const failedRef = this.runKeyRefs.get(session.id);
+      if (failedRef && isProviderKeyFailure(message)) this.recordProviderKeyFailure(providerId, failedRef, message);
+      this.dropProviderRun(session.id);
       this.append(session.id, {
         type: "assistant_message",
         id: randomUUID(),
         at: new Date().toISOString(),
-        text: `The agent could not complete this prompt. ${formatAgentError(error)}`,
+        text: `The agent could not complete this prompt. ${message}`,
         streaming: false,
       });
       this.append(session.id, {
@@ -1274,7 +1350,7 @@ export class Platform {
         at: new Date().toISOString(),
         v: 1,
         kind: "provider_failed",
-        message: formatAgentError(error),
+        message,
       });
     } finally {
       span.end({ toolCalls: usage.toolCalls });
@@ -1808,8 +1884,12 @@ export class Platform {
     return ids.map((id) => ({ id, env: redactEnv(this.applyEnvToWorktree(id)) }));
   }
 
-  providerConfig(): Record<string, { enabled: boolean }> {
+  providerConfig(): Record<string, ProviderConfig> {
     return this.store.read().providers;
+  }
+
+  providerRoster(id: string): ProviderKeyState[] {
+    return hydrateProviderKeys(id, this.providerConfig()[id]?.keys ?? [], process.env, this.envRoot());
   }
 
   getProviderSettings() {
@@ -1817,7 +1897,15 @@ export class Platform {
     const flags = this.flags();
     const implemented = new Set(implementedProviders());
     return PROVIDER_CATALOG.filter((row) => row.id !== "mock" || process.env.VITEST).map((row) => {
-      const health = inspectProviderHealth(row.id, flags, process.env, this.envRoot());
+      const roster = this.providerRoster(row.id);
+      const stored = new Set(listProviderCredentials(row.id, process.env, this.envRoot()).map((item) => item.ref));
+      const health = inspectProviderHealth(row.id, flags, process.env, this.envRoot(), roster);
+      const model = config[row.id]?.model?.trim() || "";
+      const models = mergeProviderModels(
+        providerModelCatalog(row.id),
+        config[row.id]?.models,
+        model ? [{ id: model, label: model }] : [],
+      );
       return {
         id: row.id,
         label: row.label,
@@ -1827,28 +1915,118 @@ export class Platform {
         health: health.status,
         sandbox: health.sandbox,
         message: health.message,
+        model,
+        models,
+        keys: roster.map((key) => ({
+          ...key,
+          present: stored.has(key.ref),
+          usable: isProviderKeyUsable(key),
+        })),
       };
     });
   }
 
-  saveProviderSettings(input: { id: string; enabled?: boolean; apiKey?: string }) {
-    if (input.enabled != null) {
-      this.store.update((d) => {
-        d.providers = { ...d.providers, [input.id]: { enabled: input.enabled! } };
-      });
-    }
-    if (input.apiKey != null) {
-      const secrets = readProviderSecrets(this.envRoot());
-      const keyName = providerSecretKey(input.id);
-      if (input.apiKey.trim()) secrets[keyName] = input.apiKey.trim();
-      else delete secrets[keyName];
+  saveProviderSettings(input: {
+    id: string;
+    enabled?: boolean;
+    apiKey?: string;
+    label?: string;
+    model?: string;
+    keyRef?: string;
+    keyEnabled?: boolean;
+    keyLabel?: string;
+    moveKey?: "up" | "down";
+    resetKey?: boolean;
+    deleteKey?: boolean;
+  }) {
+    const id = input.id;
+    const current = this.providerConfig()[id] ?? { enabled: id === "cursor" };
+    let keys = hydrateProviderKeys(id, current.keys ?? [], process.env, this.envRoot());
+    const secrets = readProviderSecrets(this.envRoot());
+
+    if (input.apiKey != null && input.apiKey.trim()) {
+      const taken = keys.map((key) => key.ref);
+      const ref = nextProviderKeyRef(providerSecretKey(id), taken);
+      secrets[ref] = input.apiKey.trim();
+      keys = [...keys, emptyProviderKeyState(ref, input.label?.trim() ?? "")];
       writeProviderSecrets(secrets, this.envRoot());
     }
+
+    if (input.keyRef) {
+      if (!isProviderKeyRef(id, input.keyRef)) throw new Error("Unknown provider key");
+      const index = keys.findIndex((key) => key.ref === input.keyRef);
+      if (input.deleteKey) {
+        delete secrets[input.keyRef];
+        writeProviderSecrets(secrets, this.envRoot());
+        keys = keys.filter((key) => key.ref !== input.keyRef);
+      } else if (input.resetKey && index >= 0) {
+        keys[index] = resetProviderKey(keys[index]!);
+      } else if (input.moveKey) {
+        keys = moveProviderKey(keys, input.keyRef, input.moveKey);
+      } else if (index >= 0) {
+        const row = { ...keys[index]! };
+        if (input.keyEnabled != null) row.enabled = input.keyEnabled;
+        if (input.keyLabel != null) row.label = input.keyLabel;
+        keys[index] = row;
+      }
+    }
+
+    this.store.update((d) => {
+      const previous = d.providers[id] ?? { enabled: id === "cursor" };
+      d.providers = {
+        ...d.providers,
+        [id]: {
+          ...previous,
+          enabled: input.enabled ?? previous.enabled,
+          model: input.model !== undefined ? input.model.trim() : previous.model,
+          keys,
+          models: previous.models,
+        },
+      };
+    });
     return this.getProviderSettings();
   }
 
   providerHealth() {
-    return listProviderHealth(this.flags(), process.env, this.envRoot());
+    const keysByProvider = Object.fromEntries(
+      PROVIDER_CATALOG.map((row) => [row.id, this.providerRoster(row.id)]),
+    );
+    return listProviderHealth(this.flags(), process.env, this.envRoot(), keysByProvider);
+  }
+
+  private rememberProviderModels(id: string, models: ProviderModel[]) {
+    if (!models.length) return;
+    this.store.update((d) => {
+      const previous = d.providers[id] ?? { enabled: id === "cursor" };
+      d.providers = { ...d.providers, [id]: { ...previous, models: mergeProviderModels(previous.models, models) } };
+    });
+  }
+
+  private recordProviderKeySuccess(id: string, ref: string) {
+    this.patchProviderKey(id, ref, (key) => markProviderKeySuccess(key));
+  }
+
+  private recordProviderKeyFailure(id: string, ref: string, message: string) {
+    this.patchProviderKey(id, ref, (key) => markProviderKeyFailure(key, { message }));
+  }
+
+  private patchProviderKey(id: string, ref: string, fn: (key: ProviderKeyState) => ProviderKeyState) {
+    this.store.update((d) => {
+      const previous = d.providers[id] ?? { enabled: id === "cursor" };
+      const keys = hydrateProviderKeys(id, previous.keys ?? [], process.env, this.envRoot());
+      const index = keys.findIndex((key) => key.ref === ref);
+      if (index >= 0) keys[index] = fn(keys[index]!);
+      else keys.push(fn(emptyProviderKeyState(ref)));
+      d.providers = { ...d.providers, [id]: { ...previous, keys } };
+    });
+  }
+
+  private dropProviderRun(sessionId: string) {
+    this.runs.get(sessionId)?.stop();
+    this.runs.delete(sessionId);
+    this.runModes.delete(sessionId);
+    this.runFingerprints.delete(sessionId);
+    this.runKeyRefs.delete(sessionId);
   }
 
   saveFlags(next: Record<string, boolean>) {

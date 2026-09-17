@@ -27,4 +27,23 @@ describe("process ACP provider", () => {
     run.stop();
     expect(events).toContain("assistant_delta");
   });
+
+  it("sets the advertised model over session/set_config_option", async () => {
+    const script = join(tmpdir(), `atelier-process-acp-model-${process.pid}.mjs`);
+    writeFileSync(script, fakeAcpAgentSource());
+    const run = await startProcessAcp({
+      command: process.execPath,
+      args: [script],
+      env: { ...process.env, ANTHROPIC_API_KEY: "sk" },
+      cwd: tmpdir(),
+      capability: PROVIDER_CATALOG.find((row) => row.id === "claude")!,
+      preferredAuth: ["api_key"],
+      sandboxProfile: "disabled",
+      model: "model-2",
+      onEvent: () => undefined,
+    });
+    expect(run.modelId).toBe("model-2");
+    expect(run.models?.map((row) => row.id)).toEqual(["model-1", "model-2"]);
+    run.stop();
+  });
 });

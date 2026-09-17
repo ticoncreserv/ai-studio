@@ -1,3 +1,4 @@
+import type { ProviderKeyState, ProviderModel } from "@atelier/contracts";
 import { boolean, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -119,6 +120,9 @@ export const featureFlags = pgTable("feature_flags", {
 export const providerSettings = pgTable("provider_settings", {
   id: text("id").primaryKey(),
   enabled: boolean("enabled").notNull(),
+  model: text("model"),
+  keys: jsonb("keys").$type<ProviderKeyState[]>().default([]),
+  models: jsonb("models").$type<ProviderModel[]>().default([]),
 });
 
 export const presence = pgTable("presence", {
