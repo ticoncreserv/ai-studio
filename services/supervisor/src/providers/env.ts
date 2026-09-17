@@ -15,8 +15,8 @@ export const ORIGIN_SESSION_ENV = [
 
 const PINNED_NVM_BIN = join(homedir(), ".nvm", "versions", "node", "v24.21.0", "bin");
 
-export function hasCursorApiKey(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.CURSOR_API_KEY?.trim() || readProviderSecrets().CURSOR_API_KEY?.trim());
+export function hasCursorApiKey(env: NodeJS.ProcessEnv = process.env, envRoot?: string): boolean {
+  return Boolean(env.CURSOR_API_KEY?.trim() || readProviderSecrets(envRoot).CURSOR_API_KEY?.trim());
 }
 
 export function preferredAgentProvider(env: NodeJS.ProcessEnv = process.env): ProviderId {
@@ -25,13 +25,15 @@ export function preferredAgentProvider(env: NodeJS.ProcessEnv = process.env): Pr
 }
 
 export function resolveSessionProvider(provider: string | undefined, env: NodeJS.ProcessEnv = process.env): ProviderId {
-  if (provider === "cursor") return "cursor";
+  if (provider === "cursor" || provider === "claude" || provider === "gemini" || provider === "grok") return provider;
   if (provider === "mock" && env.VITEST) return "mock";
   return preferredAgentProvider(env);
 }
 
 export function implementedProviders(env: NodeJS.ProcessEnv = process.env): ProviderId[] {
-  return env.VITEST ? ["cursor", "mock"] : ["cursor"];
+  const ids: ProviderId[] = ["cursor", "claude", "gemini", "grok"];
+  if (env.VITEST) ids.push("mock");
+  return ids;
 }
 
 export function cursorAgentPathPrefixes(env: NodeJS.ProcessEnv = process.env): string[] {

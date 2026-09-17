@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClientCommandSchema, SessionEventSchema } from "./index.js";
+import { ClientCommandSchema, FeatureFlagSchema, ProviderHealthSchema, SessionEventSchema } from "./index.js";
 
 describe("contracts", () => {
   it("parses a prompt command and a diff event", () => {
@@ -55,5 +55,18 @@ describe("contracts", () => {
     expect(event.files).toEqual(["app/Models/User.php"]);
     expect(ClientCommandSchema.parse({ type: "discard_proposal" }).type).toBe("discard_proposal");
     expect(ClientCommandSchema.parse({ type: "push_studio" }).type).toBe("push_studio");
+  });
+
+  it("parses sandbox and provider health contracts", () => {
+    expect(FeatureFlagSchema.parse("sandboxRequired")).toBe("sandboxRequired");
+    expect(FeatureFlagSchema.parse("claudeProvider")).toBe("claudeProvider");
+    const health = ProviderHealthSchema.parse({
+      id: "claude",
+      status: "unconfigured",
+      binary: false,
+      hasCredential: false,
+      sandbox: "best-effort",
+    });
+    expect(health.status).toBe("unconfigured");
   });
 });

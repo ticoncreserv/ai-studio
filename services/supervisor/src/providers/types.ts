@@ -1,6 +1,5 @@
-import type { ProviderCapability } from "@atelier/contracts";
+import type { ProviderCapability, SandboxProfile, SessionEvent } from "@atelier/contracts";
 import type { AcpPromptBlock } from "../acp/session.js";
-import type { SessionEvent } from "@atelier/contracts";
 
 export interface ProviderRun {
   prompt: (blocks: AcpPromptBlock[]) => Promise<void>;
@@ -18,6 +17,7 @@ export interface AgentProvider {
     resumeSessionId?: string;
     mode?: "agent" | "plan" | "ask";
     sandbox?: boolean;
+    sandboxProfile?: SandboxProfile;
     mcpServers?: Array<{ name: string; command?: string; args?: string[]; env?: Array<{ name: string; value: string }>; type?: "http" | "sse"; url?: string; headers?: Array<{ name: string; value: string }> }>;
     onPermission?: (event: SessionEvent, rpcId: number) => void;
   }): Promise<ProviderRun>;

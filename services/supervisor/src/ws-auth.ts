@@ -1,5 +1,5 @@
 import { verifySession } from "./session-cookie.js";
-import type { JsonStore, UserRecord, WorkspaceRecord } from "./store.js";
+import type { PlatformStore, UserRecord, WorkspaceRecord } from "./store.js";
 
 export function cookieValue(header: string | undefined | null, name: string): string | undefined {
   if (!header) return undefined;
@@ -16,7 +16,7 @@ export function authorizeSessionSocket(input: {
   origin?: string | null;
   expectedOrigins?: string[];
   platform: {
-    store: JsonStore;
+    store: PlatformStore;
     canAccessWorkspace: (user: UserRecord, workspace: WorkspaceRecord, mode: "view" | "edit") => boolean;
   };
 }): { ok: true; userId: string; workspaceId: string } | { ok: false; status: number; message: string } {

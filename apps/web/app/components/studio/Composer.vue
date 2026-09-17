@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AgentMode } from "@atelier/contracts";
+import type { AgentMode, ProviderCapability } from "@atelier/contracts";
 import {
   ArrowUp,
   ChevronRight,
@@ -29,6 +29,7 @@ const props = defineProps<{
   spectatorEnabled: boolean;
   sending: boolean;
   provider: string;
+  providers?: ProviderCapability[];
   placeholder: string;
   attachments: StudioAttachment[];
   mentionsOpen: boolean;
@@ -62,6 +63,7 @@ const emit = defineEmits<{
   "remove-attachment": [path: string];
   "toggle-spectator": [];
   "drop-queue": [];
+  "update:provider": [value: string];
 }>();
 
 const { t } = useI18n();
@@ -71,6 +73,7 @@ const paletteOpen = ref(false);
 const paletteQuery = ref("");
 const paletteFilter = ref<HTMLInputElement | null>(null);
 const recipesOpen = ref(false);
+const providersOpen = ref(false);
 const skillsOpen = ref(false);
 const toolsOpen = ref(false);
 const slashCursor = ref(0);
@@ -104,16 +107,26 @@ const modes = computed(() => [
   { id: "ask" as AgentMode, icon: MessageCircle, tint: "text-emerald-300/80", label: t("chat.modeAsk"), desc: t("chat.modeHintAsk") },
 ]);
 
-const providerLabel = computed(() =>
-  props.provider === "cursor" ? t("chat.usingCursor") : props.provider === "mock" ? t("chat.usingMock") : props.provider,
-);
+const catalog = computed(() => props.providers ?? []);
+
+const providerLabel = computed(() => {
+  if (props.provider === "cursor") return t("chat.usingCursor");
+  if (props.provider === "claude") return t("chat.usingClaude");
+  if (props.provider === "gemini") return t("chat.usingGemini");
+  if (props.provider === "grok") return t("chat.usingGrok");
+  if (props.provider === "mock") return t("chat.usingMock");
+  return catalog.value.find((row) => row.id === props.provider)?.label ?? props.provider;
+});
 
 const activeRecipe = computed(() => props.recipes.find((recipe) => recipe.id === props.recipeId));
 
 const visibleModes = computed(() => {
+  const selected = catalog.value.find((row) => row.id === props.provider);
+  const allowed = selected?.modes ?? (["agent", "plan", "ask"] as AgentMode[]);
+  const available = modes.value.filter((item) => allowed.includes(item.id));
   const needle = paletteQuery.value.trim().toLowerCase();
-  if (!needle) return modes.value;
-  return modes.value.filter((item) => `${item.label} ${item.desc}`.toLowerCase().includes(needle));
+  if (!needle) return available;
+  return available.filter((item) => `${item.label} ${item.desc}`.toLowerCase().includes(needle));
 });
 
 function resize() {
@@ -132,11 +145,26 @@ onMounted(() => {
 
 watch(() => slashHits.value.length, () => (slashCursor.value = 0));
 
+watch(
+  () => [props.provider, props.mode] as const,
+  () => {
+    const selected = catalog.value.find((row) => row.id === props.provider);
+    if (selected && !selected.modes.includes(props.mode)) emit("update:mode", "agent");
+  },
+);
+
+function pickProvider(id: string) {
+  emit("update:provider", id);
+  providersOpen.value = false;
+  closePalette();
+}
+
 async function togglePalette() {
   paletteOpen.value = !paletteOpen.value;
   if (!paletteOpen.value) return;
   paletteQuery.value = "";
   recipesOpen.value = false;
+  providersOpen.value = false;
   skillsOpen.value = false;
   toolsOpen.value = false;
   cursor.value = 0;
@@ -320,7 +348,30 @@ onBeforeUnmount(() => recognition?.stop());
         <Paperclip class="h-3.5 w-3.5 shrink-0" />
         <span class="cx-menu-name">{{ t("chat.attach") }}</span>
       </button>
-      <div class="cx-menu-row">
+      <template v-if="catalog.length > 1">
+        <button
+          type="button"
+          class="cx-menu-row"
+          :data-active="providersOpen || undefined"
+          @click="providersOpen = !providersOpen"
+        >
+          <Cpu class="h-3.5 w-3.5 shrink-0" />
+          <span class="cx-menu-name shrink-0">{{ t("chat.model") }}</span>
+          <span class="cx-menu-desc">{{ providerLabel }}</span>
+          <ChevronRight class="ml-auto h-3 w-3 shrink-0 text-ink-400 transition-transform" :class="providersOpen && 'rotate-90'" />
+        </button>
+        <button
+          v-for="item in providersOpen ? catalog : []"
+          :key="item.id"
+          type="button"
+          class="cx-menu-row cx-menu-row-sub"
+          :data-active="item.id === provider || undefined"
+          @click="pickProvider(item.id)"
+        >
+          <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+        </button>
+      </template>
+      <div v-else class="cx-menu-row">
         <Cpu class="h-3.5 w-3.5 shrink-0" />
         <span class="cx-menu-name shrink-0">{{ t("chat.model") }}</span>
         <span class="cx-menu-desc">{{ providerLabel }}</span>

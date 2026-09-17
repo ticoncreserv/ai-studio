@@ -63,7 +63,16 @@ const overview = ref<{
 } | null>(null);
 const env = ref<{ env: Record<string, string>; raw: string; secrets?: Record<string, string> }>({ env: {}, raw: "" });
 const providers = ref<
-  Array<{ id: string; label: string; enabled: boolean; implemented: boolean; hasKey: boolean }>
+  Array<{
+    id: string;
+    label: string;
+    enabled: boolean;
+    implemented: boolean;
+    hasKey: boolean;
+    health?: string;
+    sandbox?: string;
+    message?: string;
+  }>
 >([]);
 const providerKeys = ref<Record<string, string>>({});
 const signedIn = ref<{ login: string; name: string } | null>(null);
@@ -160,6 +169,13 @@ const flagList = [
   "autoPush",
   "workspaceQueue",
   "realProviderEvals",
+  "sandboxRequired",
+  "postgresStore",
+  "postgresShadowRead",
+  "claudeProvider",
+  "geminiProvider",
+  "grokProvider",
+  "providerCanary",
 ] as const;
 
 function fold(text: string) {
