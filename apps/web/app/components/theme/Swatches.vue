@@ -1,25 +1,19 @@
 <script setup lang="ts">
-type LocaleId = "pt-BR" | "en";
+import { THEMES, type ThemeId } from "~/utils/theme";
 
 const props = withDefaults(defineProps<{ placement?: "down" | "up" }>(), { placement: "down" });
 
-const { t, locale, setLocale } = useI18n();
+const { t } = useI18n();
+const { current, setTheme, themes } = useTheme();
 
-const LOCALE_CODES: Record<LocaleId, "BR" | "US"> = {
-  "pt-BR": "BR",
-  en: "US",
-};
-
-const options = computed(() => [
-  { id: "pt-BR" as const, code: LOCALE_CODES["pt-BR"], label: t("auth.portuguese") },
-  { id: "en" as const, code: LOCALE_CODES.en, label: t("auth.english") },
-]);
-
-const current = computed<LocaleId>(() => (locale.value === "en" ? "en" : "pt-BR"));
-const currentCode = computed(() => LOCALE_CODES[current.value]);
-const currentLabel = computed(() =>
-  current.value === "en" ? t("auth.english") : t("auth.portuguese"),
-);
+const THEME_KEYS = {
+  crimson: "theme.crimson",
+  azure: "theme.azure",
+  amber: "theme.amber",
+  violet: "theme.violet",
+  teal: "theme.teal",
+  chalk: "theme.chalk",
+} as const satisfies Record<ThemeId, string>;
 
 const open = ref(false);
 const trigger = ref<HTMLElement | null>(null);
@@ -30,7 +24,7 @@ function place() {
   if (!trigger.value) return;
   const box = trigger.value.getBoundingClientRect();
   if (props.placement === "up") {
-    const width = tray.value?.offsetWidth ?? 196;
+    const width = tray.value?.offsetWidth ?? 168;
     const left = Math.min(Math.max(8, box.right - width), window.innerWidth - width - 8);
     trayPos.value = {
       top: "auto",
@@ -77,8 +71,8 @@ function toggle() {
   });
 }
 
-function pick(id: LocaleId) {
-  void setLocale(id);
+function pick(id: ThemeId) {
+  setTheme(id);
   close();
 }
 
@@ -97,45 +91,48 @@ onBeforeUnmount(unbindOutside);
 </script>
 
 <template>
-  <div class="locale-picker">
+  <div class="theme-picker">
     <button
       ref="trigger"
       type="button"
-      class="locale-trigger"
-      :aria-label="t('auth.localeLabel')"
+      class="theme-trigger"
+      :aria-label="t('auth.themeLabel')"
       :aria-expanded="open"
       :aria-haspopup="true"
-      :title="currentLabel"
+      :title="t(THEME_KEYS[current])"
       :data-open="open || undefined"
       @click.stop="toggle"
     >
-      <span class="locale-code text-ink-600" aria-hidden="true">{{ currentCode }}</span>
+      <span
+        class="theme-trigger-well"
+        :style="{ background: THEMES[current].swatch }"
+        aria-hidden="true"
+      />
     </button>
 
     <Teleport to="body">
       <div
         v-if="open"
         ref="tray"
-        class="cx-menu locale-tray"
-        data-locale-tray
+        class="theme-tray"
+        data-theme-tray
         role="radiogroup"
         :data-placement="props.placement"
-        :aria-label="t('auth.localeLabel')"
+        :aria-label="t('auth.themeLabel')"
         :style="trayPos"
       >
         <button
-          v-for="item in options"
-          :key="item.id"
+          v-for="id in themes"
+          :key="id"
           type="button"
           role="radio"
-          class="cx-menu-row"
-          :aria-checked="current === item.id"
-          :data-active="current === item.id || undefined"
-          @click="pick(item.id)"
-        >
-          <span class="locale-code text-ink-600" aria-hidden="true">{{ item.code }}</span>
-          <span class="cx-menu-name">{{ item.label }}</span>
-        </button>
+          class="theme-swatch"
+          :aria-checked="current === id"
+          :aria-label="t(THEME_KEYS[id])"
+          :title="t(THEME_KEYS[id])"
+          :style="{ background: THEMES[id].swatch, color: THEMES[id].swatch }"
+          @click="pick(id)"
+        />
       </div>
     </Teleport>
   </div>

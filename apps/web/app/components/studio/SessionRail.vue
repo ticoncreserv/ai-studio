@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BookOpen, MessageSquarePlus, Plug, Search, Settings, SlidersHorizontal, Sparkles } from "@lucide/vue";
+import { BookOpen, MessageSquarePlus, Plug, Search, SlidersHorizontal, Sparkles } from "@lucide/vue";
 import type { StudioSession } from "~/types/studio";
 
 const props = defineProps<{
@@ -55,15 +55,11 @@ function age(at: string) {
 </script>
 
 <template>
-  <aside class="cx-rail min-h-0 flex-col">
+  <aside class="cx-rail min-h-0 flex-col overflow-hidden">
     <div class="px-2 pt-1.5">
       <button type="button" class="cx-nav-item" @click="emit('create')">
         <MessageSquarePlus class="h-3.5 w-3.5" />
         {{ t("nav.newSession") }}
-      </button>
-      <button type="button" class="cx-nav-item" :data-active="searchOpen || undefined" @click="toggleSearch">
-        <Search class="h-3.5 w-3.5" />
-        {{ t("nav.search") }}
       </button>
       <button type="button" class="cx-nav-item" @click="emit('rules')">
         <BookOpen class="h-3.5 w-3.5" />
@@ -83,7 +79,14 @@ function age(at: string) {
       </button>
     </div>
 
-    <div v-if="searchOpen" class="cx-search mx-2 mt-2">
+    <div class="cx-nav-group cx-rail-group">
+      <p id="studio-sessions-label" class="cx-rail-group-label">{{ t("nav.sessions") }}</p>
+      <UiIconButton :label="t('nav.search')" size="sm" :active="searchOpen" @click="toggleSearch">
+        <Search class="h-3.5 w-3.5" />
+      </UiIconButton>
+    </div>
+
+    <div v-if="searchOpen" class="cx-search mx-2 mb-1">
       <Search class="h-3.5 w-3.5 shrink-0 text-ink-400" />
       <input
         ref="searchField"
@@ -95,9 +98,7 @@ function age(at: string) {
       />
     </div>
 
-    <p class="cx-nav-group cx-rail-group">{{ t("nav.sessions") }}</p>
-
-    <div class="thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+    <div class="thin-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2" aria-labelledby="studio-sessions-label">
       <p v-if="!sessions.length" class="px-2 py-3 text-[12px] text-ink-400">{{ t("workspace.noSessions") }}</p>
       <button
         v-for="session in visible"
@@ -117,12 +118,6 @@ function age(at: string) {
       </button>
     </div>
 
-    <div class="cx-rail-account">
-      <UiAvatar :name="login" size="sm" />
-      <span class="min-w-0 flex-1 truncate text-[12px] text-ink-700" :title="login">{{ login }}</span>
-      <UiIconButton :label="t('nav.settings')" size="sm" @click="emit('settings')">
-        <Settings class="h-3.5 w-3.5" />
-      </UiIconButton>
-    </div>
+    <StudioRailAccount :login="login" />
   </aside>
 </template>

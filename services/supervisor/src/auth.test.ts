@@ -42,12 +42,14 @@ describe("auth", () => {
   });
 
   it("stores the authorize redirect_uri in state and omits scopes for GitHub Apps", async () => {
-    const provider = new GitHubAuthProvider("Iv1.example", "secret");
-    const { url, state } = await provider.beginLogin("/", authorizeCallback);
-    const parsed = new URL(url);
-    expect(parsed.searchParams.get("redirect_uri")).toBe(authorizeCallback);
-    expect(parsed.searchParams.get("scope")).toBeNull();
-    expect(parseOAuthState(state)?.redirectUri).toBe(authorizeCallback);
+    for (const clientId of ["Iv1.example", "Iv23exampleClientId01"]) {
+      const provider = new GitHubAuthProvider(clientId, "secret");
+      const { url, state } = await provider.beginLogin("/", authorizeCallback);
+      const parsed = new URL(url);
+      expect(parsed.searchParams.get("redirect_uri")).toBe(authorizeCallback);
+      expect(parsed.searchParams.get("scope")).toBeNull();
+      expect(parseOAuthState(state)?.redirectUri).toBe(authorizeCallback);
+    }
     expect(parseOAuthState("not-base64")).toBeNull();
   });
 

@@ -38,7 +38,7 @@ const emit = defineEmits<{
   "update:questionAnswers": [value: Record<string, string[]>];
 }>();
 
-const { t, locale, setLocale } = useI18n();
+const { t, locale } = useI18n();
 const tokens = (value: number) => formatTokens(value, locale.value);
 
 const isolationEnv = computed(() => {
@@ -327,14 +327,14 @@ function submitQuestion() {
   <UiSheet :open="sheet === 'settings'" :title="t('settings.title')" @close="emit('update:sheet', null)">
     <div class="flex items-center justify-between">
       <p class="text-sm font-medium">{{ t("settings.language") }}</p>
-      <select
-        class="rounded-[4px] border border-line bg-raised px-1.5 py-[2px] text-[11px] text-ink-800 outline-none"
-        :value="locale"
-        @change="setLocale(($event.target as HTMLSelectElement).value as 'en' | 'pt-BR')"
-      >
-        <option value="pt-BR">{{ t("auth.portuguese") }}</option>
-        <option value="en">{{ t("auth.english") }}</option>
-      </select>
+      <AuthLoginLocale />
+    </div>
+    <div class="mt-5 flex items-start justify-between gap-3">
+      <div>
+        <p class="text-sm font-medium">{{ t("settings.theme") }}</p>
+        <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.themeHint") }}</p>
+      </div>
+      <ThemeSwatches />
     </div>
     <p class="mt-5 text-[12px] text-ink-400">{{ t("workspace.diskQuota") }}</p>
     <p class="mt-1 text-sm text-ink-600">{{ t("workspace.quotaUsed", { used: data.quota.usedMb, limit: data.quota.limitMb }) }}</p>
@@ -552,7 +552,7 @@ function submitQuestion() {
           :key="option.id"
           type="button"
           class="rounded-[6px] border px-2.5 py-1 text-[12.5px]"
-          :class="(questionAnswers[question.id] ?? []).includes(option.id) ? 'border-transparent bg-coral-500 text-[#06101c]' : 'border-line bg-raised text-ink-800'"
+          :class="(questionAnswers[question.id] ?? []).includes(option.id) ? 'border-transparent bg-coral-500 text-on-accent' : 'border-line bg-raised text-ink-800'"
           @click="toggleAnswer(question.id, option.id, question.allowMultiple)"
         >
           {{ option.label }}

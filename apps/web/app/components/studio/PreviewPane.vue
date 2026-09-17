@@ -94,9 +94,6 @@ const waitHint = computed(() => {
   if (iframeFailed.value) return props.lastError || t("preview.loadFailedHint");
   if (props.resuming || props.status === "ready") return t("preview.waitResumingHint");
   if (props.status === "provisioning") return t("preview.waitProvisioningHint");
-  if (waitClock.value >= 12) return t("preview.waitSlowDb");
-  if (waitClock.value >= 4) return t("preview.waitSlow");
-  if (docPhase.value === "hydrate") return t("preview.waitHydratingHint");
   return t("preview.waitIframeHint");
 });
 

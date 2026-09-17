@@ -1,6 +1,7 @@
 {
   "app": {
     "name": "Atelier",
+    "wordmark": "IA Studio",
     "tagline": "Crie telas no repositório Laravel com o Cursor, uma branch por pessoa e preview ao vivo.",
     "product": "Criação assistida para ticoncreserv/app",
     "headline": "Entregue telas Laravel a partir de uma conversa.",
@@ -17,6 +18,7 @@
     "subtitle": "O acesso segue sua permissão em ticoncreserv/app.",
     "github": "Continuar com GitHub",
     "localeLabel": "Idioma da interface",
+    "themeLabel": "Cor de acento",
     "english": "English",
     "portuguese": "Português (Brasil)",
     "error": "O acesso com GitHub falhou. Tente de novo.",
@@ -78,6 +80,7 @@
     "connections": "Conexões",
     "signOut": "Sair",
     "openWorkspace": "Abrir workspace",
+    "openSession": "Abrir {title}",
     "copied": "Link copiado",
     "more": "Mais",
     "settings": "Workspace",
@@ -95,7 +98,7 @@
   },
   "workspace": {
     "warming": "Aquecendo o workspace até ready…",
-    "ready": "Workspace pronto. Abrir o preview sobe o Laravel nesta branch.",
+    "ready": "O workspace está pronto. Abrir o preview sobe a aplicação nesta branch.",
     "hibernated": "Workspace hibernado. Retome para ligar os processos de preview.",
     "error": "O workspace falhou ao iniciar.",
     "branch": "Branch",
@@ -135,7 +138,7 @@
   },
   "chat": {
     "empty": "Descreva a tela ou a mudança. Mencione rotas com {'@'} e anexe arquivos ou um print.",
-    "placeholder": "Peça uma página, um campo ou uma correção…",
+    "placeholder": "Peça o que quiser…",
     "send": "Enviar",
     "cancel": "Cancelar execução",
     "acceptHunk": "Aceitar hunk",
@@ -285,12 +288,12 @@
     "waitProvisioning": "Preparando o workspace…",
     "waitProvisioningHint": "Clonando a branch e instalando dependências PHP e Node.",
     "waitIframe": "Abrindo a página…",
-    "waitIframeHint": "A URL do preview respondeu. Aguardando o HTML do Laravel.",
+    "waitIframeHint": "Isso pode levar alguns minutos.",
     "waitHydrating": "A página chegou. Montando a interface…",
     "waitHydratingHint": "O Vue e o Inertia estão hidratando. Pode levar alguns segundos enquanto o Vite compila.",
     "waitNavigating": "Abrindo a próxima tela…",
-    "waitSlow": "Ainda trabalhando. O Vite pode estar compilando os arquivos Vue.",
-    "waitSlowDb": "Isso está demorando. Consultas ao banco de homologação podem levar alguns minutos.",
+    "waitSlow": "Isso pode levar alguns minutos.",
+    "waitSlowDb": "Isso pode levar alguns minutos.",
     "loadFailed": "A página do preview não carregou.",
     "loadFailedHint": "O iframe não terminou de carregar. Retome o preview ou atualize.",
     "back": "Voltar",
@@ -425,6 +428,8 @@
   "settings": {
     "title": "Workspace",
     "language": "Idioma",
+    "theme": "Acento",
+    "themeHint": "Tom de botões, links e foco neste dispositivo.",
     "isolationHint": "QUEUE_NAME, CACHE_PREFIX, SESSION_COOKIE e APP_URL são únicos por workspace.",
     "envFileTitle": "Seu overlay de .env",
     "envFileHint": "Estas chaves substituem o .env compartilhado do repositório no seu clone. As chaves de isolamento ficam só leitura. Retome o preview depois de salvar para o Laravel reler.",
@@ -435,6 +440,14 @@
     "originUser": "seu",
     "originIsolation": "isolamento",
     "originExample": "exemplo"
+  },
+  "theme": {
+    "crimson": "Carmim",
+    "azure": "Azul",
+    "amber": "Âmbar",
+    "violet": "Violeta",
+    "teal": "Verde-água",
+    "chalk": "Giz"
   },
   "errors": {
     "generic": "Algo deu errado.",

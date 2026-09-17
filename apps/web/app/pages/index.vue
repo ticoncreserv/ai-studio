@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight } from "@lucide/vue";
+import { ArrowRight, Settings2 } from "@lucide/vue";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -36,14 +36,21 @@ onMounted(async () => {
   }
 });
 
-async function openWorkspace() {
+async function openWorkspace(sessionId?: string) {
   loading.value = true;
   try {
     const res = await $fetch<{ workspace: { id: string } }>("/api/workspace/open", { method: "POST" });
-    await navigateTo(`/w/${res.workspace.id}`);
+    await navigateTo({
+      path: `/w/${res.workspace.id}`,
+      query: sessionId ? { session: sessionId } : undefined,
+    });
   } finally {
     loading.value = false;
   }
+}
+
+function sessionTitle(session: { title: string }) {
+  return session.title || t("chat.untitled");
 }
 </script>
 
@@ -53,10 +60,22 @@ async function openWorkspace() {
 
     <header class="login-topbar">
       <span class="login-brand">
-        <UiLogo :size="18" />
-        <span>{{ t("app.name") }}</span>
+        <UiLogo :size="24" />
+        <span class="login-wordmark">{{ t("app.wordmark") }}</span>
       </span>
-      <AuthLoginLocale />
+      <div class="login-tools">
+        <NuxtLink
+          v-if="me?.user.platformAdmin"
+          to="/admin"
+          class="login-admin"
+          :aria-label="t('nav.admin')"
+          :title="t('nav.admin')"
+        >
+          <Settings2 class="h-3.5 w-3.5" aria-hidden="true" />
+        </NuxtLink>
+        <ThemeSwatches />
+        <AuthLoginLocale />
+      </div>
     </header>
 
     <div class="login-stage">
@@ -66,7 +85,9 @@ async function openWorkspace() {
         </div>
 
         <template v-if="!ready">
-          <UiSpinner class="login-rise login-rise-2" :label="t('nav.working')" />
+          <div class="login-pending login-rise login-rise-2">
+            <UiSpinner :label="t('nav.working')" />
+          </div>
         </template>
 
         <template v-else-if="!me">
@@ -84,21 +105,26 @@ async function openWorkspace() {
           <p class="login-kicker login-rise login-rise-2">{{ t("auth.welcomeBack") }}</p>
           <h1 class="login-title login-rise login-rise-3">{{ me.user.login }}</h1>
           <p class="login-copy login-rise login-rise-4">{{ t("auth.sessionReady") }}</p>
-          <button class="login-cta login-rise login-rise-5" type="button" :disabled="loading" @click="openWorkspace">
+          <button class="login-cta login-rise login-rise-5" type="button" :disabled="loading" @click="openWorkspace()">
             <UiSpinner v-if="loading" size="sm" :label="t('nav.working')" />
             {{ loading ? t("workspace.loading") : t("nav.openWorkspace") }}
             <ArrowRight v-if="!loading" class="h-4 w-4" />
           </button>
           <div v-if="me.sessions?.length" class="login-sessions login-rise login-rise-5">
             <p class="login-sessions-label">{{ t("nav.sessions") }}</p>
-            <p v-for="session in me.sessions" :key="session.id" class="login-session">
+            <button
+              v-for="session in me.sessions"
+              :key="session.id"
+              class="login-session"
+              type="button"
+              :disabled="loading"
+              :aria-label="t('nav.openSession', { title: sessionTitle(session) })"
+              @click="openWorkspace(session.id)"
+            >
               <span class="cx-session-dot" aria-hidden="true" />
-              <span class="min-w-0 flex-1 truncate">{{ session.title || t("chat.untitled") }}</span>
-            </p>
+              <span class="min-w-0 flex-1 truncate">{{ sessionTitle(session) }}</span>
+            </button>
           </div>
-          <NuxtLink v-if="me.user.platformAdmin" to="/admin" class="login-admin login-rise login-rise-5">
-            {{ t("nav.admin") }}
-          </NuxtLink>
         </template>
       </div>
     </div>

@@ -72,7 +72,6 @@ const {
   resume,
   signOut,
   addPreviewNote,
-  statusTone,
   statusLabel,
   useSuggestion,
 } = studio;
@@ -141,7 +140,6 @@ function onFixDebug() {
         :title="conversationTitle"
         :branch="data.workspace.branch"
         :status-label="statusLabel(data.workspace.status)"
-        :status-tone="statusTone(data.workspace.status)"
         :show-status="data.workspace.status !== 'running'"
         :login="data.user.login"
         :presence-count="data.presence.length"

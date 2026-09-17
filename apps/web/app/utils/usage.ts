@@ -11,7 +11,7 @@ export function usageBarWidth(usage: Pick<UsageSummary, "unlimited" | "percentUs
 }
 
 export function usageBarTone(decision: UsageSummary["decision"]["decision"]): string {
-  if (decision === "block") return "bg-coral-500";
+  if (decision === "block") return "bg-red-500";
   if (decision === "warn") return "bg-amber-500";
   return "bg-emerald-500";
 }

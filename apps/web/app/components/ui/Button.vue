@@ -19,7 +19,7 @@ const classes = computed(() =>
     props.size === "sm" && "h-7 px-2.5 text-[12px]",
     props.size === "md" && "h-[30px] px-3 text-[13px]",
     props.size === "lg" && "h-9 px-4 text-[13px]",
-    props.variant === "primary" && "bg-coral-500 text-[#06101c] hover:bg-coral-400",
+    props.variant === "primary" && "bg-coral-500 text-on-accent hover:bg-coral-400",
     props.variant === "soft" && "bg-white/[0.06] text-ink-950 hover:bg-white/[0.1]",
     props.variant === "ghost" && "text-ink-600 hover:bg-white/[0.05] hover:text-ink-950",
     props.variant === "outline" && "border border-line bg-raised text-ink-800 hover:border-line-strong hover:text-ink-950",

@@ -75,6 +75,10 @@ export default defineNuxtConfig({
   app: {
     head: {
       title: "Atelier",
+      link: [
+        { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
+        { rel: "icon", type: "image/png", href: "/favicon.png" },
+      ],
       meta: [
         { name: "viewport", content: "width=device-width, initial-scale=1" },
         { name: "theme-color", content: "#07080C" },

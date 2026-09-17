@@ -17,6 +17,6 @@ describe("usage formatting", () => {
   it("colors the bar by decision", () => {
     expect(usageBarTone("allow")).toBe("bg-emerald-500");
     expect(usageBarTone("warn")).toBe("bg-amber-500");
-    expect(usageBarTone("block")).toBe("bg-coral-500");
+    expect(usageBarTone("block")).toBe("bg-red-500");
   });
 });

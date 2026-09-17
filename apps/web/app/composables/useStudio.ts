@@ -78,11 +78,17 @@ export function useStudio() {
   const pendingPermission = computed(() => events.value.find((e) => e.type === "permission" && e.outcome === "pending"));
   const lastRuntimeError = computed(() => [...events.value].reverse().find((e) => e.type === "runtime_error"));
 
+  function activeSessionId() {
+    if (data.value?.session?.id) return data.value.session.id;
+    const fromQuery = route.query.session;
+    return typeof fromQuery === "string" && fromQuery ? fromQuery : undefined;
+  }
+
   async function refresh() {
     loadError.value = false;
     try {
       data.value = await $fetch<StudioPayload>(`/api/workspace/${workspaceId.value}`, {
-        query: { q: query.value || undefined, session: data.value?.session?.id },
+        query: { q: query.value || undefined, session: activeSessionId() },
       });
       hydratePresence();
     } catch (err) {

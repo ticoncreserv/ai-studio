@@ -21,6 +21,10 @@ export interface AuthProvider {
   verifyRepoAccess(token: string, repo: string): Promise<{ role: Role | null; pending: boolean }>;
 }
 
+function isGitHubAppClientId(clientId: string): boolean {
+  return clientId.startsWith("Iv1.") || clientId.startsWith("Iv23");
+}
+
 export class GitHubAuthProvider implements AuthProvider {
   id = "github" as const;
 
@@ -36,7 +40,8 @@ export class GitHubAuthProvider implements AuthProvider {
     url.searchParams.set("client_id", this.clientId);
     url.searchParams.set("state", state);
     // GitHub Apps use permissions, not OAuth scopes. A scope list can make authorize fail.
-    if (!this.clientId.startsWith("Iv1.")) url.searchParams.set("scope", "read:user user:email");
+    // Apps used to be Iv1.*; current client IDs are Iv23*.
+    if (!isGitHubAppClientId(this.clientId)) url.searchParams.set("scope", "read:user user:email");
     if (redirectUri) url.searchParams.set("redirect_uri", redirectUri);
     return { url: url.toString(), state };
   }

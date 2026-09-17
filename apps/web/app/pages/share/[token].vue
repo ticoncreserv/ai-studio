@@ -23,7 +23,7 @@ onMounted(async () => {
 onBeforeUnmount(() => clearInterval(waitTimer));
 
 const elapsed = computed(() => `${Math.floor(waitClock.value / 60)}:${String(waitClock.value % 60).padStart(2, "0")}`);
-const waitHint = computed(() => (waitClock.value >= 12 ? t("preview.waitSlowDb") : waitClock.value >= 4 ? t("preview.waitSlow") : t("preview.waitIframeHint")));
+const waitHint = computed(() => t("preview.waitIframeHint"));
 
 function onFrameLoad() {
   documentLoaded.value = true;
