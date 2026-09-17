@@ -1,4 +1,4 @@
-import type { Hunk, SessionEvent, TodoItem } from "@atelier/contracts";
+import type { AgentRunStatus, Hunk, SessionEvent, TodoItem, ValidationStatus } from "@atelier/contracts";
 
 export interface SessionState {
   messages: Array<{ id: string; role: "user" | "assistant"; text: string; streaming?: boolean }>;
@@ -13,6 +13,11 @@ export interface SessionState {
   conflicts: string[];
   omittedContext: string[];
   budgetCut: string | null;
+  run: { id: string; status: AgentRunStatus; reason?: string } | null;
+  proposal: { runId: string; baseSha: string; proposalSha: string; files: string[] } | null;
+  validation: Array<{ id: string; status: ValidationStatus; command: string }>;
+  failures: Array<{ kind: string; message: string }>;
+  push: { status: string; message: string; sha?: string } | null;
 }
 
 export const emptySession = (): SessionState => ({
@@ -28,6 +33,11 @@ export const emptySession = (): SessionState => ({
   conflicts: [],
   omittedContext: [],
   budgetCut: null,
+  run: null,
+  proposal: null,
+  validation: [],
+  failures: [],
+  push: null,
 });
 
 export function reduceSession(state: SessionState, event: SessionEvent): SessionState {
@@ -109,7 +119,25 @@ export function reduceSession(state: SessionState, event: SessionEvent): Session
       return { ...state, omittedContext: event.omitted };
     case "budget":
       return { ...state, budgetCut: event.message };
+    case "run":
+      return { ...state, run: { id: event.runId, status: event.status, reason: event.reason } };
+    case "proposal":
+      return {
+        ...state,
+        proposal: { runId: event.runId, baseSha: event.baseSha, proposalSha: event.proposalSha, files: event.files },
+      };
+    case "validation":
+      return {
+        ...state,
+        validation: [...state.validation.filter((row) => row.command !== event.command), { id: event.id, status: event.status, command: event.command }],
+      };
+    case "run_failure":
+      return { ...state, failures: [...state.failures, { kind: event.kind, message: event.message }] };
+    case "push":
+      return { ...state, push: { status: event.status, message: event.message, sha: event.sha } };
     case "migration":
+    case "prompt_manifest":
+    case "available_skills":
       return state;
     default:
       return state;

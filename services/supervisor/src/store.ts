@@ -96,7 +96,7 @@ interface DbShape {
   flags: Record<string, boolean>;
   providers: Record<string, { enabled: boolean }>;
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
-  runLock: Record<string, { sessionId: string; userId: string } | undefined>;
+  runLock: Record<string, { sessionId: string; userId: string; leaseUntil?: string; heartbeatAt?: string } | undefined>;
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;
   skillPrefs: Array<{ userId: string; name: string; enabled: boolean }>;
   mcpPrefs: Array<{ userId: string; name: string; enabled: boolean }>;
@@ -164,7 +164,22 @@ const emptyDb = (): DbShape => ({
     },
   ],
   members: [],
-  flags: { publish: false, multiProvider: false, spectator: true, recipes: true, skills: true, mcp: true },
+  flags: {
+    publish: false,
+    multiProvider: false,
+    spectator: true,
+    recipes: true,
+    skills: true,
+    mcp: true,
+    secureWebSocket: true,
+    safeUploads: true,
+    sandboxedAgent: true,
+    transactionalReview: true,
+    validationGate: true,
+    autoPush: false,
+    workspaceQueue: true,
+    realProviderEvals: false,
+  },
   providers: { cursor: { enabled: true } },
   presence: [],
   runLock: {},

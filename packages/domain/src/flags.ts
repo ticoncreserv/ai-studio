@@ -7,6 +7,14 @@ export const defaultFlags: Record<FeatureFlag, boolean> = {
   recipes: true,
   skills: true,
   mcp: true,
+  secureWebSocket: true,
+  safeUploads: true,
+  sandboxedAgent: true,
+  transactionalReview: true,
+  validationGate: true,
+  autoPush: false,
+  workspaceQueue: true,
+  realProviderEvals: false,
 };
 
 export function isFlagOn(flags: Record<string, boolean>, flag: FeatureFlag): boolean {

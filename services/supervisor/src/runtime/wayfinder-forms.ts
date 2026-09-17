@@ -24,7 +24,7 @@ export function ensureWayfinderFormMethods(worktree: string): number {
   let patched = 0;
   for (const file of walkTs(join(worktree, "resources/js/actions"))) {
     const text = readFileSync(file, "utf8");
-    const names = [...text.matchAll(/^export const (\w+) = /gm)].map((match) => match[1]);
+    const names = [...text.matchAll(/^export const (\w+) = /gm)].flatMap((match) => (match[1] ? [match[1]] : []));
     const missing = names.filter((name) => !text.includes(`${name}.form`));
     if (!missing.length) continue;
     const extras = missing.map(formStub).join("\n");

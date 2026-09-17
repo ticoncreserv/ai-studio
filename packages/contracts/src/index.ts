@@ -32,8 +32,42 @@ export const FeatureFlagSchema = z.enum([
   "recipes",
   "skills",
   "mcp",
+  "secureWebSocket",
+  "safeUploads",
+  "sandboxedAgent",
+  "transactionalReview",
+  "validationGate",
+  "autoPush",
+  "workspaceQueue",
+  "realProviderEvals",
 ]);
 export type FeatureFlag = z.infer<typeof FeatureFlagSchema>;
+
+export const AgentRunStatusSchema = z.enum([
+  "queued",
+  "running",
+  "reviewing",
+  "validating",
+  "accepted",
+  "pushed",
+  "rejected",
+  "failed",
+  "cancelled",
+]);
+export type AgentRunStatus = z.infer<typeof AgentRunStatusSchema>;
+
+export const ValidationStatusSchema = z.enum([
+  "not_run",
+  "running",
+  "passed",
+  "failed",
+  "timed_out",
+  "cancelled",
+  "skipped",
+]);
+export type ValidationStatus = z.infer<typeof ValidationStatusSchema>;
+
+export const EVENT_SCHEMA_VERSION = 1;
 
 export const HunkSchema = z.object({
   id: z.string(),
@@ -179,6 +213,70 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     omitted: z.array(z.string()),
   }),
   z.object({
+    type: z.literal("run"),
+    id: z.string(),
+    at: z.string(),
+    v: z.number().default(1),
+    runId: z.string(),
+    status: AgentRunStatusSchema,
+    reason: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("proposal"),
+    id: z.string(),
+    at: z.string(),
+    v: z.number().default(1),
+    runId: z.string(),
+    baseSha: z.string(),
+    proposalSha: z.string(),
+    files: z.array(z.string()),
+  }),
+  z.object({
+    type: z.literal("validation"),
+    id: z.string(),
+    at: z.string(),
+    v: z.number().default(1),
+    runId: z.string(),
+    status: ValidationStatusSchema,
+    command: z.string(),
+    output: z.string().optional(),
+    durationMs: z.number().optional(),
+  }),
+  z.object({
+    type: z.literal("run_failure"),
+    id: z.string(),
+    at: z.string(),
+    v: z.number().default(1),
+    kind: z.enum([
+      "diff_capture_failed",
+      "proposal_commit_failed",
+      "validation_failed",
+      "push_failed",
+      "permission_denied",
+      "provider_failed",
+    ]),
+    message: z.string(),
+  }),
+  z.object({
+    type: z.literal("prompt_manifest"),
+    id: z.string(),
+    at: z.string(),
+    v: z.number().default(1),
+    usedTokens: z.number(),
+    omitted: z.array(z.string()),
+    blocks: z.array(z.object({ id: z.string(), kind: z.string(), tokens: z.number() })),
+  }),
+  z.object({
+    type: z.literal("push"),
+    id: z.string(),
+    at: z.string(),
+    v: z.number().default(1),
+    remote: z.string(),
+    sha: z.string().optional(),
+    status: z.enum(["pushed", "conflict", "skipped", "failed"]),
+    message: z.string(),
+  }),
+  z.object({
     type: z.literal("available_skills"),
     id: z.string(),
     at: z.string(),
@@ -214,6 +312,8 @@ export const ClientCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("decide_permission"), outcome: z.enum(["allow-once", "allow-always", "reject-once"]) }),
   z.object({ type: z.literal("sync_base") }),
   z.object({ type: z.literal("fix_error"), eventId: z.string() }),
+  z.object({ type: z.literal("discard_proposal") }),
+  z.object({ type: z.literal("push_studio") }),
 ]);
 export type ClientCommand = z.infer<typeof ClientCommandSchema>;
 

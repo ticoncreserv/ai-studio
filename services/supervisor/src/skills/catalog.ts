@@ -60,7 +60,7 @@ function findSkillRoots(worktree: string): Array<{ abs: string; scope?: string }
   const roots: Array<{ abs: string; scope?: string }> = [];
   const visit = (dir: string, depth: number) => {
     if (depth > MAX_DEPTH || !existsSync(dir)) return;
-    let entries: ReturnType<typeof readdirSync>;
+    let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch {
@@ -91,7 +91,7 @@ function findSkillFiles(root: string): string[] {
   const files: string[] = [];
   const visit = (dir: string, depth: number) => {
     if (depth > 12 || !existsSync(dir)) return;
-    let entries: ReturnType<typeof readdirSync>;
+    let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch {

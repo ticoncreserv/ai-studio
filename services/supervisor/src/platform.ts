@@ -19,6 +19,7 @@ import {
   defaultFlags,
   evaluatePermission,
   foldEvents,
+  isFlagOn,
   isPlatformAdmin as matchPlatformAdmin,
   mapGitHubPermission,
   packPrompt,
@@ -38,11 +39,22 @@ import {
   redactMcpEntry,
   isSkillName,
   isSecretMcpKey,
+  canAcquireLease,
+  createLease,
+  heartbeatLease,
+  currentRequestText,
+  mentionFileHint,
+  mentionPromptText,
+  classifyMention,
+  permissionRequestFromTitle,
+  hasPendingProposal,
+  selectValidationCommands,
+  summarizeValidation,
   type McpEntry,
 } from "@atelier/domain";
 import { bus } from "./bus.js";
 import { JsonStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
-import { hasCursorApiKey, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
+import { hasCursorApiKey, implementedProviders, preferredAgentProvider, resolveSessionProvider } from "./providers/env.js";
 import { findCursorAgentBinary } from "./providers/ensure-agent.js";
 import { createProvider, listProviders as catalogProviders } from "./providers/index.js";
 import { PROVIDER_CATALOG, type AgentProvider } from "./providers/types.js";
@@ -81,18 +93,25 @@ import {
 import { probeConnections } from "./runtime/connection-probe.js";
 import { mentionIndexFromWorktree, worktreeBytes } from "./runtime/worktree-meta.js";
 import { clearPreviewError, readPreviewLogs, suggestPreviewFixes, writePreviewLogs } from "./runtime/preview-logs.js";
+import { startSpan, recordUsage } from "./otel.js";
 import {
   commitWorktree,
+  createProposalCommit,
+  pushStudioBranch,
   restoreCheckpoint,
   restoreFile,
+  restoreProposalFiles,
   syncBaseBranch,
   worktreeDiffEvents,
+  worktreeFileStates,
   worktreeFingerprint,
+  changedWorktreePaths,
 } from "./runtime/worktree-diff.js";
 import { formatAgentError } from "./acp/errors.js";
 import { PromptTextBuffer, shouldFlushAssistantText } from "./acp/prompt-text.js";
 import type { AcpPromptBlock } from "./acp/session.js";
 import type { ProviderRun } from "./providers/types.js";
+import { runValidationCommand } from "./runtime/validation-run.js";
 import {
   collectSkills,
   deleteSkillFile,
@@ -122,6 +141,7 @@ export class Platform {
   private readonly runFingerprints = new Map<string, string>();
   private readonly pendingPermissions = new Map<string, { rpcId: number; respond: ProviderRun["respondPermission"] }>();
   private readonly promptText = new PromptTextBuffer();
+  private readonly workspaceQueue = new Map<string, Promise<unknown>>();
 
   constructor(
     store = new JsonStore(join(repoRoot(), "var", "platform.json")),
@@ -179,7 +199,9 @@ export class Platform {
 
   listProviders() {
     const enabled = this.providerConfig();
+    const implemented = implementedProviders();
     return catalogProviders().filter((provider) => {
+      if (!implemented.includes(provider.id)) return false;
       if (provider.id === "mock") return Boolean(process.env.VITEST);
       if (provider.id !== "cursor") return false;
       return enabled.cursor?.enabled !== false;
@@ -456,6 +478,8 @@ export class Platform {
   }
 
   createSession(workspaceId: string, provider: ProviderId = preferredAgentProvider()): SessionRecord {
+    const available = this.listProviders().some((row) => row.id === provider);
+    if (!available) throw new Error(`Provider ${provider} is not available`);
     const session: SessionRecord = {
       id: randomUUID(),
       workspaceId,
@@ -519,74 +543,139 @@ export class Platform {
     if (spectator && input.command.type !== "prompt") return;
 
     if (input.command.type === "prompt") {
-      await this.runPrompt(input.user, session, ws, input.command);
+      const prompt = input.command;
+      await this.enqueueWorkspace(ws.id, () => this.runPrompt(input.user, session, ws, prompt));
       return;
     }
     if (input.command.type === "cancel") {
       await this.runs.get(session.id)?.cancel();
+      this.append(session.id, {
+        type: "run",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        v: 1,
+        runId: session.id,
+        status: "cancelled",
+      });
       return;
     }
     if (input.command.type === "accept_hunk" || input.command.type === "reject_hunk") {
       const hunkId = input.command.hunkId;
       const accepted = input.command.type === "accept_hunk";
-      const state = this.snapshot(session.id);
-      const hunk = state.hunks.find((h) => h.id === hunkId);
-      if (hunk) applyPatchHunkToWorktree(ws.worktree, hunk, accepted ? "forward" : "reverse");
-      this.mutateHunks(session.id, (next) => applyHunkDecision(next, hunkId, accepted ? "accepted" : "rejected"));
+      await this.enqueueWorkspace(ws.id, async () => {
+        const state = this.snapshot(session.id);
+        const hunk = state.hunks.find((h) => h.id === hunkId);
+        if (hunk) applyPatchHunkToWorktree(ws.worktree, hunk, accepted ? "forward" : "reverse");
+        this.mutateHunks(session.id, (next) => applyHunkDecision(next, hunkId, accepted ? "accepted" : "rejected"));
+        await this.maybeFinalizeProposal(input.user, session, ws);
+      });
       return;
     }
     if (input.command.type === "accept_file" || input.command.type === "reject_file") {
       const filePath = input.command.filePath;
       const accepted = input.command.type === "accept_file";
-      const state = this.snapshot(session.id);
-      if (accepted) {
-        for (const hunk of state.hunks.filter((item) => item.filePath === filePath)) {
-          applyPatchHunkToWorktree(ws.worktree, hunk, "forward");
+      await this.enqueueWorkspace(ws.id, async () => {
+        const state = this.snapshot(session.id);
+        if (accepted) {
+          for (const hunk of state.hunks.filter((item) => item.filePath === filePath)) {
+            applyPatchHunkToWorktree(ws.worktree, hunk, "forward");
+          }
+        } else {
+          await restoreFile(ws.worktree, filePath, this.restoreRev(session));
         }
-      } else {
-        await restoreFile(ws.worktree, filePath, this.restoreRev(session));
-      }
-      this.mutateHunks(session.id, (state) => applyFileDecision(state, filePath, accepted ? "accepted" : "rejected"));
+        this.mutateHunks(session.id, (next) => applyFileDecision(next, filePath, accepted ? "accepted" : "rejected"));
+        await this.maybeFinalizeProposal(input.user, session, ws);
+      });
+      return;
+    }
+    if (input.command.type === "discard_proposal") {
+      await this.enqueueWorkspace(ws.id, async () => {
+        const proposal = this.snapshot(session.id).proposal;
+        if (proposal) await restoreProposalFiles(ws.worktree, proposal.files, proposal.baseSha);
+        this.mutateHunks(session.id, (state) => ({
+          ...state,
+          hunks: state.hunks.map((hunk) => ({ ...hunk, status: "rejected" as const })),
+        }));
+        this.append(session.id, {
+          type: "run",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          v: 1,
+          runId: proposal?.runId ?? session.id,
+          status: "rejected",
+          reason: "proposal discarded",
+        });
+      });
+      return;
+    }
+    if (input.command.type === "push_studio") {
+      await this.enqueueWorkspace(ws.id, async () => {
+        const creds = loadGitHubAppCredentials();
+        const token = await resolveInstallationToken({
+          appId: creds?.appId,
+          privateKey: creds?.privateKey,
+          installationId: creds?.installationId,
+        });
+        const result = await pushStudioBranch(ws.worktree, { name: input.user.name, email: input.user.email }, token ?? undefined);
+        this.append(session.id, {
+          type: "push",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          v: 1,
+          remote: result.remote,
+          sha: result.sha,
+          status: result.status,
+          message: result.message,
+        });
+      });
       return;
     }
     if (input.command.type === "sync_base") {
-      const creds = loadGitHubAppCredentials();
-      const token = await resolveInstallationToken({
-        appId: creds?.appId,
-        privateKey: creds?.privateKey,
-        installationId: creds?.installationId,
-      });
-      const result = await syncBaseBranch(ws.worktree, { name: input.user.name, email: input.user.email }, token ?? undefined);
-      this.append(session.id, {
-        type: "conflict",
-        id: randomUUID(),
-        at: new Date().toISOString(),
-        files: result.files,
-        message: result.message,
+      await this.enqueueWorkspace(ws.id, async () => {
+        const creds = loadGitHubAppCredentials();
+        const token = await resolveInstallationToken({
+          appId: creds?.appId,
+          privateKey: creds?.privateKey,
+          installationId: creds?.installationId,
+        });
+        const result = await syncBaseBranch(ws.worktree, { name: input.user.name, email: input.user.email }, token ?? undefined);
+        this.append(session.id, {
+          type: "conflict",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          files: result.files,
+          message: result.message,
+        });
       });
       return;
     }
     if (input.command.type === "fix_error") {
       const lastError = [...session.events].reverse().find((e) => e.type === "runtime_error");
-      await this.runPrompt(input.user, session, ws, {
-        type: "prompt",
-        text: `Fix this preview error: ${lastError && lastError.type === "runtime_error" ? lastError.message : input.command.eventId}`,
-        attachments: [],
-        mentions: [],
-      });
+      const eventId = input.command.eventId;
+      await this.enqueueWorkspace(ws.id, () =>
+        this.runPrompt(input.user, session, ws, {
+          type: "prompt",
+          text: `Fix this preview error: ${lastError && lastError.type === "runtime_error" ? lastError.message : eventId}`,
+          attachments: [],
+          mentions: [],
+        }),
+      );
       return;
     }
     if (input.command.type === "restore_checkpoint") {
       const command = input.command;
-      const checkpoint = session.events.find((e) => e.type === "checkpoint" && e.id === command.checkpointId);
-      const sha = checkpoint && checkpoint.type === "checkpoint" ? checkpoint.gitSha : command.checkpointId;
-      await restoreCheckpoint(ws.worktree, sha, { name: input.user.name, email: input.user.email });
-      this.append(session.id, {
-        type: "checkpoint",
-        id: randomUUID(),
-        at: new Date().toISOString(),
-        gitSha: sha,
-        label: `Restored ${sha.slice(0, 8)}`,
+      await this.enqueueWorkspace(ws.id, async () => {
+        const current = this.store.read().sessions.find((s) => s.id === session.id) ?? session;
+        const checkpoint = current.events.find((e) => e.type === "checkpoint" && e.id === command.checkpointId);
+        const sha = checkpoint && checkpoint.type === "checkpoint" ? checkpoint.gitSha : command.checkpointId;
+        await restoreCheckpoint(ws.worktree, sha, { name: input.user.name, email: input.user.email });
+        this.append(session.id, {
+          type: "checkpoint",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          gitSha: sha,
+          label: `Restored ${sha.slice(0, 8)}`,
+        });
       });
       return;
     }
@@ -598,12 +687,14 @@ export class Platform {
         s.events = s.events.map((e) => (e.type === "plan" && e.outcome === "pending" ? { ...e, outcome } : e));
       });
       if (outcome === "accepted") {
-        await this.runPrompt(input.user, session, ws, {
-          type: "prompt",
-          text: "The plan was accepted. Continue implementing it.",
-          attachments: [],
-          mentions: [],
-        });
+        await this.enqueueWorkspace(ws.id, () =>
+          this.runPrompt(input.user, session, ws, {
+            type: "prompt",
+            text: "The plan was accepted. Continue implementing it.",
+            attachments: [],
+            mentions: [],
+          }),
+        );
       }
       return;
     }
@@ -620,17 +711,20 @@ export class Platform {
       return;
     }
     if (input.command.type === "answer_question") {
+      const answers = input.command.answers;
       this.store.update((d) => {
         const s = d.sessions.find((x) => x.id === session.id);
         if (!s) return;
         s.events = s.events.map((e) => (e.type === "question" ? { ...e, outcome: "answered" } : e));
       });
-      await this.runPrompt(input.user, session, ws, {
-        type: "prompt",
-        text: `Question answers: ${JSON.stringify(input.command.answers)}`,
-        attachments: [],
-        mentions: [],
-      });
+      await this.enqueueWorkspace(ws.id, () =>
+        this.runPrompt(input.user, session, ws, {
+          type: "prompt",
+          text: `Question answers: ${JSON.stringify(answers)}`,
+          attachments: [],
+          mentions: [],
+        }),
+      );
     }
   }
 
@@ -647,18 +741,155 @@ export class Platform {
     });
   }
 
+  private async enqueueWorkspace<T>(workspaceId: string, fn: () => Promise<T>): Promise<T> {
+    if (!isFlagOn(this.flags(), "workspaceQueue")) return fn();
+    const previous = this.workspaceQueue.get(workspaceId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(fn);
+    this.workspaceQueue.set(
+      workspaceId,
+      next.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return next;
+  }
+
+  private async maybeFinalizeProposal(user: UserRecord, session: SessionRecord, ws: WorkspaceRecord) {
+    if (!isFlagOn(this.flags(), "transactionalReview")) return;
+    const state = this.snapshot(session.id);
+    if (hasPendingProposal(state.hunks) || !state.proposal) return;
+    const rejectedAll = state.hunks.length > 0 && state.hunks.every((hunk) => hunk.status === "rejected");
+    if (rejectedAll) {
+      await restoreProposalFiles(ws.worktree, state.proposal.files, state.proposal.baseSha);
+      this.append(session.id, {
+        type: "run",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        v: 1,
+        runId: state.proposal.runId,
+        status: "rejected",
+      });
+      return;
+    }
+    await this.commitAcceptedChanges(user, session, ws, state.proposal.runId, state.proposal.files);
+  }
+
+  private async commitAcceptedChanges(
+    user: UserRecord,
+    session: SessionRecord,
+    ws: WorkspaceRecord,
+    runId: string,
+    files: string[],
+  ) {
+    if (isFlagOn(this.flags(), "validationGate") && !process.env.VITEST) {
+      this.append(session.id, {
+        type: "run",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        v: 1,
+        runId,
+        status: "validating",
+      });
+      const results = [];
+      for (const command of selectValidationCommands(files)) {
+        const result = await runValidationCommand(ws.worktree, command);
+        results.push(result);
+        this.append(session.id, {
+          type: "validation",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          v: 1,
+          runId,
+          status: result.code === 0 ? (result.output.startsWith("skipped:") ? "skipped" : "passed") : "failed",
+          command: `${command.command} ${command.args.join(" ")}`,
+          output: result.output,
+          durationMs: result.durationMs,
+        });
+      }
+      if (summarizeValidation(results) === "failed") {
+        this.append(session.id, {
+          type: "run_failure",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          v: 1,
+          kind: "validation_failed",
+          message: "Validation failed; the accepted tree was not committed.",
+        });
+        return;
+      }
+    }
+    const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(session.title), files);
+    if (sha) {
+      this.append(session.id, {
+        type: "checkpoint",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        gitSha: sha,
+        label: session.title,
+      });
+      this.append(session.id, {
+        type: "run",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        v: 1,
+        runId,
+        status: "accepted",
+      });
+    }
+    if (sha && isFlagOn(this.flags(), "autoPush")) {
+      const creds = loadGitHubAppCredentials();
+      const token = await resolveInstallationToken({
+        appId: creds?.appId,
+        privateKey: creds?.privateKey,
+        installationId: creds?.installationId,
+      });
+      const result = await pushStudioBranch(ws.worktree, { name: user.name, email: user.email }, token ?? undefined);
+      this.append(session.id, {
+        type: "push",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        v: 1,
+        remote: result.remote,
+        sha: result.sha,
+        status: result.status,
+        message: result.message,
+      });
+      if (result.status === "pushed") {
+        this.append(session.id, {
+          type: "run",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          v: 1,
+          runId,
+          status: "pushed",
+        });
+      }
+    }
+    const bytes = await worktreeBytes(ws.worktree);
+    this.store.update((d) => {
+      const row = d.workspaces.find((w) => w.id === ws.id);
+      if (row) row.bytes = bytes;
+    });
+  }
+
   private async runPrompt(
     user: UserRecord,
     session: SessionRecord,
     ws: WorkspaceRecord,
     command: Extract<ClientCommand, { type: "prompt" }>,
   ) {
-    const lock = this.store.read().runLock[ws.id];
-    if (lock && lock.sessionId !== session.id) {
+    const flags = this.flags();
+    const existing = this.store.read().runLock[ws.id];
+    if (existing && !canAcquireLease(existing as { sessionId: string; userId: string; leaseUntil: string }, session.id)) {
       throw new Error("Workspace is busy");
     }
+    if (isFlagOn(flags, "transactionalReview") && hasPendingProposal(this.snapshot(session.id).hunks)) {
+      throw new Error("Workspace has a pending change proposal");
+    }
+    const lease = createLease(session.id, user.id);
     this.store.update((d) => {
-      d.runLock[ws.id] = { sessionId: session.id, userId: user.id };
+      d.runLock[ws.id] = lease;
     });
 
     const recipe = command.recipeId
@@ -667,7 +898,8 @@ export class Platform {
     const filled = recipe
       ? recipe.template.replaceAll("{{model}}", command.text)
       : command.text;
-    const agentText = `${promptPrefixForMode(command.mode)}${filled}`;
+    const agentText = currentRequestText(`${promptPrefixForMode(command.mode)}${filled}`);
+    const runId = randomUUID();
 
     if (session.events.length === 0) {
       this.store.update((d) => {
@@ -685,22 +917,59 @@ export class Platform {
       mentions: command.mentions,
       skill: command.skill ?? slashInvocation(filled) ?? undefined,
     });
+    this.append(session.id, {
+      type: "run",
+      id: randomUUID(),
+      at: new Date().toISOString(),
+      v: 1,
+      runId,
+      status: "running",
+    });
+
+    const mentionIndex = await mentionIndexFromWorktree(ws.worktree);
+    const mentionBlocks = command.mentions.map((mention, i) => {
+      const kind = classifyMention(mention, mentionIndex);
+      const relative = mentionFileHint(mention, kind);
+      let contents = "";
+      if (relative) {
+        try {
+          contents = readFileSync(join(ws.worktree, relative), "utf8");
+        } catch {
+          contents = "";
+        }
+      }
+      const text = mentionPromptText(mention, mentionIndex, contents);
+      return {
+        id: mention,
+        kind: "mentions" as const,
+        text,
+        tokens: estimateTokens(text),
+        priority: 2 + i,
+      };
+    });
 
     const rules = compileRules(this.getRules(), user.locale);
     const packed = packPrompt(
       [
         { id: "user", kind: "user", text: agentText, tokens: estimateTokens(agentText), priority: 0 },
         { id: "rules", kind: "rules", text: rules.markdown, tokens: estimateTokens(rules.markdown), priority: 1 },
-        ...command.mentions.map((m, i) => ({
-          id: m,
-          kind: "mentions" as const,
-          text: `@${m}`,
-          tokens: estimateTokens(m),
-          priority: 2 + i,
-        })),
+        ...mentionBlocks,
       ],
       4000,
     );
+    this.append(session.id, {
+      type: "prompt_manifest",
+      id: randomUUID(),
+      at: new Date().toISOString(),
+      v: 1,
+      usedTokens: packed.usedTokens,
+      omitted: packed.omitted,
+      blocks: [
+        { id: "user", kind: "user", tokens: estimateTokens(agentText) },
+        { id: "rules", kind: "rules", tokens: estimateTokens(rules.markdown) },
+        ...mentionBlocks.map((block) => ({ id: block.id, kind: "mentions", tokens: block.tokens })),
+      ].filter((block) => !packed.omitted.includes(`${block.kind}:${block.id}`)),
+    });
     if (packed.omitted.length) {
       this.append(session.id, {
         type: "dropped_context",
@@ -712,6 +981,17 @@ export class Platform {
 
     const usage = { startedAt: Date.now(), toolCalls: 0, costUsd: 0 };
     const budget = defaultBudget();
+    const span = startSpan("agent.prompt", { sessionId: session.id, workspaceId: ws.id, mode: command.mode ?? "agent" });
+    const budgetTimer = setTimeout(() => {
+      this.append(session.id, {
+        type: "budget",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        reason: "duration",
+        message: "Run stopped: duration budget exceeded",
+      });
+      void this.runs.get(session.id)?.cancel();
+    }, budget.maxDurationMs);
     const providerId = resolveSessionProvider(session.provider);
     if (providerId !== session.provider) this.setSessionProvider(session.id, providerId);
     const mode = command.mode ?? "agent";
@@ -732,6 +1012,7 @@ export class Platform {
           cwd: ws.worktree,
           resumeSessionId: session.acpSessionId,
           mode,
+          sandbox: isFlagOn(flags, "sandboxedAgent"),
           mcpServers: acpServersForWorktree({
             worktree: ws.worktree,
             storeDir: this.storeDir(),
@@ -743,6 +1024,12 @@ export class Platform {
             // write the session buffer — not a `let streamed` from the first start.
             if (event.type === "assistant_delta") this.promptText.append(session.id, event.text);
             usage.toolCalls += event.type === "tool_call" ? 1 : 0;
+            if (event.type === "tool_call") {
+              this.store.update((d) => {
+                const current = d.runLock[ws.id];
+                if (current) d.runLock[ws.id] = heartbeatLease(createLease(current.sessionId, current.userId));
+              });
+            }
             const reason = budgetExceeded(budget, usage);
             if (reason) {
               this.append(session.id, {
@@ -760,6 +1047,24 @@ export class Platform {
           },
           onPermission: (event, rpcId) => {
             this.flushPromptText(session.id);
+            const title = event.type === "permission" ? event.title : "";
+            const decision = evaluatePermission(permissionRequestFromTitle(title, ws.worktree));
+            if (decision === "auto-deny" || decision === "auto-allow") {
+              const outcome = decision === "auto-deny" ? "reject-once" : "allow-once";
+              this.runs.get(session.id)?.respondPermission?.(rpcId, outcome);
+              this.append(session.id, event.type === "permission" ? { ...event, outcome } : event);
+              if (decision === "auto-deny") {
+                this.append(session.id, {
+                  type: "run_failure",
+                  id: randomUUID(),
+                  at: new Date().toISOString(),
+                  v: 1,
+                  kind: "permission_denied",
+                  message: title,
+                });
+              }
+              return;
+            }
             this.append(session.id, event);
             this.pendingPermissions.set(session.id, {
               rpcId,
@@ -777,32 +1082,75 @@ export class Platform {
           });
         }
       }
-      const blocks: AcpPromptBlock[] = [{ type: "text", text: packed.text }, ...this.attachmentBlocks(command.attachments)];
+      const blocks: AcpPromptBlock[] = [{ type: "text", text: packed.text }, ...this.attachmentBlocks(command.attachments, ws.worktree)];
+      const statesBefore = await worktreeFileStates(ws.worktree);
       const fingerprintBefore = await worktreeFingerprint(ws.worktree);
       this.promptText.reset(session.id);
       await run.prompt(blocks);
       this.flushPromptText(session.id);
       try {
-        if ((await worktreeFingerprint(ws.worktree)) === fingerprintBefore) return;
-        for (const event of await worktreeDiffEvents(ws.worktree)) this.append(session.id, event);
-        const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(filled));
-        if (sha) {
+        const changed = changedWorktreePaths(statesBefore, await worktreeFileStates(ws.worktree));
+        if ((await worktreeFingerprint(ws.worktree)) === fingerprintBefore || !changed.length) {
           this.append(session.id, {
-            type: "checkpoint",
+            type: "run",
             id: randomUUID(),
             at: new Date().toISOString(),
-            gitSha: sha,
-            label: titleFromPrompt(filled),
+            v: 1,
+            runId,
+            status: "accepted",
+            reason: "no worktree changes",
           });
+          return;
+        }
+        for (const event of await worktreeDiffEvents(ws.worktree, changed)) this.append(session.id, event);
+        if (isFlagOn(flags, "transactionalReview")) {
+          const proposal = await createProposalCommit(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(filled), changed);
+          if (proposal) {
+            this.append(session.id, {
+              type: "proposal",
+              id: randomUUID(),
+              at: new Date().toISOString(),
+              v: 1,
+              runId,
+              baseSha: proposal.baseSha,
+              proposalSha: proposal.proposalSha,
+              files: proposal.files,
+            });
+            this.append(session.id, {
+              type: "run",
+              id: randomUUID(),
+              at: new Date().toISOString(),
+              v: 1,
+              runId,
+              status: "reviewing",
+            });
+          }
+        } else {
+          const sha = await commitWorktree(ws.worktree, { name: user.name, email: user.email }, titleFromPrompt(filled));
+          if (sha) {
+            this.append(session.id, {
+              type: "checkpoint",
+              id: randomUUID(),
+              at: new Date().toISOString(),
+              gitSha: sha,
+              label: titleFromPrompt(filled),
+            });
+          }
         }
         const bytes = await worktreeBytes(ws.worktree);
         this.store.update((d) => {
           const row = d.workspaces.find((w) => w.id === ws.id);
           if (row) row.bytes = bytes;
         });
-      } catch {
-        // The prompt already completed. A worktree scan must not look like an agent failure
-        // or remount the preview when no app files changed.
+      } catch (error) {
+        this.append(session.id, {
+          type: "run_failure",
+          id: randomUUID(),
+          at: new Date().toISOString(),
+          v: 1,
+          kind: "diff_capture_failed",
+          message: error instanceof Error ? error.message : String(error),
+        });
       }
     } catch (error) {
       this.flushPromptText(session.id);
@@ -817,7 +1165,18 @@ export class Platform {
         text: `The agent could not complete this prompt. ${formatAgentError(error)}`,
         streaming: false,
       });
+      this.append(session.id, {
+        type: "run_failure",
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        v: 1,
+        kind: "provider_failed",
+        message: formatAgentError(error),
+      });
     } finally {
+      span.end({ toolCalls: usage.toolCalls });
+      recordUsage({ sessionId: session.id, tokens: packed.usedTokens, costUsd: usage.costUsd, toolCalls: usage.toolCalls });
+      clearTimeout(budgetTimer);
       this.store.update((d) => {
         delete d.runLock[ws.id];
       });
@@ -1646,11 +2005,13 @@ export class Platform {
   }
 
   private restoreRev(session: SessionRecord): string {
+    const proposal = [...session.events].reverse().find((event) => event.type === "proposal");
+    if (proposal && proposal.type === "proposal") return proposal.baseSha;
     const last = [...session.events].reverse().find((event) => event.type === "checkpoint" && event.gitSha && event.gitSha !== "fixture");
     return last && last.type === "checkpoint" ? `${last.gitSha}^` : "HEAD";
   }
 
-  private attachmentBlocks(paths: string[]): AcpPromptBlock[] {
+  private attachmentBlocks(paths: string[], worktree?: string): AcpPromptBlock[] {
     const mimeByExt: Record<string, string> = {
       ".png": "image/png",
       ".jpg": "image/jpeg",
@@ -1659,7 +2020,12 @@ export class Platform {
       ".webp": "image/webp",
     };
     const blocks: AcpPromptBlock[] = [];
+    const uploadRoot = worktree ? join(worktree, "var", "uploads") : "";
     for (const path of paths) {
+      if (worktree && uploadRoot && !path.startsWith(uploadRoot)) {
+        blocks.push({ type: "text", text: `Attachment omitted: path is outside workspace uploads` });
+        continue;
+      }
       const mime = mimeByExt[extname(path).toLowerCase()];
       if (mime && existsSync(path)) {
         blocks.push({ type: "image", data: readFileSync(path).toString("base64"), mimeType: mime });
@@ -1748,9 +2114,11 @@ export function getPlatform(): Platform {
     typeof current.skillCatalog !== "function" ||
     typeof current.mcpCatalog !== "function"
   ) {
-    globalThis.__atelierPlatform = new Platform();
+    const created = new Platform();
+    globalThis.__atelierPlatform = created;
+    return created;
   }
-  return globalThis.__atelierPlatform;
+  return current;
 }
 
 export const viewports: Record<Viewport, { width: number; height: number }> = {

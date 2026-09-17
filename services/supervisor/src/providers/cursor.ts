@@ -6,6 +6,7 @@ import { AcpSession } from "../acp/session.js";
 import { eventsFromAcpUpdate, permissionFromAcp } from "../acp/events.js";
 import { cursorAgentEnv, hasCursorApiKey } from "./env.js";
 import { ensureCursorAgent } from "./ensure-agent.js";
+import { sandboxCommand, sanitizeAgentEnv } from "./sandbox.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
 import { PROVIDER_CATALOG } from "./types.js";
 
@@ -40,22 +41,24 @@ export class CursorProvider implements AgentProvider {
     onEvent: (event: SessionEvent) => void;
     resumeSessionId?: string;
     mode?: "agent" | "plan" | "ask";
+    sandbox?: boolean;
     mcpServers?: AcpMcpServer[];
     onPermission?: (event: SessionEvent, rpcId: number) => void;
   }): Promise<ProviderRun> {
-    const env = cursorAgentEnv();
+    const env = sanitizeAgentEnv(cursorAgentEnv());
     if (!hasCursorApiKey(env)) throw new Error("CURSOR_API_KEY is not set");
     const command = await ensureCursorAgent({ env });
+    const launched = sandboxCommand(command, cursorArgs(input.mode), input.cwd, Boolean(input.sandbox));
     const acp = new AcpSession(
-      command,
-      cursorArgs(input.mode),
+      launched.command,
+      launched.args,
       (msg) => {
         for (const event of eventsFromAcpUpdate(msg)) input.onEvent(event);
       },
       (id, params) => {
         const event = permissionFromAcp(params, id);
         if (input.onPermission) input.onPermission(event, id);
-        else acp.respond(id, { outcome: { outcome: "selected", optionId: "allow-once" } });
+        else acp.respond(id, { outcome: { outcome: "selected", optionId: "reject-once" } });
       },
     );
     acp.start(env, input.cwd);

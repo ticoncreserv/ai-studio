@@ -118,15 +118,72 @@ describe("platform", () => {
     });
 
     expect(readFileSync(join(ws.worktree, "app", "PromptCreated.php"), "utf8")).toContain("return 'created'");
-    expect(p.snapshot(session.id).hunks.some((hunk) => hunk.filePath === "app/PromptCreated.php")).toBe(true);
-    const checkpoint = p.store
-      .read()
-      .sessions.find((row) => row.id === session.id)
-      ?.events.find((event) => event.type === "checkpoint");
+    expect(p.snapshot(session.id).hunks.length).toBeGreaterThan(0);
+    expect(p.snapshot(session.id).hunks.every((hunk) => hunk.filePath === "app/PromptCreated.php")).toBe(true);
+    expect(p.snapshot(session.id).proposal?.files).toEqual(["app/PromptCreated.php"]);
+    const stored = p.store.read().sessions.find((row) => row.id === session.id);
+    expect(stored?.events.some((event) => event.type === "proposal")).toBe(true);
+    expect(stored?.events.some((event) => event.type === "prompt_manifest")).toBe(true);
+    await p.handleCommand({
+      user,
+      sessionId: session.id,
+      command: { type: "accept_file", filePath: "app/PromptCreated.php" },
+    });
+    const after = p.store.read().sessions.find((row) => row.id === session.id);
+    const checkpoint = after?.events.find((event) => event.type === "checkpoint");
     expect(checkpoint && checkpoint.type === "checkpoint" ? checkpoint.gitSha : "").toMatch(/^[0-9a-f]{7,}$/);
     expect(await git(ws.worktree, ["status", "--porcelain", "--", "app/PromptCreated.php"])).toBe("");
     expect(prompts[0]).toContain("Create app/PromptCreated.php");
     expect(prompts[0]).toContain("Inspect relevant files before editing");
+  });
+
+  it("discards a proposal without committing leftover dirty files", async () => {
+    const p = platform(() => ({
+      capability: {
+        id: "mock",
+        label: "Writing provider",
+        command: "mock",
+        args: [],
+        modes: ["agent"],
+        images: false,
+        todos: false,
+        plans: false,
+        questions: false,
+      },
+      start: async ({ cwd }) => ({
+        prompt: async () => {
+          mkdirSync(join(cwd, "app"), { recursive: true });
+          writeFileSync(join(cwd, "app", "PromptCreated.php"), "<?php\n\nreturn 'created';\n");
+        },
+        cancel: async () => undefined,
+        stop: () => undefined,
+      }),
+    }));
+    const user = await p.loginDev("discard-writer");
+    const ws = await p.ensureWorkspace(user);
+    const session = p.createSession(ws.id, "mock");
+    await p.handleCommand({
+      user,
+      sessionId: session.id,
+      command: { type: "prompt", text: "Create app/PromptCreated.php", attachments: [], mentions: [] },
+    });
+    expect(p.snapshot(session.id).proposal?.files).toContain("app/PromptCreated.php");
+    await expect(
+      p.handleCommand({
+        user,
+        sessionId: session.id,
+        command: { type: "prompt", text: "another change", attachments: [], mentions: [] },
+      }),
+    ).rejects.toThrow(/pending change proposal/);
+    await p.handleCommand({ user, sessionId: session.id, command: { type: "discard_proposal" } });
+    expect(existsSync(join(ws.worktree, "app", "PromptCreated.php"))).toBe(false);
+    expect(p.snapshot(session.id).run?.status).toBe("rejected");
+    await p.handleCommand({
+      user,
+      sessionId: session.id,
+      command: { type: "prompt", text: "Create app/PromptCreated.php again", attachments: [], mentions: [] },
+    });
+    expect(existsSync(join(ws.worktree, "app", "PromptCreated.php"))).toBe(true);
   });
 
   it("blocks spectator prompts and supports session search", async () => {

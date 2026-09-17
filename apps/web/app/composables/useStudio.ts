@@ -386,6 +386,8 @@ export function useStudio() {
     },
     { id: "new", label: t("command.newSession"), run: newSession },
     { id: "sync", label: t("command.sync"), run: () => sendCommand({ type: "sync_base" }) },
+    { id: "discard", label: t("command.discardProposal"), run: () => sendCommand({ type: "discard_proposal" }) },
+    { id: "push", label: t("command.push"), run: () => sendCommand({ type: "push_studio" }) },
     { id: "rules", label: t("command.rules"), run: () => (sheet.value = "rules") },
     { id: "skills", label: t("command.skills"), run: () => (sheet.value = "skills") },
     { id: "mcp", label: t("command.mcp"), run: () => (sheet.value = "mcp") },

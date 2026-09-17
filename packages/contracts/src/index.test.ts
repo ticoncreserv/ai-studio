@@ -40,4 +40,20 @@ describe("contracts", () => {
     if (command.type !== "prompt") throw new Error("expected prompt");
     expect(command.skill).toBe("land-it");
   });
+
+  it("parses proposal events and discard commands", () => {
+    const event = SessionEventSchema.parse({
+      type: "proposal",
+      id: "p1",
+      at: "t",
+      runId: "r1",
+      baseSha: "abc",
+      proposalSha: "def",
+      files: ["app/Models/User.php"],
+    });
+    if (event.type !== "proposal") throw new Error("expected proposal");
+    expect(event.files).toEqual(["app/Models/User.php"]);
+    expect(ClientCommandSchema.parse({ type: "discard_proposal" }).type).toBe("discard_proposal");
+    expect(ClientCommandSchema.parse({ type: "push_studio" }).type).toBe("push_studio");
+  });
 });

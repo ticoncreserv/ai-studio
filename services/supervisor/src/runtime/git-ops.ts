@@ -16,7 +16,19 @@ export async function git(
   const prefix = user ? gitEnv(user) : [];
   const { stdout } = await execFileAsync("git", [...prefix, ...args], {
     cwd,
-    env: { ...process.env, ...env, GIT_TERMINAL_PROMPT: "0" },
+    env: {
+      ...process.env,
+      ...env,
+      GIT_TERMINAL_PROMPT: "0",
+      ...(user
+        ? {
+            GIT_AUTHOR_NAME: user.name,
+            GIT_AUTHOR_EMAIL: user.email,
+            GIT_COMMITTER_NAME: user.name,
+            GIT_COMMITTER_EMAIL: user.email,
+          }
+        : {}),
+    },
     timeout: 120_000,
   });
   return stdout.trim();
