@@ -33,6 +33,7 @@ export default defineEventHandler(async (event) => {
     worktreeEnvPath: `var/workspaces/${id}/.env`,
     divergence: platform().workspaceDivergence(id),
     quota,
+    usage: platform().usageSummary(user.id),
     migrationLog: db.migrationLog,
     previewPath: `/-/p/${workspace.previewToken}/`,
     canEdit: canEditWorkspace,

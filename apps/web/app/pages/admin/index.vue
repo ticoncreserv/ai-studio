@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   BookOpen,
   Flag,
+  Gauge,
   KeyRound,
   LayoutGrid,
   LogOut,
@@ -16,11 +17,15 @@ import {
   Wand2,
 } from "@lucide/vue";
 import { serializeMcpConfig, type McpEntry, type McpPolicy, type SkillDefinition } from "@atelier/domain";
+import type { UsageProfile, UsageSummary } from "@atelier/contracts";
 
 const { t } = useI18n();
 const relativeTime = useRelativeTime();
 
-type Section = "overview" | "errors" | "env" | "providers" | "users" | "rules" | "skills" | "mcp" | "flags" | "workspaces";
+type Section = "overview" | "errors" | "env" | "providers" | "users" | "usage" | "rules" | "skills" | "mcp" | "flags" | "workspaces";
+
+type UsageRow = UsageSummary & { login: string; name: string };
+type UsagePayload = { profiles: UsageProfile[]; users: UsageRow[]; flags?: Record<string, boolean> };
 
 type ErrorHint = { id: string; title: string; detail: string; action?: string };
 type AdminError = {
@@ -88,6 +93,8 @@ const users = ref<
     repoOwner: boolean;
     disabled: boolean;
     canDisable: boolean;
+    usageProfileId: string;
+    usageProfileLabel: string;
     workspaceId: string | null;
     workspaceStatus: string | null;
     lastActiveAt: string | null;
@@ -97,6 +104,8 @@ const rules = ref<Array<{ id: string; level: "platform" | "project" | "user"; ti
 const globalSkills = ref<Array<{ name: string; description: string; paths: string; manualOnly: boolean; body: string }>>([]);
 const skillDraft = ref({ name: "", description: "", paths: "", manualOnly: true, body: "" });
 const pendingSkillDelete = ref<string | null>(null);
+const usageProfiles = ref<UsageProfile[]>([]);
+const usageUsers = ref<UsageRow[]>([]);
 const globalMcp = ref<McpEntry[]>([]);
 const mcpMode = ref<"form" | "raw">("form");
 const mcpRaw = ref("");
@@ -143,6 +152,7 @@ const navGroups: NavItem[][] = [
   ],
   [
     { id: "users", label: "admin.users", icon: Users },
+    { id: "usage", label: "admin.usage", icon: Gauge },
     { id: "workspaces", label: "admin.workspaces", icon: MonitorSmartphone },
   ],
   [
@@ -176,6 +186,8 @@ const flagList = [
   "geminiProvider",
   "grokProvider",
   "providerCanary",
+  "usageMetering",
+  "usageLimits",
 ] as const;
 
 function fold(text: string) {
@@ -246,8 +258,38 @@ const filteredErrors = computed(() => {
 
 const envEditor = ref<{ submit: () => void } | null>(null);
 
+function hydrateUsage(payload: UsagePayload) {
+  usageProfiles.value = payload.profiles;
+  usageUsers.value = payload.users;
+}
+
+async function saveUsageProfiles(profiles: UsageProfile[]) {
+  await wrap(async () => {
+    hydrateUsage(await $fetch<UsagePayload>("/api/admin/usage/profiles", { method: "PUT", body: { profiles } }));
+  });
+}
+
+async function assignUsageProfile(userId: string, profileId: string) {
+  await wrap(async () => {
+    await $fetch(`/api/admin/users/${userId}`, { method: "PATCH", body: { usageProfileId: profileId } });
+    const [usageRes, userRes] = await Promise.all([
+      $fetch<UsagePayload>("/api/admin/usage"),
+      $fetch<{ users: typeof users.value }>("/api/admin/users"),
+    ]);
+    hydrateUsage(usageRes);
+    users.value = userRes.users;
+  });
+}
+
+async function grantUsageTokens(userId: string, tokens: number, reason: string) {
+  await wrap(async () => {
+    await $fetch(`/api/admin/usage/${userId}/grant`, { method: "POST", body: { tokens, reason } });
+    hydrateUsage(await $fetch<UsagePayload>("/api/admin/usage"));
+  });
+}
+
 async function refreshData() {
-  const [over, envRes, providerRes, userRes, ruleRes, skillRes, mcpRes, workspaceRes, errorRes] = await Promise.all([
+  const [over, envRes, providerRes, userRes, ruleRes, skillRes, mcpRes, workspaceRes, errorRes, usageRes] = await Promise.all([
     $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
     $fetch<{ env: Record<string, string>; raw: string }>("/api/admin/env"),
     $fetch<{ providers: typeof providers.value }>("/api/admin/providers"),
@@ -257,7 +299,9 @@ async function refreshData() {
     $fetch<{ servers: McpEntry[]; policy: McpPolicy }>("/api/admin/mcp"),
     $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
     $fetch<{ errors: AdminError[] }>("/api/admin/errors"),
+    $fetch<UsagePayload>("/api/admin/usage"),
   ]);
+  hydrateUsage(usageRes);
   overview.value = over;
   env.value = envRes;
   providers.value = providerRes.providers;
@@ -1125,6 +1169,17 @@ function ruleHint(level: "platform" | "project" | "user") {
                 </div>
               </section>
 
+              <AdminUsageProfilesList
+                v-else-if="section === 'usage'"
+                :profiles="usageProfiles"
+                :users="usageUsers"
+                :busy="busy"
+                :limits-on="Boolean(overview?.flags.usageLimits)"
+                @save="saveUsageProfiles"
+                @assign="assignUsageProfile"
+                @grant="grantUsageTokens"
+              />
+
               <AdminProvidersList
                 v-else-if="section === 'providers'"
                 v-model:keys="providerKeys"
@@ -1175,6 +1230,18 @@ function ruleHint(level: "platform" | "project" | "user") {
                       </div>
                     </div>
                     <div class="cx-row-actions flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                      <select
+                        v-if="usageProfiles.length"
+                        :value="user.usageProfileId"
+                        class="cx-field w-[120px]"
+                        :disabled="busy"
+                        :aria-label="`${user.login} · ${t('admin.usageProfile')}`"
+                        @change="assignUsageProfile(user.id, ($event.target as HTMLSelectElement).value)"
+                      >
+                        <option v-for="profile in usageProfiles" :key="profile.id" :value="profile.id">
+                          {{ profile.label }}
+                        </option>
+                      </select>
                       <p v-if="user.repoOwner" class="cx-value text-right">{{ t("admin.ownerLocked") }}</p>
                       <p v-else-if="user.envAdmin" class="cx-value text-right">{{ t("admin.envLocked") }}</p>
                       <UiButton

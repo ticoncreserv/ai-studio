@@ -79,6 +79,16 @@ const {
 
 const railOpen = ref(true);
 
+const usageBlocked = computed(() => data.value?.usage?.decision.decision === "block");
+const usageNotice = computed(() => {
+  const usage = data.value?.usage;
+  if (!usage || usage.decision.decision === "allow" || !usage.decision.reason) return "";
+  const reason = t(`usage.reason.${usage.decision.reason}`);
+  return usage.decision.decision === "block"
+    ? t("usage.blocked", { reason })
+    : t("usage.warn", { reason, remaining: usage.remainingTokens });
+});
+
 const conversationTitle = computed(() => data.value?.session?.title || t("workspace.project"));
 const sessionIndex = computed(() =>
   data.value?.sessions.findIndex((session) => session.id === data.value?.session?.id) ?? -1,
@@ -188,6 +198,7 @@ function onFixDebug() {
           @retry="retryFailed"
         >
           <p v-if="data.agent?.error" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ t("chat.providerRequired") }}</p>
+          <p v-else-if="usageNotice" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ usageNotice }}</p>
           <StudioComposer
             v-model="prompt"
             :mode="mode"
@@ -211,6 +222,7 @@ function onFixDebug() {
             :skills-enabled="!!data?.flags?.skills"
             :mcp-enabled="!!data?.flags?.mcp"
             :can-edit="data.canEdit && !spectator"
+            :usage-blocked="usageBlocked"
             :queue="queue"
             @update:mode="mode = $event"
             @update:recipe-id="recipeId = $event"

@@ -1,4 +1,11 @@
-import type { AgentMode, ClientCommand, ProviderCapability, SessionEvent, Viewport } from "@atelier/contracts";
+import type {
+  AgentMode,
+  ClientCommand,
+  ProviderCapability,
+  SessionEvent,
+  UsageSummary,
+  Viewport,
+} from "@atelier/contracts";
 
 export interface StudioSession {
   id: string;
@@ -54,6 +61,7 @@ export interface StudioPayload {
   worktreeEnvPath: string;
   divergence: { pendingInBranch: string[]; extraInDatabase: string[] };
   quota: { usedMb: number; limitMb: number };
+  usage: UsageSummary;
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;
   previewPath: string;
   canEdit: boolean;
@@ -116,4 +124,4 @@ export type StudioSheet = "rules" | "connections" | "settings" | "skills" | "mcp
 export type StudioDialog = "share" | "invite" | "shortcuts" | "palette" | null;
 export type PreviewTool = "select" | "annotate" | "comment";
 
-export type { AgentMode, ClientCommand, SessionEvent, Viewport };
+export type { AgentMode, ClientCommand, SessionEvent, UsageSummary, Viewport };

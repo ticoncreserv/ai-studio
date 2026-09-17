@@ -2,6 +2,7 @@
 import { Command } from "@lucide/vue";
 import type { StudioDialog, StudioMcpServer, StudioPayload, StudioSheet, StudioSkill } from "~/types/studio";
 import type { SessionEvent } from "@atelier/contracts";
+import { formatTokens, usageBarTone, usageBarWidth } from "~/utils/usage";
 
 const props = defineProps<{
   data: StudioPayload;
@@ -38,6 +39,7 @@ const emit = defineEmits<{
 }>();
 
 const { t, locale, setLocale } = useI18n();
+const tokens = (value: number) => formatTokens(value, locale.value);
 
 const isolationEnv = computed(() => {
   const env = props.data.env?.env ?? {};
@@ -339,6 +341,23 @@ function submitQuestion() {
     <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-ink-100">
       <div class="h-full bg-coral-500" :style="{ width: `${Math.min(100, (data.quota.usedMb / data.quota.limitMb) * 100)}%` }" />
     </div>
+    <p class="mt-5 text-[12px] text-ink-400">{{ t("usage.title") }}</p>
+    <p class="mt-1 text-sm text-ink-600">
+      <span v-if="data.usage?.unlimited">{{ t("usage.unlimited", { profile: data.usage.profileLabel }) }}</span>
+      <span v-else-if="data.usage">
+        {{ t("usage.remaining", { remaining: tokens(data.usage.remainingTokens), limit: tokens(data.usage.limitTokens) }) }}
+      </span>
+    </p>
+    <div v-if="data.usage && !data.usage.unlimited" class="mt-2 h-1.5 overflow-hidden rounded-full bg-ink-100">
+      <div
+        class="h-full"
+        :class="usageBarTone(data.usage.decision.decision)"
+        :style="{ width: usageBarWidth(data.usage) }"
+      />
+    </div>
+    <p v-if="data.usage" class="mt-1 text-[12px] text-ink-500">
+      {{ t("usage.profileHint", { profile: data.usage.profileLabel }) }}
+    </p>
     <p class="mt-5 text-[12px] text-ink-400">{{ t("settings.envFileTitle") }}</p>
     <p class="mt-1 text-[12px] text-ink-500">{{ t("settings.envFileHint") }}</p>
     <p class="mt-2 text-[12px] text-ink-500">{{ t("settings.platformEnvHint") }}</p>
