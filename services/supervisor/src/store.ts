@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Role, SessionEvent, WorkspaceStatus } from "@atelier/contracts";
+import { defaultFlags } from "@atelier/domain";
 
 export interface UserRecord {
   id: string;
@@ -83,7 +84,7 @@ export interface RuleRecord {
   body: string;
 }
 
-interface DbShape {
+export interface DbShape {
   users: UserRecord[];
   workspaces: WorkspaceRecord[];
   sessions: SessionRecord[];
@@ -164,22 +165,7 @@ const emptyDb = (): DbShape => ({
     },
   ],
   members: [],
-  flags: {
-    publish: false,
-    multiProvider: false,
-    spectator: true,
-    recipes: true,
-    skills: true,
-    mcp: true,
-    secureWebSocket: true,
-    safeUploads: true,
-    sandboxedAgent: true,
-    transactionalReview: true,
-    validationGate: true,
-    autoPush: false,
-    workspaceQueue: true,
-    realProviderEvals: false,
-  },
+  flags: { ...defaultFlags },
   providers: { cursor: { enabled: true } },
   presence: [],
   runLock: {},
@@ -188,7 +174,16 @@ const emptyDb = (): DbShape => ({
   mcpPrefs: [],
 });
 
-export class JsonStore {
+export interface PlatformStore {
+  readonly path: string;
+  readonly kind: "json" | "postgres" | "shadow";
+  read(): DbShape;
+  write(db: DbShape): void;
+  update(mutator: (db: DbShape) => void): DbShape;
+}
+
+export class JsonStore implements PlatformStore {
+  readonly kind = "json" as const;
   constructor(private readonly file: string) {
     mkdirSync(dirname(file), { recursive: true });
     if (!existsSync(file)) this.write(emptyDb());

@@ -15,7 +15,7 @@ describe("cursor agent env", () => {
     expect(resolveSessionProvider("mock", { VITEST: "true", CURSOR_API_KEY: "crsr_test" })).toBe("mock");
     expect(resolveSessionProvider("mock", { CURSOR_API_KEY: "crsr_test" })).toBe("cursor");
     expect(resolveSessionProvider("cursor", {})).toBe("cursor");
-    expect(resolveSessionProvider("claude", { CURSOR_API_KEY: "crsr_test" })).toBe("cursor");
+    expect(resolveSessionProvider("claude", { CURSOR_API_KEY: "crsr_test" })).toBe("claude");
   });
 
   it("strips Origin-scoped Cursor session vars so CURSOR_API_KEY wins", () => {

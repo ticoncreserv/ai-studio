@@ -535,6 +535,44 @@ describe("platform", () => {
     p.saveUserMcp(user, { mcpServers: { notes: { url: "https://notes.example/mcp" } } });
     expect(p.mcpCatalog(ws.id, user).servers.some((row) => row.name === "notes" && row.source === "user")).toBe(true);
   });
+
+  it("lists extra providers only after flags, enablement, and credentials line up", () => {
+    const previousKey = process.env.ANTHROPIC_API_KEY;
+    const previousCanary = process.env.ATELIER_PROVIDER_CANARY;
+    const previousPath = process.env.PATH;
+    process.env.ANTHROPIC_API_KEY = "sk-test";
+    delete process.env.ATELIER_PROVIDER_CANARY;
+    try {
+      const p = platform();
+      const bin = join(dirs[dirs.length - 1]!, "bin");
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, "npx"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      process.env.PATH = `${bin}:${previousPath ?? "/usr/bin"}`;
+      expect(p.listProviders().map((row) => row.id).sort()).toEqual(["cursor", "mock"]);
+      p.saveFlags({ multiProvider: true, claudeProvider: true });
+      expect(p.listProviders().some((row) => row.id === "claude")).toBe(false);
+      p.saveProviderSettings({ id: "claude", enabled: true });
+      expect(p.listProviders().some((row) => row.id === "claude")).toBe(true);
+      expect(p.getProviderSettings().find((row) => row.id === "claude")).toMatchObject({
+        implemented: true,
+        hasKey: true,
+        health: "available",
+      });
+      p.saveFlags({ providerCanary: true });
+      expect(p.listProviders().some((row) => row.id === "claude")).toBe(false);
+      process.env.ATELIER_PROVIDER_CANARY = "1";
+      expect(p.listProviders().some((row) => row.id === "claude")).toBe(true);
+      p.saveProviderSettings({ id: "gemini", apiKey: "g-test" });
+      expect(p.getProviderSettings().find((row) => row.id === "gemini")?.hasKey).toBe(true);
+    } finally {
+      if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = previousKey;
+      if (previousCanary === undefined) delete process.env.ATELIER_PROVIDER_CANARY;
+      else process.env.ATELIER_PROVIDER_CANARY = previousCanary;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+  });
 });
 
 function addUser(p: Platform, login: string, role: UserRecord["role"] = "owner"): UserRecord {
