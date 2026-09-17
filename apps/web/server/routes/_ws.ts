@@ -35,4 +35,7 @@ export default defineWebSocketHandler({
   close(peer) {
     (peer as { _unsub?: () => void })._unsub?.();
   },
+  error() {
+    // Client reset the socket; ignore so it is not an unhandledRejection.
+  },
 });

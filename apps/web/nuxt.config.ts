@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
+import { installDisconnectGuard } from "./server/utils/disconnect-guard";
+
+installDisconnectGuard();
 
 const rootEnv = fileURLToPath(new URL("../../.env", import.meta.url));
 if (existsSync(rootEnv)) {

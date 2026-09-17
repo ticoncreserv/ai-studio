@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { request as httpRequest } from "node:http";
+import { createConnection } from "node:net";
 import { execFileSync } from "node:child_process";
 
 const TARGET = Number(process.env.NUXT_PORT || process.env.PORT || 43123);
@@ -93,20 +94,50 @@ function proxyRequest(req, res) {
       headers,
     },
     (incoming) => {
+      incoming.on("error", fail);
       res.writeHead(incoming.statusCode || 502, incoming.headers);
       incoming.pipe(res);
     },
   );
-  upstream.on("error", () => {
-    res.writeHead(302, { Location: studioLocation(req) });
+
+  function fail() {
+    upstream.destroy();
+    if (req.destroyed || res.writableEnded) return;
+    if (!res.headersSent) res.writeHead(302, { Location: studioLocation(req) });
     res.end();
-  });
+  }
+
+  upstream.on("error", fail);
+  req.on("error", fail);
+  res.on("error", () => upstream.destroy());
   req.pipe(upstream);
+}
+
+function proxyUpgrade(req, socket, head) {
+  socket.on("error", () => socket.destroy());
+  const upstream = createConnection({ port: TARGET, host: "127.0.0.1" }, () => {
+    const lines = [`${req.method} ${req.url} HTTP/1.1`];
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (value === undefined) continue;
+      if (Array.isArray(value)) {
+        for (const item of value) lines.push(`${key}: ${item}`);
+      } else {
+        lines.push(`${key}: ${value}`);
+      }
+    }
+    lines.push("", "");
+    upstream.write(lines.join("\r\n"));
+    if (head.length) upstream.write(head);
+    upstream.pipe(socket);
+    socket.pipe(upstream);
+  });
+  upstream.on("error", () => socket.destroy());
 }
 
 function listenPort(port) {
   return new Promise((resolve) => {
     const server = createServer(proxyRequest);
+    server.on("upgrade", proxyUpgrade);
     const fail = () => resolve(false);
     server.once("error", fail);
     server.listen({ port, host: "0.0.0.0" }, () => {
