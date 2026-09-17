@@ -651,10 +651,11 @@ export class Platform {
     }
     if (input.command.type === "fix_error") {
       const lastError = [...session.events].reverse().find((e) => e.type === "runtime_error");
+      const eventId = input.command.eventId;
       await this.enqueueWorkspace(ws.id, () =>
         this.runPrompt(input.user, session, ws, {
           type: "prompt",
-          text: `Fix this preview error: ${lastError && lastError.type === "runtime_error" ? lastError.message : input.command.eventId}`,
+          text: `Fix this preview error: ${lastError && lastError.type === "runtime_error" ? lastError.message : eventId}`,
           attachments: [],
           mentions: [],
         }),
@@ -710,6 +711,7 @@ export class Platform {
       return;
     }
     if (input.command.type === "answer_question") {
+      const answers = input.command.answers;
       this.store.update((d) => {
         const s = d.sessions.find((x) => x.id === session.id);
         if (!s) return;
@@ -718,7 +720,7 @@ export class Platform {
       await this.enqueueWorkspace(ws.id, () =>
         this.runPrompt(input.user, session, ws, {
           type: "prompt",
-          text: `Question answers: ${JSON.stringify(input.command.answers)}`,
+          text: `Question answers: ${JSON.stringify(answers)}`,
           attachments: [],
           mentions: [],
         }),

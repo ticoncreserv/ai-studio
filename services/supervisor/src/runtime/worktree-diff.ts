@@ -225,7 +225,7 @@ export async function createProposalCommit(
     : dirty
         .split("\n")
         .map((line) => porcelainPath(line))
-        .filter((path): path is string => Boolean(path) && !isStudioOnlyPath(path));
+        .filter((path): path is string => typeof path === "string" && !isStudioOnlyPath(path));
   if (!files.length) {
     await git(worktree, ["reset", "HEAD"], user).catch(() => undefined);
     return null;

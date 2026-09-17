@@ -2,7 +2,8 @@ import { authorizeSessionSocket, bus, getPlatform } from "@atelier/supervisor";
 
 export default defineWebSocketHandler({
   open(peer) {
-    const url = new URL(peer.url || "http://local/_ws", "http://local");
+    const rawUrl = "url" in peer ? String((peer as { url?: string }).url ?? "") : "";
+    const url = new URL(rawUrl || "http://local/_ws", "http://local");
     const sessionId = url.searchParams.get("session") || "";
     const headers = (peer as { request?: { headers?: Headers } }).request?.headers;
     const cookieHeader = headers?.get("cookie") ?? (peer as { context?: { cookies?: string } }).context?.cookies;
