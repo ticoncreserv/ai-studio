@@ -7,9 +7,9 @@ import {
   evaluateUsage,
   grantedTokens,
   mergeRollups,
+  normalizeUsageLimits,
   resolveUsageProfile,
   rollupFromEntries,
-  runBudgetFromProfile,
   splitExpiredEntries,
   summarizeUsage,
   usageDayKey,
@@ -64,13 +64,16 @@ describe("usage profiles", () => {
     const created = createUsageProfile("Agency", defaultUsageProfiles());
     expect(created.id).toBe("agency");
     expect(created.label).toBe("Agency");
-    expect(created.limits).toEqual(defaultUsageProfiles()[1]!.limits);
+    expect(created.limits).toEqual({ monthlyTokens: 20_000_000 });
   });
 
-  it("keeps the shared run budget when a profile sets no tool call cap", () => {
-    const profile = { ...defaultUsageProfiles()[1]!, limits: { ...defaultUsageProfiles()[1]!.limits, perRunToolCalls: 0 } };
-    expect(runBudgetFromProfile(profile).maxToolCalls).toBe(80);
-    expect(runBudgetFromProfile(defaultUsageProfiles()[0]!).maxToolCalls).toBe(40);
+  it("drops leftover daily and per-run caps from a stored profile", () => {
+    const leftover = {
+      ...defaultUsageProfiles()[0]!,
+      limits: { monthlyTokens: 5_000_000, dailyTokens: 1, perRunTokens: 1, perRunToolCalls: 1, monthlyCostUsd: 9 } as never,
+    };
+    expect(normalizeUsageLimits(leftover.limits)).toEqual({ monthlyTokens: 5_000_000 });
+    expect(resolveUsageProfile({ usageProfileId: "starter" }, [leftover]).limits).toEqual({ monthlyTokens: 5_000_000 });
   });
 });
 
@@ -96,7 +99,7 @@ describe("billable tokens", () => {
 });
 
 describe("aggregate", () => {
-  it("sums the open period and day", () => {
+  it("sums the open period", () => {
     const aggregate = aggregateUsage({
       entries: [
         entry(),
@@ -107,11 +110,9 @@ describe("aggregate", () => {
       rollups: [],
       userId: "u1",
       periodKey: "2026-09",
-      dayKey: "2026-09-10",
       meter: "max",
     });
     expect(aggregate.periodTokens).toBe(6_000);
-    expect(aggregate.dayTokens).toBe(3_000);
     expect(aggregate.periodCostUsd).toBe(0.25);
     expect(aggregate.runs).toBe(2);
     expect(aggregate.lastRunAt).toBe("2026-09-11T09:00:00.000Z");
@@ -119,26 +120,26 @@ describe("aggregate", () => {
 
   it("reads the rollup only when raw entries for the period are gone", () => {
     const rollups = [{ userId: "u1", periodKey: "2026-09", tokens: 500, costUsd: 1, runs: 4, lastRunAt: "2026-09-02T00:00:00.000Z" }];
-    const withRaw = aggregateUsage({ entries: [entry()], rollups, userId: "u1", periodKey: "2026-09", dayKey: "2026-09-10", meter: "max" });
+    const withRaw = aggregateUsage({ entries: [entry()], rollups, userId: "u1", periodKey: "2026-09", meter: "max" });
     expect(withRaw.periodTokens).toBe(3_000);
-    const pruned = aggregateUsage({ entries: [], rollups, userId: "u1", periodKey: "2026-09", dayKey: "2026-09-10", meter: "max" });
+    const pruned = aggregateUsage({ entries: [], rollups, userId: "u1", periodKey: "2026-09", meter: "max" });
     expect(pruned.periodTokens).toBe(500);
     expect(pruned.runs).toBe(4);
   });
 });
 
 describe("evaluate", () => {
-  const limits = { monthlyTokens: 10_000, dailyTokens: 5_000, perRunTokens: 1_000, perRunToolCalls: 10, monthlyCostUsd: 0 };
-  const aggregate = { periodTokens: 0, dayTokens: 0, periodCostUsd: 0, runs: 0, lastRunAt: null };
+  const limits = { monthlyTokens: 10_000 };
+  const aggregate = { periodTokens: 0, periodCostUsd: 0, runs: 0, lastRunAt: null };
 
-  it("allows a run inside every limit", () => {
+  it("allows a run inside the monthly limit", () => {
     const decision = evaluateUsage({ limits, aggregate, grantedTokens: 0, enforcement: "block", warnAtPercent: 80, pendingTokens: 100 });
     expect(decision).toEqual({ decision: "allow", reason: null });
   });
 
   it("treats 0 as unlimited", () => {
     const decision = evaluateUsage({
-      limits: { monthlyTokens: 0, dailyTokens: 0, perRunTokens: 0, perRunToolCalls: 0, monthlyCostUsd: 0 },
+      limits: { monthlyTokens: 0 },
       aggregate: { ...aggregate, periodTokens: 9_000_000 },
       grantedTokens: 0,
       enforcement: "block",
@@ -148,18 +149,17 @@ describe("evaluate", () => {
     expect(decision).toEqual({ decision: "allow", reason: null });
   });
 
-  it("blocks the per-run cap before the period caps", () => {
-    const decision = evaluateUsage({ limits, aggregate, grantedTokens: 0, enforcement: "block", warnAtPercent: 80, pendingTokens: 4_000 });
-    expect(decision).toEqual({ decision: "block", reason: "perRun" });
-  });
-
-  it("blocks the daily cap and the monthly cap", () => {
-    expect(
-      evaluateUsage({ limits, aggregate: { ...aggregate, dayTokens: 4_900 }, grantedTokens: 0, enforcement: "block", warnAtPercent: 80, pendingTokens: 200 }),
-    ).toEqual({ decision: "block", reason: "daily" });
+  it("blocks the monthly cap", () => {
     expect(
       evaluateUsage({ limits, aggregate: { ...aggregate, periodTokens: 9_950 }, grantedTokens: 0, enforcement: "block", warnAtPercent: 80, pendingTokens: 100 }),
     ).toEqual({ decision: "block", reason: "monthly" });
+  });
+
+  it("does not block on leftover daily or per-run numbers", () => {
+    const leftover = { monthlyTokens: 10_000, dailyTokens: 1, perRunTokens: 1, monthlyCostUsd: 0.01 } as typeof limits;
+    expect(
+      evaluateUsage({ limits: leftover, aggregate: { ...aggregate, periodTokens: 50, periodCostUsd: 12 }, grantedTokens: 0, enforcement: "block", warnAtPercent: 80, pendingTokens: 100 }),
+    ).toEqual({ decision: "allow", reason: null });
   });
 
   it("downgrades a block to a warning in warn mode", () => {
@@ -187,24 +187,11 @@ describe("evaluate", () => {
       evaluateUsage({ limits, aggregate, grantedTokens: 0, enforcement: "block", warnAtPercent: 80, provider: "grok", allowedProviders: [] }).decision,
     ).toBe("allow");
   });
-
-  it("blocks on the cost cap when a provider reports cost", () => {
-    expect(
-      evaluateUsage({
-        limits: { ...limits, monthlyCostUsd: 10 },
-        aggregate: { ...aggregate, periodCostUsd: 12 },
-        grantedTokens: 0,
-        enforcement: "block",
-        warnAtPercent: 80,
-      }),
-    ).toEqual({ decision: "block", reason: "cost" });
-  });
 });
 
 describe("summary", () => {
   it("reports remaining, percent, and the decision", () => {
-    const seed = defaultUsageProfiles()[0]!;
-    const profile = { ...seed, limits: { ...seed.limits, dailyTokens: 0 } };
+    const profile = defaultUsageProfiles()[0]!;
     const summary = summarizeUsage({
       userId: "u1",
       profile,
@@ -222,10 +209,13 @@ describe("summary", () => {
     expect(summary.decision).toEqual({ decision: "warn", reason: "monthly" });
   });
 
-  it("blocks on the daily cap even when the month still has room", () => {
+  it("still allows the month when a leftover daily cap would have blocked", () => {
     const summary = summarizeUsage({
       userId: "u1",
-      profile: defaultUsageProfiles()[0]!,
+      profile: {
+        ...defaultUsageProfiles()[0]!,
+        limits: { monthlyTokens: 5_000_000, dailyTokens: 100 } as never,
+      },
       entries: [entry({ estimatedTokens: 600_000, at: "2026-09-10T12:00:00.000Z" })],
       rollups: [],
       grants: [],
@@ -233,13 +223,14 @@ describe("summary", () => {
       tz: "America/Sao_Paulo",
     });
     expect(summary.remainingTokens).toBe(4_400_000);
-    expect(summary.decision).toEqual({ decision: "block", reason: "daily" });
+    expect(summary.decision).toEqual({ decision: "allow", reason: null });
+    expect(summary.limits).toEqual({ monthlyTokens: 5_000_000 });
   });
 
   it("marks an uncapped profile as unlimited", () => {
     const profile = {
       ...defaultUsageProfiles()[2]!,
-      limits: { monthlyTokens: 0, dailyTokens: 0, perRunTokens: 0, perRunToolCalls: 0, monthlyCostUsd: 0 },
+      limits: { monthlyTokens: 0 },
     };
     const summary = summarizeUsage({ userId: "u1", profile, entries: [entry()], rollups: [], grants: [] });
     expect(summary.unlimited).toBe(true);

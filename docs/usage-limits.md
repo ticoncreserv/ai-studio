@@ -5,8 +5,7 @@ the feature and for the decisions that are configuration rather than code.
 
 Locked configuration:
 
-- Seeds: starter 5M / standard 20M / premium 60M tokens per month (daily = 10% of monthly, per-run
-  and tool-call caps scale with the profile). Editable later in `/admin`.
+- Seeds: starter 5M / standard 20M / premium 60M tokens per month. Editable later in `/admin`.
 - `usageLimits` ships **on**, every seed in `block` mode.
 - Period reset: day 1 in `America/Sao_Paulo` (`ATELIER_USAGE_TZ`).
 - Admins are subject to their own profile. Extra room is an auditable grant, including self-grants.
@@ -70,10 +69,6 @@ it streams. `usage_update` is the correction signal when a provider sends it.
 ```ts
 export interface UsageLimits {
   monthlyTokens: number;   // 0 = unlimited
-  dailyTokens: number;     // 0 = unlimited
-  perRunTokens: number;    // 0 = unlimited
-  perRunToolCalls: number; // 0 = fall back to defaultBudget()
-  monthlyCostUsd: number;  // 0 = unlimited; only meaningful when a provider reports cost
 }
 
 export interface UsageProfile {
@@ -93,11 +88,11 @@ highest `used` a provider reported for the run, `max` takes the larger of the tw
 Seeds (all editable in `/admin`, numbers are a starting point to calibrate after one month of real
 metering):
 
-| Profile | monthly | daily | per run | tool calls | providers |
-| --- | --- | --- | --- | --- | --- |
-| `starter` | 5,000,000 | 500,000 | 200,000 | 40 | all allowed |
-| `standard` | 20,000,000 | 2,000,000 | 400,000 | 80 | all allowed |
-| `premium` | 60,000,000 | 6,000,000 | 800,000 | 160 | all allowed |
+| Profile | monthly tokens | providers |
+| --- | --- | --- |
+| `starter` | 5,000,000 | all allowed |
+| `standard` | 20,000,000 | all allowed |
+| `premium` | 60,000,000 | all allowed |
 
 Every seed ships with `providers: []`. A non-empty list is a restriction, so seeding one would mean
 that enabling a second provider in `/admin` silently blocks prompts on the two smaller profiles.
@@ -147,13 +142,12 @@ defaultUsageProfiles(): UsageProfile[];
 usagePeriodKey(at: Date, tz?: string): string;
 usageDayKey(at: Date, tz?: string): string;
 resolveUsageProfile(user, profiles, fallbackId): UsageProfile;
-summarizeUsage(input): UsageSummary;   // period/day totals, grants, remaining, percent
-evaluateUsage(input): UsageDecision;   // { decision: "allow" | "warn" | "block", reason, remaining }
-runBudgetFromProfile(profile): RunBudget;  // bridges into the existing budget check
+summarizeUsage(input): UsageSummary;   // period tokens, grants, remaining, percent
+evaluateUsage(input): UsageDecision;   // { decision: "allow" | "warn" | "block", reason }
 ```
 
-`UsageDecision.reason` is `"monthly" | "daily" | "perRun" | "cost" | "provider" | null`.
-`0` means unlimited everywhere. `evaluateUsage` takes a `pendingEstimate` so the pre-flight check
+`UsageDecision.reason` is `"monthly" | "provider" | null`.
+`0` means unlimited. `evaluateUsage` takes a `pendingEstimate` so the pre-flight check
 can reject a prompt that would cross the cap instead of starting a run it must kill.
 
 ## 6. Accounting
@@ -184,11 +178,13 @@ provider process. On `block`: append a `budget` event with the new reason, appen
 `rejected`, and throw a typed `UsageLimitError` that the Nitro route maps to **429** with
 `data.usage` so the composer can render the real numbers. On `warn`: proceed and append the event.
 
-**Mid-run** — the existing `budgetExceeded` call in the run's `onEvent` closure gains the per-run
-token cap using the live output estimate, and cancels with the new reason.
+**Mid-run** — if the live billable tokens for this run plus the period total would exceed the
+monthly cap, cancel with `budget` reason `"period"`. Runaway protection (duration, tool calls,
+USD) stays on the orthogonal `defaultBudget()` in `packages/domain/src/budget.ts` and is not
+scaled by the usage plan.
 
-Contracts change: the `budget` event `reason` enum grows from `["duration","toolCalls","cost"]` to
-include `"tokens"` (per-run cap) and `"period"` (monthly/daily cap).
+Contracts: the `budget` event `reason` enum keeps `"tokens"` and `"period"` for stored events;
+new usage-limit stops emit `"period"`.
 
 Admins are **not** exempt by default; an admin who needs room grants it to themselves and the grant
 is on the record.
@@ -213,10 +209,10 @@ All `/api/admin/*` routes keep `requirePlatformAdmin`. The workspace payload
 New nav item in the group that holds Providers and Env (`apps/web/app/pages/admin/index.vue`
 `navGroups`). One component, `components/admin/UsageProfilesList.vue`, holds both surfaces:
 
-- profile cards — monthly / daily / per-run tokens, tool calls, cost cap, enforcement
-  (`block` / `warn`), warn threshold, meter. Inline validation, one Save.
-- consumption table — login, profile `<select>`, period tokens vs limit as a bar (same visual
-  language as the disk quota bar), cost, last run, grant action.
+- profile cards — monthly tokens, enforcement (`block` / `warn`), warn threshold, meter. Inline
+  validation, one Save.
+- people on each plan — login, period tokens vs limit as a bar (same visual language as the disk
+  quota bar), last run, grant action.
 
 The existing Users section also gets the profile `<select>` on each row, because that is where
 admins already manage people.
@@ -270,12 +266,12 @@ them, so shipping enforcement on means shipping all six.
 
 ## 12. Tests
 
-- **domain**: period/day keys across a month boundary and a DST-free timezone; `0` means unlimited;
-  `warn` vs `block`; grants add room; `perRun` vs `monthly` precedence; `runBudgetFromProfile`
-  falls back to `defaultBudget()`; `meter: "max"` picks the larger of estimate and context peak.
+- **domain**: period keys across a month boundary and a DST-free timezone; `0` means unlimited;
+  `warn` vs `block`; grants add room; leftover daily/per-run fields are ignored; `meter: "max"`
+  picks the larger of estimate and context peak.
 - **supervisor**: a mock run writes exactly one ledger entry with input and output tokens;
   cumulative `cost.amount` is not double counted across two runs in one session; pre-flight block
-  appends a `budget` event and never calls `provider.start`; mid-run per-run cap cancels the run;
+  appends a `budget` event and never calls `provider.start`; mid-run monthly cap cancels the run;
   rollups match a raw scan; retention prune keeps rollups; store flatten/assemble round-trips the
   new arrays (`compareStoreShapes` returns `[]`); profile save rejects negative numbers.
 - **web**: i18n parity; the usage bar/percent helper.

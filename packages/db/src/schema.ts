@@ -178,6 +178,7 @@ export const usageProfiles = pgTable("usage_profiles", {
   id: text("id").primaryKey(),
   label: text("label").notNull(),
   monthlyTokens: integer("monthly_tokens").notNull().default(0),
+  // Unused by the app (monthly tokens is the only plan cap). Kept so existing snapshots still load.
   dailyTokens: integer("daily_tokens").notNull().default(0),
   perRunTokens: integer("per_run_tokens").notNull().default(0),
   perRunToolCalls: integer("per_run_tool_calls").notNull().default(0),

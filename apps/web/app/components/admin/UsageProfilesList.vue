@@ -2,7 +2,7 @@
 import { ChevronRight, Plus, Search, Trash2 } from "@lucide/vue";
 import type { UsageProfile, UsageSummary } from "@atelier/contracts";
 import { createUsageProfile } from "@atelier/domain";
-import { formatTokenCompact, formatTokens, usageBarTone, usageBarWidth } from "~/utils/usage";
+import { formatTokens, usageBarTone, usageBarWidth } from "~/utils/usage";
 
 type UsageRow = UsageSummary & { login: string; name: string };
 
@@ -23,7 +23,6 @@ const emit = defineEmits<{
 const { t, locale } = useI18n();
 const relativeTime = useRelativeTime();
 const tokens = (value: number) => formatTokens(value, locale.value);
-const compact = (value: number) => formatTokenCompact(value, locale.value);
 
 const drafts = ref<UsageProfile[]>(clone(props.profiles));
 const grantDraft = reactive<Record<string, string>>({});
@@ -68,8 +67,6 @@ function isDirty(profile: UsageProfile) {
   if (!source) return true;
   return JSON.stringify(profile) !== JSON.stringify(source);
 }
-
-const limitFields = ["dailyTokens", "perRunTokens", "perRunToolCalls"] as const;
 
 const dirty = computed(() => drafts.value.some(isDirty));
 
@@ -120,9 +117,9 @@ function peopleCountLabel(count: number) {
   return t("admin.usagePeopleCount", count, { count });
 }
 
-function setLimit(profile: UsageProfile, field: keyof UsageProfile["limits"], raw: string) {
-  const numeric = field === "monthlyCostUsd" ? Number(raw.replace(",", ".")) : Number(raw.replace(/\D/g, ""));
-  profile.limits[field] = Number.isFinite(numeric) && numeric > 0 ? (field === "monthlyCostUsd" ? numeric : Math.trunc(numeric)) : 0;
+function setMonthlyTokens(profile: UsageProfile, raw: string) {
+  const numeric = Number(raw.replace(/\D/g, ""));
+  profile.limits.monthlyTokens = Number.isFinite(numeric) && numeric > 0 ? Math.trunc(numeric) : 0;
 }
 
 function addPlan() {
@@ -269,50 +266,13 @@ function savePlans() {
           inputmode="numeric"
           class="cx-usage-ledger"
           :aria-label="t('admin.usageLimit.monthlyTokens')"
-          @input="setLimit(profile, 'monthlyTokens', ($event.target as HTMLInputElement).value)"
+          @input="setMonthlyTokens(profile, ($event.target as HTMLInputElement).value)"
         />
         <p class="cx-row-desc mt-2">
-          <template v-if="profile.limits.monthlyTokens > 0">
-            {{
-              t("admin.usageLedgerHint", {
-                daily: compact(profile.limits.dailyTokens),
-                run: compact(profile.limits.perRunTokens),
-                tools:
-                  profile.limits.perRunToolCalls > 0
-                    ? t("admin.usageLedgerTools", { count: profile.limits.perRunToolCalls })
-                    : t("admin.usageNoToolCap"),
-              })
-            }}
-          </template>
+          <template v-if="profile.limits.monthlyTokens > 0">{{ t("admin.usageZeroHintShort") }}</template>
           <template v-else>{{ t("admin.usageNoMonthlyCap") }}</template>
         </p>
       </div>
-
-      <div class="cx-usage-spec">
-        <div v-for="field in limitFields" :key="field" class="cx-usage-spec-cell">
-          <label :for="`${field}-${profile.id}`">{{ t(`admin.usageLimitShort.${field}`) }}</label>
-          <input
-            :id="`${field}-${profile.id}`"
-            :value="tokens(profile.limits[field])"
-            inputmode="numeric"
-            class="cx-field w-full"
-            :aria-label="t(`admin.usageLimit.${field}`)"
-            @input="setLimit(profile, field, ($event.target as HTMLInputElement).value)"
-          />
-        </div>
-        <div class="cx-usage-spec-cell">
-          <label :for="`cost-${profile.id}`">{{ t("admin.usageLimitShort.monthlyCostUsd") }}</label>
-          <input
-            :id="`cost-${profile.id}`"
-            :value="profile.limits.monthlyCostUsd"
-            inputmode="decimal"
-            class="cx-field w-full"
-            :aria-label="t('admin.usageLimit.monthlyCostUsd')"
-            @input="setLimit(profile, 'monthlyCostUsd', ($event.target as HTMLInputElement).value)"
-          />
-        </div>
-      </div>
-      <p class="px-4 py-2.5 text-[11px] text-ink-400">{{ t("admin.usageZeroHintShort") }}</p>
 
       <div class="admin-plan-drawer">
         <button
@@ -347,7 +307,6 @@ function savePlans() {
                 <p class="admin-plan-facts">
                   <span v-if="row.unlimited">{{ t("admin.usageUnlimited", { used: tokens(row.periodTokens) }) }}</span>
                   <span v-else>{{ t("admin.usageOfLimit", { used: tokens(row.periodTokens), limit: tokens(row.limitTokens) }) }}</span>
-                  <span v-if="row.periodCostUsd > 0">{{ t("admin.usageCost", { cost: row.periodCostUsd }) }}</span>
                   <span v-if="row.grantedTokens > 0">{{ t("admin.usageGranted", { tokens: tokens(row.grantedTokens) }) }}</span>
                   <span v-if="row.lastRunAt">{{ relativeTime(row.lastRunAt) }}</span>
                 </p>

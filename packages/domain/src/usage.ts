@@ -1,5 +1,4 @@
 import type { UsageDecision, UsageLimits, UsageProfile, UsageSummary } from "@atelier/contracts";
-import { defaultBudget, type RunBudget } from "./budget.js";
 
 export const DEFAULT_USAGE_PROFILE_ID = "standard";
 
@@ -53,13 +52,7 @@ export function defaultUsageProfiles(): UsageProfile[] {
     {
       id: "starter",
       label: "Starter",
-      limits: {
-        monthlyTokens: 5_000_000,
-        dailyTokens: 500_000,
-        perRunTokens: 200_000,
-        perRunToolCalls: 40,
-        monthlyCostUsd: 0,
-      },
+      limits: { monthlyTokens: 5_000_000 },
       enforcement: "block",
       warnAtPercent: 80,
       meter: "max",
@@ -68,13 +61,7 @@ export function defaultUsageProfiles(): UsageProfile[] {
     {
       id: DEFAULT_USAGE_PROFILE_ID,
       label: "Standard",
-      limits: {
-        monthlyTokens: 20_000_000,
-        dailyTokens: 2_000_000,
-        perRunTokens: 400_000,
-        perRunToolCalls: 80,
-        monthlyCostUsd: 0,
-      },
+      limits: { monthlyTokens: 20_000_000 },
       enforcement: "block",
       warnAtPercent: 80,
       meter: "max",
@@ -83,13 +70,7 @@ export function defaultUsageProfiles(): UsageProfile[] {
     {
       id: "premium",
       label: "Premium",
-      limits: {
-        monthlyTokens: 60_000_000,
-        dailyTokens: 6_000_000,
-        perRunTokens: 800_000,
-        perRunToolCalls: 160,
-        monthlyCostUsd: 0,
-      },
+      limits: { monthlyTokens: 60_000_000 },
       enforcement: "block",
       warnAtPercent: 80,
       meter: "max",
@@ -121,7 +102,7 @@ export function createUsageProfile(label: string, existing: UsageProfile[]): Usa
   return {
     id: usageProfileIdFromLabel(trimmed, existing.map((row) => row.id)),
     label: trimmed || template.label,
-    limits: { ...template.limits },
+    limits: normalizeUsageLimits(template.limits),
     enforcement: template.enforcement,
     warnAtPercent: template.warnAtPercent,
     meter: template.meter,
@@ -151,13 +132,27 @@ export function usageDayKey(at: Date = new Date(), tz: string = DEFAULT_USAGE_TZ
   return `${year}-${month}-${day}`;
 }
 
+export function normalizeUsageLimits(limits: { monthlyTokens?: number } | undefined): UsageLimits {
+  const monthly = Number(limits?.monthlyTokens);
+  return { monthlyTokens: Number.isFinite(monthly) && monthly > 0 ? Math.trunc(monthly) : 0 };
+}
+
+/** Drop leftover daily / per-run / cost caps from profiles saved before monthly-only limits. */
+export function normalizeUsageProfile(row: UsageProfile): UsageProfile {
+  return {
+    ...row,
+    limits: normalizeUsageLimits(row.limits),
+    providers: [...(row.providers ?? [])],
+  };
+}
+
 export function resolveUsageProfile(
   user: { usageProfileId?: string },
   profiles: UsageProfile[],
   fallbackId: string = DEFAULT_USAGE_PROFILE_ID,
 ): UsageProfile {
   const seeds = defaultUsageProfiles();
-  const pool = profiles.length ? profiles : seeds;
+  const pool = (profiles.length ? profiles : seeds).map(normalizeUsageProfile);
   return (
     pool.find((row) => row.id === user.usageProfileId)
     ?? pool.find((row) => row.id === fallbackId)
@@ -176,17 +171,8 @@ export function billableTokens(
   return Math.max(entry.estimatedTokens, entry.contextPeakTokens);
 }
 
-export function runBudgetFromProfile(profile: UsageProfile): RunBudget {
-  const base = defaultBudget();
-  return {
-    ...base,
-    maxToolCalls: profile.limits.perRunToolCalls > 0 ? profile.limits.perRunToolCalls : base.maxToolCalls,
-  };
-}
-
 export interface UsageAggregate {
   periodTokens: number;
-  dayTokens: number;
   periodCostUsd: number;
   runs: number;
   lastRunAt: string | null;
@@ -197,12 +183,10 @@ export function aggregateUsage(input: {
   rollups: UsageRollup[];
   userId: string;
   periodKey: string;
-  dayKey: string;
   meter: UsageProfile["meter"];
 }): UsageAggregate {
   const own = input.entries.filter((entry) => entry.userId === input.userId);
   const period = own.filter((entry) => entry.periodKey === input.periodKey);
-  const day = own.filter((entry) => entry.dayKey === input.dayKey);
   // Rollups cover periods whose raw entries were pruned; raw entries are the
   // truth for whatever is still on disk, so never add both for one period.
   const rollup = period.length
@@ -213,7 +197,6 @@ export function aggregateUsage(input: {
   const lastRaw = period.map((entry) => entry.at).sort().at(-1) ?? null;
   return {
     periodTokens: rollup ? rollup.tokens : sum(period),
-    dayTokens: sum(day),
     periodCostUsd: rollup ? rollup.costUsd : period.reduce((total, entry) => total + entry.costUsd, 0),
     runs: rollup ? rollup.runs : period.length,
     lastRunAt: rollup ? rollup.lastRunAt : lastRaw,
@@ -242,24 +225,12 @@ export function evaluateUsage(input: {
     return { decision: "block", reason: "provider" };
   }
   const monthlyCap = input.limits.monthlyTokens > 0 ? input.limits.monthlyTokens + input.grantedTokens : 0;
-  const over: UsageDecision["reason"][] = [];
-  if (input.limits.perRunTokens > 0 && pending > input.limits.perRunTokens) over.push("perRun");
-  if (input.limits.dailyTokens > 0 && input.aggregate.dayTokens + pending > input.limits.dailyTokens) {
-    over.push("daily");
+  if (monthlyCap > 0 && input.aggregate.periodTokens + pending > monthlyCap) {
+    return { decision: input.enforcement === "block" ? "block" : "warn", reason: "monthly" };
   }
-  if (monthlyCap > 0 && input.aggregate.periodTokens + pending > monthlyCap) over.push("monthly");
-  if (input.limits.monthlyCostUsd > 0 && input.aggregate.periodCostUsd > input.limits.monthlyCostUsd) {
-    over.push("cost");
-  }
-  const first = over[0] ?? null;
-  if (first) return { decision: input.enforcement === "block" ? "block" : "warn", reason: first };
   if (monthlyCap > 0) {
     const percent = ((input.aggregate.periodTokens + pending) / monthlyCap) * 100;
     if (percent >= input.warnAtPercent) return { decision: "warn", reason: "monthly" };
-  }
-  if (input.limits.dailyTokens > 0) {
-    const percent = ((input.aggregate.dayTokens + pending) / input.limits.dailyTokens) * 100;
-    if (percent >= input.warnAtPercent) return { decision: "warn", reason: "daily" };
   }
   return { decision: "allow", reason: null };
 }
@@ -275,6 +246,7 @@ export function summarizeUsage(input: {
   pendingTokens?: number;
   provider?: string;
 }): UsageSummary {
+  const profile = normalizeUsageProfile(input.profile);
   const at = input.at ?? new Date();
   const tz = input.tz ?? DEFAULT_USAGE_TZ;
   const periodKey = usagePeriodKey(at, tz);
@@ -284,41 +256,38 @@ export function summarizeUsage(input: {
     rollups: input.rollups,
     userId: input.userId,
     periodKey,
-    dayKey,
-    meter: input.profile.meter,
+    meter: profile.meter,
   });
   const granted = grantedTokens(input.grants, input.userId, periodKey);
-  const monthlyCap = input.profile.limits.monthlyTokens > 0 ? input.profile.limits.monthlyTokens + granted : 0;
+  const monthlyCap = profile.limits.monthlyTokens > 0 ? profile.limits.monthlyTokens + granted : 0;
   const decision = evaluateUsage({
-    limits: input.profile.limits,
+    limits: profile.limits,
     aggregate,
     grantedTokens: granted,
-    enforcement: input.profile.enforcement,
-    warnAtPercent: input.profile.warnAtPercent,
+    enforcement: profile.enforcement,
+    warnAtPercent: profile.warnAtPercent,
     pendingTokens: input.pendingTokens,
     provider: input.provider,
-    allowedProviders: input.profile.providers,
+    allowedProviders: profile.providers,
   });
   return {
     userId: input.userId,
-    profileId: input.profile.id,
-    profileLabel: input.profile.label,
-    enforcement: input.profile.enforcement,
-    meter: input.profile.meter,
-    warnAtPercent: input.profile.warnAtPercent,
+    profileId: profile.id,
+    profileLabel: profile.label,
+    enforcement: profile.enforcement,
+    meter: profile.meter,
+    warnAtPercent: profile.warnAtPercent,
     periodKey,
     dayKey,
     periodTokens: aggregate.periodTokens,
-    dayTokens: aggregate.dayTokens,
-    periodCostUsd: Math.round(aggregate.periodCostUsd * 10_000) / 10_000,
     grantedTokens: granted,
     runs: aggregate.runs,
-    limits: input.profile.limits,
+    limits: profile.limits,
     limitTokens: monthlyCap,
     remainingTokens: monthlyCap > 0 ? Math.max(0, monthlyCap - aggregate.periodTokens) : 0,
     percentUsed: monthlyCap > 0 ? Math.min(100, Math.round((aggregate.periodTokens / monthlyCap) * 100)) : 0,
     unlimited: monthlyCap === 0,
-    providers: input.profile.providers,
+    providers: profile.providers,
     decision,
     lastRunAt: aggregate.lastRunAt,
   };
