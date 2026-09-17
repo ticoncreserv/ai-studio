@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git } from "./git-ops.js";
-import { commitWorktree, restoreFile, splitHunks, syncBaseBranch, worktreeDiffEvents, worktreeFingerprint } from "./worktree-diff.js";
+import { commitWorktree, createProposalCommit, restoreFile, splitHunks, syncBaseBranch, worktreeDiffEvents, worktreeFileStates, worktreeFingerprint, changedWorktreePaths } from "./worktree-diff.js";
 
 const dirs: string[] = [];
 const user = { name: "Ada", email: "ada@example.com" };
@@ -77,6 +77,49 @@ describe("worktree diffs", () => {
     expect(await worktreeFingerprint(dir)).toBe(before);
     writeFileSync(join(dir, "keep.txt"), "changed\n");
     expect(await worktreeFingerprint(dir)).not.toBe(before);
+  });
+
+  it("creates a proposal commit without moving HEAD", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-proposal-"));
+    dirs.push(dir);
+    await git(dir, ["init"]);
+    writeFileSync(join(dir, "page.vue"), "old\n");
+    await git(dir, ["add", "-A"], user);
+    await git(dir, ["commit", "-m", "base"], user);
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+    writeFileSync(join(dir, "page.vue"), "new\n");
+    const proposal = await createProposalCommit(dir, user, "proposal");
+    expect(proposal?.baseSha).toBe(head);
+    expect(proposal?.proposalSha).toMatch(/^[0-9a-f]{7,}$/);
+    expect(proposal?.files).toContain("page.vue");
+    expect(await git(dir, ["rev-parse", "HEAD"])).toBe(head);
+  });
+
+  it("isolates prompt-changed files from leftover dirty paths", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-isolate-"));
+    dirs.push(dir);
+    await git(dir, ["init"]);
+    writeFileSync(join(dir, "keep.txt"), "ok\n");
+    writeFileSync(join(dir, "leftover.txt"), "stale\n");
+    await git(dir, ["add", "-A"], user);
+    await git(dir, ["commit", "-m", "base"], user);
+    writeFileSync(join(dir, "leftover.txt"), "still dirty\n");
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+    const before = await worktreeFileStates(dir);
+    writeFileSync(join(dir, "created.php"), "<?php\n");
+    const changed = changedWorktreePaths(before, await worktreeFileStates(dir));
+    expect(changed).toEqual(["created.php"]);
+    const events = await worktreeDiffEvents(dir, changed);
+    expect(events).toHaveLength(1);
+    if (events[0]?.type === "diff") expect(events[0].filePath).toBe("created.php");
+    const proposal = await createProposalCommit(dir, user, "create file", changed);
+    expect(proposal?.files).toEqual(["created.php"]);
+    expect(proposal?.baseSha).toBe(head);
+    expect(await git(dir, ["rev-parse", "HEAD"])).toBe(head);
+    const sha = await commitWorktree(dir, user, "accept", changed);
+    expect(sha).toMatch(/^[0-9a-f]{7,}$/);
+    expect(await git(dir, ["status", "--porcelain", "--", "created.php"])).toBe("");
+    expect(await git(dir, ["status", "--porcelain", "--", "leftover.txt"])).toMatch(/leftover/);
   });
 
   it("detects content changes to an existing untracked file", async () => {

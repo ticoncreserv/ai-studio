@@ -40,13 +40,36 @@ export async function worktreeFingerprint(worktree: string): Promise<string> {
   return fingerprint.digest("hex");
 }
 
-export async function worktreeDiffEvents(worktree: string): Promise<SessionEvent[]> {
+export async function worktreeFileStates(worktree: string): Promise<Record<string, string>> {
+  const status = await git(worktree, ["status", "--porcelain"]).catch(() => "");
+  const states: Record<string, string> = {};
+  for (const line of status.split("\n").filter(Boolean)) {
+    const path = porcelainPath(line);
+    if (!path || isStudioOnlyPath(path)) continue;
+    const target = join(worktree, path);
+    if (existsSync(target) && statSync(target).isDirectory()) continue;
+    try {
+      states[path] = existsSync(target) ? createHash("sha256").update(readFileSync(target)).digest("hex") : "deleted";
+    } catch {
+      states[path] = `unreadable:${line}`;
+    }
+  }
+  return states;
+}
+
+export function changedWorktreePaths(before: Record<string, string>, after: Record<string, string>): string[] {
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((path) => before[path] !== after[path]);
+}
+
+export async function worktreeDiffEvents(worktree: string, only?: string[]): Promise<SessionEvent[]> {
+  const allowed = only ? new Set(only) : null;
   const status = await git(worktree, ["status", "--porcelain"]).catch(() => "");
   if (!status.trim()) return [];
   const events: SessionEvent[] = [];
   for (const line of status.split("\n").filter(Boolean)) {
     const path = porcelainPath(line);
     if (!path || isStudioOnlyPath(path)) continue;
+    if (allowed && !allowed.has(path)) continue;
     const target = join(worktree, path);
     if (existsSync(target) && statSync(target).isDirectory()) continue;
     let contents = "";
@@ -153,17 +176,101 @@ export async function restoreFile(worktree: string, filePath: string, rev = "HEA
   });
 }
 
+export async function restoreProposalFiles(worktree: string, files: string[], rev: string): Promise<void> {
+  for (const file of files) {
+    await restoreFile(worktree, file, rev);
+  }
+}
+
 export async function commitWorktree(
   worktree: string,
   user: { name: string; email: string },
   message: string,
+  only?: string[],
 ): Promise<string | null> {
-  await git(worktree, ["add", "-A"], user);
-  await git(worktree, ["reset", "HEAD", "--", ".env", ".cursor", "var/uploads"], user).catch(() => undefined);
+  if (only?.length) {
+    await git(worktree, ["add", "--", ...only], user);
+  } else {
+    await git(worktree, ["add", "-A"], user);
+    await git(worktree, ["reset", "HEAD", "--", ".env", ".cursor", "var/uploads"], user).catch(() => undefined);
+  }
   const dirty = await git(worktree, ["status", "--porcelain"]);
   if (!dirty.trim()) return null;
   await git(worktree, ["commit", "-m", message], user);
   return git(worktree, ["rev-parse", "HEAD"]);
+}
+
+export async function currentHead(worktree: string): Promise<string> {
+  return git(worktree, ["rev-parse", "HEAD"]);
+}
+
+export async function createProposalCommit(
+  worktree: string,
+  user: { name: string; email: string },
+  message: string,
+  only?: string[],
+): Promise<{ baseSha: string; proposalSha: string; files: string[] } | null> {
+  const baseSha = await currentHead(worktree);
+  const scoped = only?.filter((path) => path && !isStudioOnlyPath(path));
+  if (scoped && !scoped.length) return null;
+  if (scoped?.length) {
+    await git(worktree, ["add", "--", ...scoped], user);
+  } else {
+    await git(worktree, ["add", "-A"], user);
+    await git(worktree, ["reset", "HEAD", "--", ".env", ".cursor", "var/uploads"], user).catch(() => undefined);
+  }
+  const dirty = await git(worktree, ["status", "--porcelain"]);
+  const files = scoped?.length
+    ? scoped
+    : dirty
+        .split("\n")
+        .map((line) => porcelainPath(line))
+        .filter((path): path is string => Boolean(path) && !isStudioOnlyPath(path));
+  if (!files.length) {
+    await git(worktree, ["reset", "HEAD"], user).catch(() => undefined);
+    return null;
+  }
+  const tree = await git(worktree, ["write-tree"], user);
+  const headTree = await git(worktree, ["rev-parse", `${baseSha}^{tree}`], user).catch(() => "");
+  if (tree === headTree) {
+    await git(worktree, ["reset", "HEAD"], user).catch(() => undefined);
+    return null;
+  }
+  const proposalSha = await git(worktree, ["commit-tree", tree, "-p", baseSha, "-m", message], user);
+  await git(worktree, ["update-ref", `refs/atelier/proposals/${proposalSha.slice(0, 12)}`, proposalSha], user);
+  await git(worktree, ["reset", "HEAD"], user).catch(() => undefined);
+  return { baseSha, proposalSha, files };
+}
+
+function authedOrigin(origin: string, token?: string): string {
+  if (token && origin.startsWith("https://github.com/")) {
+    return origin.replace("https://github.com/", `https://x-access-token:${token}@github.com/`);
+  }
+  return origin;
+}
+
+export async function pushStudioBranch(
+  worktree: string,
+  user: { name: string; email: string },
+  token?: string,
+): Promise<{ status: "pushed" | "conflict" | "skipped" | "failed"; sha?: string; message: string; remote: string }> {
+  const remotes = await git(worktree, ["remote"]).catch(() => "");
+  if (!remotes.includes("origin")) {
+    return { status: "skipped", message: "No origin remote is configured on this workspace.", remote: "origin" };
+  }
+  const origin = await git(worktree, ["remote", "get-url", "origin"]).catch(() => "origin");
+  const sha = await currentHead(worktree).catch(() => "");
+  const branch = (await git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "")).trim() || "HEAD";
+  try {
+    await git(worktree, ["push", authedOrigin(origin, token), `HEAD:refs/heads/${branch}`], user);
+    return { status: "pushed", sha, message: `Pushed ${branch} ${sha.slice(0, 8)}`, remote: origin };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (/non-fast-forward|rejected|fetch first/i.test(detail)) {
+      return { status: "conflict", sha, message: `Remote ${branch} moved. Fetch and reconcile before pushing.`, remote: origin };
+    }
+    return { status: "failed", sha, message: detail, remote: origin };
+  }
 }
 
 export async function syncBaseBranch(
