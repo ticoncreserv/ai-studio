@@ -76,6 +76,34 @@ export const ProviderHealthSchema = z.object({
 });
 export type ProviderHealth = z.infer<typeof ProviderHealthSchema>;
 
+/** Why a key stopped answering. Drives the cooldown, never shown to the end user. */
+export const ProviderKeyFailureSchema = z.enum(["auth", "quota", "rate_limit"]);
+export type ProviderKeyFailure = z.infer<typeof ProviderKeyFailureSchema>;
+
+/**
+ * One API key slot of a provider. `ref` is the env key name the secret lives
+ * under (`CURSOR_API_KEY`, `CURSOR_API_KEY_2`, ...); the value never leaves the host.
+ */
+export const ProviderKeyStateSchema = z.object({
+  ref: z.string().min(1),
+  label: z.string().default(""),
+  enabled: z.boolean().default(true),
+  failures: z.number().int().min(0).default(0),
+  lastUsedAt: z.string().nullable().default(null),
+  lastFailureAt: z.string().nullable().default(null),
+  cooldownUntil: z.string().nullable().default(null),
+  lastError: z.string().nullable().default(null),
+  lastFailureKind: ProviderKeyFailureSchema.nullable().default(null),
+});
+export type ProviderKeyState = z.infer<typeof ProviderKeyStateSchema>;
+
+export const ProviderModelSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().default(""),
+  description: z.string().optional(),
+});
+export type ProviderModel = z.infer<typeof ProviderModelSchema>;
+
 export const UsageMeterSchema = z.enum(["estimated", "context_peak", "max"]);
 export type UsageMeter = z.infer<typeof UsageMeterSchema>;
 
@@ -432,6 +460,8 @@ export const ProviderCapabilitySchema = z.object({
   todos: z.boolean(),
   plans: z.boolean(),
   questions: z.boolean(),
+  /** Default model an admin pinned for this provider. Empty means the agent's own default. */
+  model: z.string().optional(),
 });
 export type ProviderCapability = z.infer<typeof ProviderCapabilitySchema>;
 

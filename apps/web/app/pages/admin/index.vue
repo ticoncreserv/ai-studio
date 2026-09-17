@@ -77,9 +77,25 @@ const providers = ref<
     health?: string;
     sandbox?: string;
     message?: string;
+    model?: string;
+    models?: Array<{ id: string; label: string; description?: string }>;
+    keys?: Array<{
+      ref: string;
+      label: string;
+      enabled: boolean;
+      present: boolean;
+      usable: boolean;
+      failures: number;
+      cooldownUntil: string | null;
+      lastError: string | null;
+      lastFailureKind: string | null;
+      lastUsedAt: string | null;
+    }>;
   }>
 >([]);
 const providerKeys = ref<Record<string, string>>({});
+const providerKeyLabels = ref<Record<string, string>>({});
+const providerModels = ref<Record<string, string>>({});
 const signedIn = ref<{ login: string; name: string } | null>(null);
 const users = ref<
   Array<{
@@ -305,6 +321,7 @@ async function refreshData() {
   overview.value = over;
   env.value = envRes;
   providers.value = providerRes.providers;
+  providerModels.value = Object.fromEntries(providerRes.providers.map((row) => [row.id, row.model ?? ""]));
   users.value = userRes.users;
   rules.value = ruleRes.rules;
   hydrateSkills(skillRes.skills);
@@ -434,14 +451,43 @@ async function applyEnv() {
   });
 }
 
-async function saveProvider(id: string, enabled: boolean) {
+async function saveProvider(id: string) {
   await wrap(async () => {
     const res = await $fetch<{ providers: typeof providers.value }>("/api/admin/providers", {
       method: "PUT",
-      body: { id, enabled, apiKey: providerKeys.value[id] || undefined },
+      body: { id, apiKey: providerKeys.value[id] || undefined, label: providerKeyLabels.value[id] || undefined },
     });
     providers.value = res.providers;
     providerKeys.value[id] = "";
+    providerKeyLabels.value[id] = "";
+  });
+}
+
+async function saveProviderModel(id: string, model: string) {
+  await wrap(async () => {
+    const res = await $fetch<{ providers: typeof providers.value }>("/api/admin/providers", {
+      method: "PUT",
+      body: { id, model },
+    });
+    providers.value = res.providers;
+    providerModels.value[id] = res.providers.find((row) => row.id === id)?.model ?? model;
+  });
+}
+
+async function patchProviderKey(payload: {
+  id: string;
+  keyRef: string;
+  keyEnabled?: boolean;
+  moveKey?: "up" | "down";
+  resetKey?: boolean;
+  deleteKey?: boolean;
+}) {
+  await wrap(async () => {
+    const res = await $fetch<{ providers: typeof providers.value }>("/api/admin/providers", {
+      method: "PUT",
+      body: payload,
+    });
+    providers.value = res.providers;
   });
 }
 
@@ -1183,10 +1229,14 @@ function ruleHint(level: "platform" | "project" | "user") {
               <AdminProvidersList
                 v-else-if="section === 'providers'"
                 v-model:keys="providerKeys"
+                v-model:labels="providerKeyLabels"
+                v-model:models="providerModels"
                 :providers="providers"
                 :busy="busy"
                 @toggle="toggleProvider"
                 @save="saveProvider"
+                @model="saveProviderModel"
+                @key="patchProviderKey"
               />
 
               <section v-else-if="section === 'users'" class="cx-section">

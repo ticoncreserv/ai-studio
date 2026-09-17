@@ -5,6 +5,7 @@ import { parseMcpConfig, toAcpMcpServers as entriesToAcp, type AcpMcpServer } fr
 import { cursorAgentEnv, hasCursorApiKey } from "./env.js";
 import { ensureCursorAgent } from "./ensure-agent.js";
 import { applyProviderCredential, credentialKeepKeys } from "./credentials.js";
+import { applyModelEnv, modelArgs } from "./models.js";
 import { startProcessAcp } from "./process-acp.js";
 import { sanitizeAgentEnv } from "./sandbox.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
@@ -26,9 +27,10 @@ export function mcpServersFromWorktree(cwd: string): AcpMcpServer[] {
   }
 }
 
-function cursorArgs(mode?: "agent" | "plan" | "ask"): string[] {
+function cursorArgs(mode?: "agent" | "plan" | "ask", model?: string): string[] {
   const args = ["--trust"];
   if (mode === "plan" || mode === "ask") args.push("--mode", mode);
+  args.push(...modelArgs("cursor", model));
   args.push("acp");
   return args;
 }
@@ -44,14 +46,23 @@ export class CursorProvider implements AgentProvider {
     sandbox?: boolean;
     sandboxProfile?: SandboxProfile;
     mcpServers?: AcpMcpServer[];
+    apiKey?: string;
+    model?: string;
     onPermission?: (event: SessionEvent, rpcId: number) => void;
   }): Promise<ProviderRun> {
-    const env = sanitizeAgentEnv(applyProviderCredential("cursor", cursorAgentEnv()), credentialKeepKeys("cursor"));
+    const env = applyModelEnv(
+      "cursor",
+      sanitizeAgentEnv(
+        applyProviderCredential("cursor", cursorAgentEnv(), undefined, input.apiKey),
+        credentialKeepKeys("cursor"),
+      ),
+      input.model,
+    );
     if (!hasCursorApiKey(env)) throw new Error("CURSOR_API_KEY is not set");
     const command = await ensureCursorAgent({ env });
     return startProcessAcp({
       command,
-      args: cursorArgs(input.mode),
+      args: cursorArgs(input.mode, input.model),
       env,
       cwd: input.cwd,
       capability: this.capability,
@@ -59,6 +70,7 @@ export class CursorProvider implements AgentProvider {
       resumeSessionId: input.resumeSessionId,
       sandboxProfile: input.sandboxProfile ?? (input.sandbox ? "best-effort" : "disabled"),
       mcpServers: input.mcpServers ?? mcpServersFromWorktree(input.cwd),
+      model: input.model,
       onEvent: input.onEvent,
       onPermission: input.onPermission,
     });

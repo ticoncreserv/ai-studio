@@ -1,5 +1,6 @@
 import type { SessionEvent } from "@atelier/contracts";
 import { loadTranscript } from "../transcripts.js";
+import { providerModelCatalog } from "./models.js";
 import type { AgentProvider, ProviderRun } from "./types.js";
 import { PROVIDER_CATALOG } from "./types.js";
 
@@ -112,9 +113,13 @@ export class MockProvider implements AgentProvider {
     cwd: string;
     onEvent: (event: SessionEvent) => void;
     resumeSessionId?: string;
+    apiKey?: string;
+    model?: string;
   }): Promise<ProviderRun> {
     let cancelled = false;
     return {
+      models: providerModelCatalog("mock"),
+      modelId: input.model?.trim() || providerModelCatalog("mock")[0]?.id,
       prompt: async () => {
         const events = loadTranscript().length ? loadTranscript() : defaultEvents();
         for (const event of events) {

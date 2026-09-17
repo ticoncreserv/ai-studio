@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Role, SessionEvent, UsageProfile, WorkspaceStatus } from "@atelier/contracts";
+import type { ProviderKeyState, ProviderModel, Role, SessionEvent, UsageProfile, WorkspaceStatus } from "@atelier/contracts";
 import {
   defaultFlags,
   defaultUsageProfiles,
@@ -51,6 +51,13 @@ export interface SessionRecord {
   acpSessionId?: string;
   /** Last cumulative cost the provider reported for this session. */
   costBaselineUsd?: number;
+}
+
+export interface ProviderConfig {
+  enabled: boolean;
+  model?: string;
+  keys?: ProviderKeyState[];
+  models?: ProviderModel[];
 }
 
 export interface InviteRecord {
@@ -104,7 +111,7 @@ export interface DbShape {
   rules: RuleRecord[];
   members: Array<{ userId: string; projectId: string; role: Role }>;
   flags: Record<string, boolean>;
-  providers: Record<string, { enabled: boolean }>;
+  providers: Record<string, ProviderConfig>;
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
   runLock: Record<string, { sessionId: string; userId: string; leaseUntil?: string; heartbeatAt?: string } | undefined>;
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;

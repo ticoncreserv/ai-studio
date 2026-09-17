@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
+import { readConfigOptions, type AcpConfigOption } from "./config-options.js";
 import { toAgentError } from "./errors.js";
 
 export interface AcpPromptBlock {
@@ -58,6 +59,7 @@ export class AcpSession {
   capabilities: AcpAgentCapabilities | null = null;
   authMethods: AcpAuthMethod[] = [];
   initializeResult: AcpInitializeResult | null = null;
+  configOptions: AcpConfigOption[] = [];
   readonly inbound: Array<Record<string, unknown>> = [];
 
   constructor(
@@ -161,6 +163,7 @@ export class AcpSession {
     const result = (await this.send("session/new", { cwd, mcpServers })) as { sessionId?: string };
     if (!result?.sessionId) throw new Error("ACP session/new did not return a sessionId");
     this.sessionId = result.sessionId;
+    this.configOptions = readConfigOptions(result);
     return result.sessionId;
   }
 
@@ -168,8 +171,23 @@ export class AcpSession {
     if (this.capabilities?.loadSession === false) {
       throw new Error("Agent does not advertise session load");
     }
-    await this.send("session/load", { sessionId, cwd, mcpServers });
+    const result = await this.send("session/load", { sessionId, cwd, mcpServers });
     this.sessionId = sessionId;
+    this.configOptions = readConfigOptions(result);
+  }
+
+  /** `session/set_config_option`. Agents answer with the full option list. */
+  async setConfigOption(configId: string, value: unknown): Promise<AcpConfigOption[]> {
+    if (!this.sessionId) throw new Error("No ACP session");
+    const result = await this.send("session/set_config_option", {
+      sessionId: this.sessionId,
+      configId,
+      type: "id",
+      value,
+    });
+    const options = readConfigOptions(result);
+    if (options.length) this.configOptions = options;
+    return this.configOptions;
   }
 
   async prompt(blocks: AcpPromptBlock[]): Promise<unknown> {

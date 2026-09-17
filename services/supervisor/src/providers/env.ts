@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProviderId } from "@atelier/contracts";
 import { repoRoot } from "../paths.js";
+import { hasProviderCredential } from "./credentials.js";
 import { readProviderSecrets } from "../runtime/env-file.js";
 
 export const ORIGIN_SESSION_ENV = [
@@ -16,7 +17,7 @@ export const ORIGIN_SESSION_ENV = [
 const PINNED_NVM_BIN = join(homedir(), ".nvm", "versions", "node", "v24.21.0", "bin");
 
 export function hasCursorApiKey(env: NodeJS.ProcessEnv = process.env, envRoot?: string): boolean {
-  return Boolean(env.CURSOR_API_KEY?.trim() || readProviderSecrets(envRoot).CURSOR_API_KEY?.trim());
+  return hasProviderCredential("cursor", env, envRoot);
 }
 
 export function preferredAgentProvider(env: NodeJS.ProcessEnv = process.env): ProviderId {

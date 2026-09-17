@@ -1,4 +1,4 @@
-import type { ProviderCapability, SandboxProfile, SessionEvent } from "@atelier/contracts";
+import type { ProviderCapability, ProviderModel, SandboxProfile, SessionEvent } from "@atelier/contracts";
 import type { AcpPromptBlock } from "../acp/session.js";
 
 export interface ProviderRun {
@@ -6,6 +6,9 @@ export interface ProviderRun {
   cancel: () => Promise<void>;
   stop: () => void;
   acpSessionId?: string;
+  /** Models the agent advertised, used to keep the admin picker honest. */
+  models?: ProviderModel[];
+  modelId?: string;
   respondPermission?: (rpcId: number, outcome: "allow-once" | "allow-always" | "reject-once") => void;
 }
 
@@ -19,6 +22,10 @@ export interface AgentProvider {
     sandbox?: boolean;
     sandboxProfile?: SandboxProfile;
     mcpServers?: Array<{ name: string; command?: string; args?: string[]; env?: Array<{ name: string; value: string }>; type?: "http" | "sse"; url?: string; headers?: Array<{ name: string; value: string }> }>;
+    /** One key from the provider's pool. Omitted means the first stored key. */
+    apiKey?: string;
+    /** Admin-pinned default model. Omitted means the agent's own default. */
+    model?: string;
     onPermission?: (event: SessionEvent, rpcId: number) => void;
   }): Promise<ProviderRun>;
 }

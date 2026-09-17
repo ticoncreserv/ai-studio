@@ -573,6 +573,91 @@ describe("platform", () => {
       else process.env.PATH = previousPath;
     }
   });
+
+  it("stores several keys and an admin default model per provider", () => {
+    const previous = process.env.CURSOR_API_KEY;
+    delete process.env.CURSOR_API_KEY;
+    try {
+      const p = platform();
+      p.saveProviderSettings({ id: "cursor", apiKey: "one", label: "primary" });
+      p.saveProviderSettings({ id: "cursor", apiKey: "two", label: "backup" });
+      p.saveProviderSettings({ id: "cursor", model: "gpt-5" });
+      const row = p.getProviderSettings().find((item) => item.id === "cursor");
+      expect(row?.model).toBe("gpt-5");
+      expect(row?.keys.map((key) => key.label)).toEqual(["primary", "backup"]);
+      expect(row?.keys.every((key) => key.present)).toBe(true);
+      expect(p.listProviders().find((item) => item.id === "cursor")?.model).toBe("gpt-5");
+      p.saveProviderSettings({ id: "cursor", keyRef: row!.keys[0]!.ref, moveKey: "down" });
+      expect(p.getProviderSettings().find((item) => item.id === "cursor")?.keys.map((key) => key.label)).toEqual([
+        "backup",
+        "primary",
+      ]);
+      p.saveProviderSettings({ id: "cursor", keyRef: row!.keys[1]!.ref, deleteKey: true });
+      expect(p.getProviderSettings().find((item) => item.id === "cursor")?.keys).toHaveLength(1);
+    } finally {
+      if (previous === undefined) delete process.env.CURSOR_API_KEY;
+      else process.env.CURSOR_API_KEY = previous;
+    }
+  });
+
+  it("fails over to the next key when the first one is rejected", async () => {
+    const previousKey = process.env.ANTHROPIC_API_KEY;
+    const previousPath = process.env.PATH;
+    delete process.env.ANTHROPIC_API_KEY;
+    const started: string[] = [];
+    const factory = (id: ProviderId): AgentProvider => ({
+      capability: { id, label: id, command: "mock", args: [], modes: ["agent", "plan", "ask"], images: true, todos: true, plans: true, questions: true },
+      async start(input) {
+        started.push(input.apiKey ?? "");
+        if (input.apiKey === "bad-key") throw new Error("401 Unauthorized");
+        return {
+          models: [{ id: "opus", label: "Opus" }],
+          prompt: async () => {
+            input.onEvent({
+              type: "assistant_message",
+              id: "a1",
+              at: new Date().toISOString(),
+              text: `used ${input.apiKey}`,
+              streaming: false,
+            });
+          },
+          cancel: async () => undefined,
+          stop: () => undefined,
+        };
+      },
+    });
+    try {
+      const p = platform(factory);
+      const bin = join(dirs[dirs.length - 1]!, "bin");
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, "npx"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      process.env.PATH = `${bin}:${previousPath ?? "/usr/bin"}`;
+      p.saveFlags({ multiProvider: true, claudeProvider: true });
+      p.saveProviderSettings({ id: "claude", enabled: true, apiKey: "bad-key", label: "primary" });
+      p.saveProviderSettings({ id: "claude", apiKey: "good-key", label: "backup" });
+      p.saveProviderSettings({ id: "claude", model: "opus" });
+      const user = addUser(p, "keys");
+      const ws = await p.ensureWorkspace(user);
+      const session = p.createSession(ws.id, "claude");
+      await p.handleCommand({
+        user,
+        sessionId: session.id,
+        command: { type: "prompt", text: "Hello", attachments: [], mentions: [] },
+      });
+      expect(started).toEqual(["bad-key", "good-key"]);
+      const events = p.store.read().sessions.find((row) => row.id === session.id)?.events ?? [];
+      expect(events.some((event) => event.type === "assistant_message" && event.text.includes("good-key"))).toBe(true);
+      const settings = p.getProviderSettings().find((row) => row.id === "claude");
+      expect(settings?.keys[0]?.failures).toBeGreaterThan(0);
+      expect(settings?.keys[1]?.failures).toBe(0);
+      expect(settings?.models.some((item) => item.id === "opus")).toBe(true);
+    } finally {
+      if (previousKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = previousKey;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+  });
 });
 
 function addUser(p: Platform, login: string, role: UserRecord["role"] = "owner"): UserRecord {
