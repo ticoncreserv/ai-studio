@@ -1,6 +1,15 @@
 # Per-user token limits and usage profiles — design and implementation plan
 
-Status: proposal. No production code changed yet.
+Status: implemented. Phases 0–6 below landed together; this file is the reference for the shape of
+the feature and for the decisions that are configuration rather than code.
+
+Locked configuration:
+
+- Seeds: starter 5M / standard 20M / premium 60M tokens per month (daily = 10% of monthly, per-run
+  and tool-call caps scale with the profile). Editable later in `/admin`.
+- `usageLimits` ships **on**, every seed in `block` mode.
+- Period reset: day 1 in `America/Sao_Paulo` (`ATELIER_USAGE_TZ`).
+- Admins are subject to their own profile. Extra room is an auditable grant, including self-grants.
 
 ## 1. Problem
 
@@ -13,24 +22,24 @@ We need three assignable **usage profiles** with token limits, an admin screen t
 limits, and enforcement per user. Accounting has to be **local**: providers differ, and the
 protocol does not give us a uniform per-turn token count (see §3).
 
-## 2. What exists today
+## 2. What existed before (and what must stay orthogonal)
 
-| Piece | State | Where |
+| Piece | State before this work | Where |
 | --- | --- | --- |
 | Per-run budget | duration, tool calls, cost — enforced mid-run | `packages/domain/src/budget.ts`, `platform.ts` `runPrompt` |
-| `costUsd` | always `0`; nothing ever increments it | `platform.ts` `const usage = { …, costUsd: 0 }` |
+| `costUsd` | always `0`; nothing ever incremented it | `platform.ts` |
 | Usage log | in-memory array, never read outside the module, lost on restart | `services/supervisor/src/otel.ts` `usageLog` |
-| Token estimate | `chars / 4`, applied only to the packed **input** prompt, fixed 4000-token context budget | `packages/domain/src/context.ts`, `platform.ts` `packPrompt(…, 4000)` |
-| Output tokens | not counted at all | — |
-| Disk quota | per-workspace bytes, surfaced with a progress bar | `packages/domain/src/quota.ts`, `Overlays.vue` |
+| Token estimate | `chars / 4`, applied only to the packed **input** prompt | `packages/domain/src/context.ts` |
+| Output tokens | not counted | — |
+| Disk quota | per-workspace bytes, surfaced with a progress bar | `packages/domain/src/quota.ts` |
 | Roles | `owner` / `editor` / `viewer`, derived from GitHub repo permission | `packages/domain/src/authz.ts` |
 
-Two consequences:
+`Role` must not be reused as a limit profile. Roles come from GitHub repo permissions and answer
+"can this person edit?". Profiles answer "how much can this person spend?". They are orthogonal:
+an `editor` may be on the smallest profile, an `owner` on the largest.
 
-1. There is no per-user meter to enforce against. `recordUsage` is telemetry, not accounting.
-2. `Role` must not be reused as a limit profile. Roles come from GitHub repo permissions and answer
-   "can this person edit?". Profiles answer "how much can this person spend?". They are orthogonal:
-   an `editor` may be on the smallest profile, an `owner` on the largest.
+Shipped: a per-user ledger, three seeded profiles, pre-flight + mid-run gates, `/admin` Token
+limits, and a remaining-tokens surface in the studio settings sheet.
 
 ## 3. What the protocol gives us (and why control stays local)
 
@@ -87,9 +96,13 @@ metering):
 
 | Profile | monthly | daily | per run | tool calls | providers |
 | --- | --- | --- | --- | --- | --- |
-| `starter` | 5,000,000 | 500,000 | 200,000 | 40 | `cursor` |
-| `standard` | 20,000,000 | 2,000,000 | 400,000 | 80 | `cursor` |
+| `starter` | 5,000,000 | 500,000 | 200,000 | 40 | all allowed |
+| `standard` | 20,000,000 | 2,000,000 | 400,000 | 80 | all allowed |
 | `premium` | 60,000,000 | 6,000,000 | 800,000 | 160 | all allowed |
+
+Every seed ships with `providers: []`. A non-empty list is a restriction, so seeding one would mean
+that enabling a second provider in `/admin` silently blocks prompts on the two smaller profiles.
+Restricting a profile to `cursor` is a deliberate admin edit, not a default.
 
 ### 4.2 Assignment
 
@@ -185,9 +198,8 @@ is on the record.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/admin/usage/profiles` | profiles + assigned user counts |
+| `GET /api/admin/usage` | profiles, flags, and per-user current period (tokens, cost, percent, last run) |
 | `PUT /api/admin/usage/profiles` | save profiles (Zod-validated, all three at once) |
-| `GET /api/admin/usage` | per-user current period: tokens, cost, percent, last run, profile |
 | `PATCH /api/admin/users/[id]` | accepts `usageProfileId` alongside `platformAdmin` / `disabled` |
 | `POST /api/admin/usage/[userId]/grant` | add tokens to the open period with a reason |
 | `GET /api/me/usage` | own summary for the composer |
@@ -200,13 +212,12 @@ All `/api/admin/*` routes keep `requirePlatformAdmin`. The workspace payload
 ### 9.1 Admin — new `usage` section
 
 New nav item in the group that holds Providers and Env (`apps/web/app/pages/admin/index.vue`
-`navGroups`), with two components:
+`navGroups`). One component, `components/admin/UsageProfilesList.vue`, holds both surfaces:
 
-- `components/admin/UsageProfilesList.vue` — one card per profile: label, monthly / daily / per-run
-  tokens, tool calls, cost cap, enforcement (`block` / `warn`), warn threshold, meter, allowed
-  providers. Inline validation, one Save.
-- `components/admin/UsageTable.vue` — login, profile `<select>`, period tokens vs limit as a bar
-  (same visual language as the disk quota bar), cost, last run, grant action.
+- profile cards — monthly / daily / per-run tokens, tool calls, cost cap, enforcement
+  (`block` / `warn`), warn threshold, meter. Inline validation, one Save.
+- consumption table — login, profile `<select>`, period tokens vs limit as a bar (same visual
+  language as the disk quota bar), cost, last run, grant action.
 
 The existing Users section also gets the profile `<select>` on each row, because that is where
 admins already manage people.
@@ -229,11 +240,17 @@ New keys in `en.json` and `pt-BR.json` (English is the source): `admin.usage*`,
 Two new flags in `FeatureFlagSchema` / `defaultFlags` / the admin `flagList`:
 
 - `usageMetering` — default **on**. Writes the ledger, enforces nothing.
-- `usageLimits` — default **off**. Turns the gates on.
+- `usageLimits` — default **on**. Turns the gates on, in the enforcement mode each profile declares.
 
-Rollout: ship with metering only → read `/admin` usage for one period → calibrate the three
-profiles against real numbers → assign users → flip `usageLimits`. Turning metering off stops
-accounting but never blocks anyone, so the failure mode is "no limits", not "nobody can work".
+Both ship on, and all three seeds ship with `enforcement: "block"`, because the global Cursor key is
+a shared account: a "measure first, enforce later" rollout leaves that key uncapped for a whole
+period, which is the exact failure this feature exists to prevent. The seeds are deliberately
+generous so that the first period reads as measurement while still having a ceiling.
+
+Calibration path: read `/admin` → Token limits after a real period, adjust the three profiles
+against observed numbers, and move individual users between profiles. A profile can be switched to
+`warn` to observe a specific group without blocking it, and turning `usageMetering` off stops
+accounting entirely — the failure mode there is "no limits", not "nobody can work".
 
 ## 11. Phases
 
@@ -243,12 +260,14 @@ accounting but never blocks anyone, so the failure mode is "no limits", not "nob
 | 1 | Store: `DbShape` arrays, seeds, flatten/assemble, Drizzle tables, retention | `store.ts`, `store-shape.ts`, `packages/db/src/schema.ts`, `reconciler.ts` |
 | 2 | Metering: ledger write, output estimate, `usage_update` parsing, rollups | `platform.ts`, `acp/events.ts`, `otel.ts` |
 | 3 | Enforcement: pre-flight, mid-run cap, 429 mapping | `platform.ts`, `sessions/[id]/command.post.ts` |
-| 4 | Admin API + screen | `server/api/admin/usage*`, `admin/index.vue`, two components |
+| 4 | Admin API + screen | `server/api/admin/usage*`, `admin/index.vue`, `UsageProfilesList.vue` |
 | 5 | Studio surface | `useStudio.ts`, `Composer.vue`, `Overlays.vue` |
 | 6 | Docs, README, i18n, full suite, PR | `README.md`, this file |
 
-Phases 0–3 are independently shippable behind `usageLimits` off: after phase 2 the platform already
-answers "who spent what", which is the number needed to calibrate the limits.
+Phases 0–2 are independently shippable: with `usageLimits` off the platform already answers "who
+spent what", which is the number needed to calibrate the limits. Phase 3 is what makes the flag
+meaningful, and phases 4–5 are what make the numbers visible to an admin and to the person spending
+them, so shipping enforcement on means shipping all six.
 
 ## 12. Tests
 
@@ -266,10 +285,11 @@ answers "who spent what", which is the number needed to calibrate the limits.
 ## 13. Risks
 
 - **Underestimation.** Our count misses the agent's internal context. Mitigated by `meter: "max"`
-  plus `usage_update`, and by calibrating seeds against a real period before enforcing.
+  plus `usage_update`, and by calibrating the generous seeds against a real period.
 - **Cursor does not report usage.** Then `contextPeakTokens` and `costUsd` stay `0` and enforcement
   runs on the estimate alone. The limits are still a useful ceiling, but they are a proxy for spend,
-  not the invoice. This is why the plan is "measure first, enforce second".
+  not the invoice. Calibrate after one real period; switch a profile to `warn` if the estimate is
+  too noisy to block on.
 - **Ledger growth.** One entry per run is small, but a JSON store rewrites the whole file on every
   update. Rollups plus retention keep it bounded; the Postgres snapshot path already exists if it
   outgrows JSON.
