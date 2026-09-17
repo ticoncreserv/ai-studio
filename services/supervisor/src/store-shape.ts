@@ -76,7 +76,7 @@ export function assembleDb(rows: StoreRows, base: DbShape): DbShape {
     flags: { ...base.flags, ...Object.fromEntries(rows.flags.map((row) => [row.key, row.enabled])) },
     providers: { ...base.providers, ...Object.fromEntries(rows.providers.map((row) => [row.id, { enabled: row.enabled }])) },
     presence: rows.presence,
-    runLock: Object.fromEntries(rows.leases.map((lease) => [lease.workspaceId, lease])),
+    runLock: Object.fromEntries(rows.leases.map(({ workspaceId, ...lease }) => [workspaceId, lease])),
     migrationLog: rows.migrationLog,
     skillPrefs: rows.skillPrefs,
     mcpPrefs: rows.mcpPrefs,
