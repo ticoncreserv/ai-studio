@@ -7,6 +7,8 @@ describe("flags budget quota", () => {
   it("keeps publish off and spectator on by default", () => {
     expect(isFlagOn(defaultFlags, "publish")).toBe(false);
     expect(isFlagOn(defaultFlags, "spectator")).toBe(true);
+    expect(isFlagOn(defaultFlags, "transactionalReview")).toBe(true);
+    expect(isFlagOn(defaultFlags, "autoPush")).toBe(false);
   });
 
   it("cuts a run when tool calls exceed the budget", () => {

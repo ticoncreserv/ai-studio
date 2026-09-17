@@ -226,12 +226,13 @@ export function mcpPolicyDecision(
 ): "allow" | "deny" {
   if (actor.admin || entry.source !== "user") return "allow";
   if (!policy.allowUserServers) return "deny";
-  if (entry.config.transport === "stdio") {
-    const command = basenameCommand(entry.config.command);
+  const config = entry.config;
+  if (config.transport === "stdio") {
+    const command = basenameCommand(config.command);
     if (!command) return "deny";
     return policy.allowedCommands.some((pattern) => commandMatches(command, pattern)) ? "allow" : "deny";
   }
-  return policy.allowedUrlPatterns.some((pattern) => urlMatches(entry.config.url, pattern)) ? "allow" : "deny";
+  return policy.allowedUrlPatterns.some((pattern) => urlMatches(config.url, pattern)) ? "allow" : "deny";
 }
 
 export function redactMcpEntry(entry: McpEntry): McpEntry {

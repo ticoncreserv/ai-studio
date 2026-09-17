@@ -28,7 +28,7 @@ export function canSpectate(role: Role): boolean {
 
 export const FALLBACK_REPO_OWNER_LOGIN = "ticoncreserv";
 
-export function adminLoginsFromEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): string[] {
+export function adminLoginsFromEnv(env: Record<string, string | undefined> = process.env): string[] {
   return (env.ATELIER_ADMIN_LOGINS ?? "")
     .split(",")
     .map((login) => login.trim())
