@@ -315,5 +315,24 @@ function isImage(path: string) {
     </p>
     <p v-else-if="event.type === 'budget'" class="cx-summary cx-warn">{{ t("chat.budget") }}</p>
     <p v-else-if="event.type === 'conflict'" class="cx-summary">{{ t("chat.conflict") }} · {{ event.message }}</p>
+    <div v-else-if="event.type === 'proposal'" class="cx-summary">
+      <span class="min-w-0 truncate">{{ t("chat.proposal") }} · {{ event.files.join(", ") }}</span>
+      <button type="button" class="ml-auto shrink-0 text-coral-400 hover:text-coral-300" @click="emit('command', { type: 'discard_proposal' })">
+        {{ t("chat.discardProposal") }}
+      </button>
+    </div>
+    <p v-else-if="event.type === 'validation'" class="cx-summary">
+      {{ t("chat.validation", { status: event.status }) }} · {{ event.command }}
+    </p>
+    <p v-else-if="event.type === 'run_failure'" class="cx-summary cx-warn">
+      {{ t("chat.runFailure", { message: event.message }) }}
+    </p>
+    <p v-else-if="event.type === 'push'" class="cx-summary">
+      {{ t("chat.pushStatus", { status: event.status }) }} · {{ event.message }}
+    </p>
+    <p v-else-if="event.type === 'run'" class="cx-summary">{{ t(`chat.run.${event.status}`) }}</p>
+    <p v-else-if="event.type === 'prompt_manifest' && event.omitted.length" class="cx-summary">
+      {{ t("chat.droppedContext", { count: event.omitted.length }) }}
+    </p>
   </article>
 </template>

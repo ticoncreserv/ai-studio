@@ -145,7 +145,22 @@ const navGroups: NavItem[][] = [
 ];
 
 const sections = navGroups.flat();
-const flagList = ["publish", "multiProvider", "spectator", "recipes", "skills", "mcp"] as const;
+const flagList = [
+  "publish",
+  "multiProvider",
+  "spectator",
+  "recipes",
+  "skills",
+  "mcp",
+  "secureWebSocket",
+  "safeUploads",
+  "sandboxedAgent",
+  "transactionalReview",
+  "validationGate",
+  "autoPush",
+  "workspaceQueue",
+  "realProviderEvals",
+] as const;
 
 function fold(text: string) {
   return text

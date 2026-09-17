@@ -25,5 +25,9 @@ describe("preview reload policy", () => {
     expect(shouldReloadPreviewOnCommand("restore_checkpoint")).toBe(true);
     expect(nextPreviewEventId([{ id: "d1", type: "diff" }], "")).toBe("d1");
     expect(nextPreviewEventId([{ id: "d1", type: "diff" }], "d1")).toBeNull();
+    expect(shouldReloadPreviewOnEvent("proposal")).toBe(true);
+    expect(shouldReloadPreviewOnEvent("push")).toBe(true);
+    expect(shouldReloadPreviewOnCommand("discard_proposal")).toBe(true);
+    expect(shouldReloadPreviewOnCommand("push_studio")).toBe(true);
   });
 });

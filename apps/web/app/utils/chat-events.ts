@@ -30,6 +30,9 @@ const PROGRESS_TYPES = new Set([
   "permission",
   "diff",
   "todos",
+  "run",
+  "proposal",
+  "validation",
 ]);
 
 export function userMessageCount(events: SessionEvent[]): number {
