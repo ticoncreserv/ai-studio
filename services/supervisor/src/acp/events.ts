@@ -12,6 +12,9 @@ interface AcpUpdate {
   overview?: string;
   entries?: Array<{ content?: string; status?: string }>;
   availableCommands?: Array<{ name?: string; description?: string; input?: { hint?: string } }>;
+  used?: number;
+  size?: number;
+  cost?: { amount?: number; currency?: string };
 }
 
 export function eventsFromAcpUpdate(msg: Record<string, unknown>): SessionEvent[] {
@@ -105,6 +108,21 @@ export function eventsFromAcpUpdate(msg: Record<string, unknown>): SessionEvent[
           description: command.description ?? "",
           hint: command.input?.hint,
         })).filter((command) => command.name),
+      },
+    ];
+  }
+  if (update.sessionUpdate === "usage_update") {
+    // `used`/`size` describe the current context window and `cost.amount` is
+    // cumulative for the session — neither is a per-run total on its own.
+    return [
+      {
+        type: "usage",
+        id,
+        at,
+        v: 1,
+        contextUsed: Number(update.used ?? 0),
+        contextSize: Number(update.size ?? 0),
+        costUsd: Number(update.cost?.amount ?? 0),
       },
     ];
   }

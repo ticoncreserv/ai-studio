@@ -199,6 +199,7 @@
     "cursorRequired": "CURSOR_API_KEY is required. Prompts will not run until it is set in .env.",
     "providerRequired": "An agent API key and CLI are required. Prompts will not run until a provider is configured.",
     "promptFailed": "The prompt did not complete. Try again.",
+    "usageBlocked": "Token limit reached. Ask an admin for more room.",
     "modeHintAgent": "Edit the worktree and run tools.",
     "modeHintPlan": "Propose a plan before changing files.",
     "modeHintAsk": "Answer questions without writing files.",
@@ -400,8 +401,25 @@
     "geminiProvider": "Gemini provider",
     "grokProvider": "Grok provider",
     "providerCanary": "Provider canary",
+    "usageMetering": "Usage metering",
+    "usageLimits": "Usage limits",
     "title": "Platform flags",
     "hint": "Flip without a deploy. Publish, extra providers, postgres, and required sandbox stay off until that phase."
+  },
+  "usage": {
+    "title": "Token allowance",
+    "remaining": "{remaining} of {limit} tokens left this month",
+    "unlimited": "No token limit on {profile}",
+    "profileHint": "Profile {profile}. Limits are set by a platform admin.",
+    "blocked": "Prompts are paused: {reason}. Ask an admin for more room.",
+    "warn": "{reason} — {remaining} tokens left this month.",
+    "reason": {
+      "monthly": "monthly token limit",
+      "daily": "daily token limit",
+      "perRun": "per-run token limit",
+      "cost": "monthly cost limit",
+      "provider": "this provider is not allowed on your profile"
+    }
   },
   "settings": {
     "title": "Workspace",
@@ -452,6 +470,7 @@
     "env": "Environment",
     "providers": "Providers",
     "users": "Users",
+    "usage": "Token limits",
     "rules": "Global rules",
     "skills": "Skills",
     "mcp": "MCP",
@@ -546,6 +565,44 @@
     "ownerLocked": "Permanent platform admin",
     "lastActive": "Last active",
     "noUsers": "No one has signed in yet.",
+    "usageProfilesSection": "Usage profiles",
+    "usageProfilesHint": "Three profiles decide how many tokens a person may spend. The Cursor key is shared, so this ledger is what keeps one account from consuming the whole budget.",
+    "usageLimitsOff": "Limits are only measured right now. Turn on the usage limits flag to start blocking.",
+    "usageUsersSection": "Consumption",
+    "usageUsersHint": "Tokens counted in the current period. Assign a profile or grant extra tokens; every grant is recorded with who gave it.",
+    "usageProfile": "Profile",
+    "usageAssigned": "{count} assigned",
+    "usageEnforcement": "When over",
+    "usageEnforcementBlock": "Block",
+    "usageEnforcementWarn": "Warn",
+    "usageMeterLabel": "Count",
+    "usageMeter": {
+      "max": "Highest of both",
+      "estimated": "Local estimate",
+      "context_peak": "Provider context"
+    },
+    "usageLimit": {
+      "monthlyTokens": "Tokens per month",
+      "dailyTokens": "Tokens per day",
+      "perRunTokens": "Tokens per run",
+      "perRunToolCalls": "Tool calls per run",
+      "monthlyCostUsd": "Cost cap per month (USD)"
+    },
+    "usageWarnAt": "Warn at (%)",
+    "usageZeroHint": "Zero means no limit. The local count misses what the agent reads inside its own loop, so a provider that reports context is counted too.",
+    "usageSaveProfiles": "Save profiles",
+    "usageState": {
+      "allow": "Within limits",
+      "warn": "Near the limit",
+      "block": "Limit reached"
+    },
+    "usageOfLimit": "{used} of {limit} tokens",
+    "usageUnlimited": "{used} tokens · no limit",
+    "usageCost": "US$ {cost}",
+    "usageGranted": "{tokens} granted",
+    "usageGrant": "Grant",
+    "usageGrantPlaceholder": "Extra tokens",
+    "usageGrantReason": "Granted from the admin panel",
     "rulesSection": "Rule layers",
     "rulesHint": "These layers are prepended to every prompt and written to AGENTS.md.",
     "saveRules": "Save global rules",
@@ -592,7 +649,9 @@
       "claudeProvider": "Allow Claude via npx {'@'}agentclientprotocol/claude-agent-acp when multi-provider is on.",
       "geminiProvider": "Allow Gemini via gemini --acp when multi-provider is on.",
       "grokProvider": "Allow Grok via grok agent stdio when multi-provider is on.",
-      "providerCanary": "Hide extra providers from workspace pickers unless ATELIER_PROVIDER_CANARY=1."
+      "providerCanary": "Hide extra providers from workspace pickers unless ATELIER_PROVIDER_CANARY=1.",
+      "usageMetering": "Record tokens, cost, and tool calls per run in the local usage ledger.",
+      "usageLimits": "Enforce the token limits of each usage profile."
     },
     "workspacesSection": "Live clones",
     "workspacesHint": "Every live clone. Hibernate frees artisan and Vite ports. Delete removes the local clone.",

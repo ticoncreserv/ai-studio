@@ -47,6 +47,8 @@ export const FeatureFlagSchema = z.enum([
   "geminiProvider",
   "grokProvider",
   "providerCanary",
+  "usageMetering",
+  "usageLimits",
 ]);
 export type FeatureFlag = z.infer<typeof FeatureFlagSchema>;
 
@@ -73,6 +75,69 @@ export const ProviderHealthSchema = z.object({
   message: z.string().optional(),
 });
 export type ProviderHealth = z.infer<typeof ProviderHealthSchema>;
+
+export const UsageMeterSchema = z.enum(["estimated", "context_peak", "max"]);
+export type UsageMeter = z.infer<typeof UsageMeterSchema>;
+
+export const UsageEnforcementSchema = z.enum(["block", "warn"]);
+export type UsageEnforcement = z.infer<typeof UsageEnforcementSchema>;
+
+/** `0` means unlimited on every numeric limit. */
+export const UsageLimitsSchema = z.object({
+  monthlyTokens: z.number().int().min(0),
+  dailyTokens: z.number().int().min(0),
+  perRunTokens: z.number().int().min(0),
+  perRunToolCalls: z.number().int().min(0),
+  monthlyCostUsd: z.number().min(0),
+});
+export type UsageLimits = z.infer<typeof UsageLimitsSchema>;
+
+export const UsageProfileSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  limits: UsageLimitsSchema,
+  enforcement: UsageEnforcementSchema.default("block"),
+  warnAtPercent: z.number().int().min(1).max(100).default(80),
+  meter: UsageMeterSchema.default("max"),
+  /** Empty means every provider the platform already allows. */
+  providers: z.array(z.string()).default([]),
+});
+export type UsageProfile = z.infer<typeof UsageProfileSchema>;
+
+export const UsageLimitReasonSchema = z.enum(["monthly", "daily", "perRun", "cost", "provider"]);
+export type UsageLimitReason = z.infer<typeof UsageLimitReasonSchema>;
+
+export const UsageDecisionSchema = z.object({
+  decision: z.enum(["allow", "warn", "block"]),
+  reason: UsageLimitReasonSchema.nullable().default(null),
+});
+export type UsageDecision = z.infer<typeof UsageDecisionSchema>;
+
+export const UsageSummarySchema = z.object({
+  userId: z.string(),
+  profileId: z.string(),
+  profileLabel: z.string(),
+  enforcement: UsageEnforcementSchema,
+  meter: UsageMeterSchema,
+  warnAtPercent: z.number(),
+  periodKey: z.string(),
+  dayKey: z.string(),
+  periodTokens: z.number(),
+  dayTokens: z.number(),
+  periodCostUsd: z.number(),
+  grantedTokens: z.number(),
+  runs: z.number(),
+  limits: UsageLimitsSchema,
+  /** Monthly allowance including grants; `0` with `unlimited` set means no cap. */
+  limitTokens: z.number(),
+  remainingTokens: z.number(),
+  percentUsed: z.number(),
+  unlimited: z.boolean(),
+  providers: z.array(z.string()),
+  decision: UsageDecisionSchema,
+  lastRunAt: z.string().nullable().default(null),
+});
+export type UsageSummary = z.infer<typeof UsageSummarySchema>;
 
 export const AgentRunStatusSchema = z.enum([
   "queued",
@@ -227,8 +292,17 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     type: z.literal("budget"),
     id: z.string(),
     at: z.string(),
-    reason: z.enum(["duration", "toolCalls", "cost"]),
+    reason: z.enum(["duration", "toolCalls", "cost", "tokens", "period"]),
     message: z.string(),
+  }),
+  z.object({
+    type: z.literal("usage"),
+    id: z.string(),
+    at: z.string(),
+    v: z.number().default(1),
+    contextUsed: z.number(),
+    contextSize: z.number(),
+    costUsd: z.number().default(0),
   }),
   z.object({
     type: z.literal("conflict"),

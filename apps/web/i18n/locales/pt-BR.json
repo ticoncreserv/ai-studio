@@ -199,6 +199,7 @@
     "cursorRequired": "CURSOR_API_KEY é obrigatória. Os prompts não rodam até ela estar no .env.",
     "providerRequired": "Uma chave de API e o CLI do agente são obrigatórios. Os prompts não rodam até um provedor estar configurado.",
     "promptFailed": "O prompt não concluiu. Tente de novo.",
+    "usageBlocked": "Limite de tokens atingido. Peça mais espaço a um admin.",
     "modeHintAgent": "Edita o worktree e executa ferramentas.",
     "modeHintPlan": "Propõe um plano antes de mudar arquivos.",
     "modeHintAsk": "Responde sem escrever arquivos.",
@@ -400,8 +401,25 @@
     "geminiProvider": "Provedor Gemini",
     "grokProvider": "Provedor Grok",
     "providerCanary": "Canário de provedores",
+    "usageMetering": "Medição de consumo",
+    "usageLimits": "Limites de consumo",
     "title": "Flags da plataforma",
     "hint": "Ligue sem deploy. Publicar, provedores extras, postgres e sandbox obrigatório ficam desligados até essa fase."
+  },
+  "usage": {
+    "title": "Cota de tokens",
+    "remaining": "{remaining} de {limit} tokens restantes neste mês",
+    "unlimited": "Sem limite de tokens no perfil {profile}",
+    "profileHint": "Perfil {profile}. Os limites são definidos por um admin da plataforma.",
+    "blocked": "Prompts pausados: {reason}. Peça mais espaço a um admin.",
+    "warn": "{reason} — {remaining} tokens restantes neste mês.",
+    "reason": {
+      "monthly": "limite mensal de tokens",
+      "daily": "limite diário de tokens",
+      "perRun": "limite de tokens por execução",
+      "cost": "limite mensal de custo",
+      "provider": "este provedor não é permitido no seu perfil"
+    }
   },
   "settings": {
     "title": "Workspace",
@@ -452,6 +470,7 @@
     "env": "Ambiente",
     "providers": "Provedores",
     "users": "Usuários",
+    "usage": "Limites de tokens",
     "rules": "Regras globais",
     "skills": "Skills",
     "mcp": "MCP",
@@ -546,6 +565,44 @@
     "ownerLocked": "Administrador permanente da plataforma",
     "lastActive": "Última atividade",
     "noUsers": "Ninguém entrou ainda.",
+    "usageProfilesSection": "Perfis de consumo",
+    "usageProfilesHint": "Três perfis definem quantos tokens cada pessoa pode gastar. A key do Cursor é compartilhada, então este registro é o que evita uma conta consumir todo o orçamento.",
+    "usageLimitsOff": "Agora o consumo é apenas medido. Ligue a flag de limites de uso para começar a bloquear.",
+    "usageUsersSection": "Consumo",
+    "usageUsersHint": "Tokens contados no período atual. Defina o perfil ou conceda tokens extras; cada concessão fica registrada com quem concedeu.",
+    "usageProfile": "Perfil",
+    "usageAssigned": "{count} atribuídos",
+    "usageEnforcement": "Ao exceder",
+    "usageEnforcementBlock": "Bloquear",
+    "usageEnforcementWarn": "Avisar",
+    "usageMeterLabel": "Contagem",
+    "usageMeter": {
+      "max": "Maior das duas",
+      "estimated": "Estimativa local",
+      "context_peak": "Contexto do provedor"
+    },
+    "usageLimit": {
+      "monthlyTokens": "Tokens por mês",
+      "dailyTokens": "Tokens por dia",
+      "perRunTokens": "Tokens por execução",
+      "perRunToolCalls": "Chamadas de ferramenta por execução",
+      "monthlyCostUsd": "Teto de custo por mês (USD)"
+    },
+    "usageWarnAt": "Avisar em (%)",
+    "usageZeroHint": "Zero significa sem limite. A contagem local não vê o que o agente lê no próprio loop, então o contexto informado pelo provedor também é considerado.",
+    "usageSaveProfiles": "Salvar perfis",
+    "usageState": {
+      "allow": "Dentro do limite",
+      "warn": "Perto do limite",
+      "block": "Limite atingido"
+    },
+    "usageOfLimit": "{used} de {limit} tokens",
+    "usageUnlimited": "{used} tokens · sem limite",
+    "usageCost": "US$ {cost}",
+    "usageGranted": "{tokens} concedidos",
+    "usageGrant": "Conceder",
+    "usageGrantPlaceholder": "Tokens extras",
+    "usageGrantReason": "Concedido pelo painel admin",
     "rulesSection": "Camadas de regras",
     "rulesHint": "Estas camadas entram no início de todo prompt e no AGENTS.md.",
     "saveRules": "Salvar regras globais",
@@ -592,7 +649,9 @@
       "claudeProvider": "Libera o Claude via npx {'@'}agentclientprotocol/claude-agent-acp quando vários provedores estão ligados.",
       "geminiProvider": "Libera o Gemini via gemini --acp quando vários provedores estão ligados.",
       "grokProvider": "Libera o Grok via grok agent stdio quando vários provedores estão ligados.",
-      "providerCanary": "Esconde provedores extras do seletor do workspace a menos que ATELIER_PROVIDER_CANARY=1."
+      "providerCanary": "Esconde provedores extras do seletor do workspace a menos que ATELIER_PROVIDER_CANARY=1.",
+      "usageMetering": "Registra tokens, custo e chamadas de ferramenta por execução no ledger local de consumo.",
+      "usageLimits": "Aplica os limites de tokens de cada perfil de consumo."
     },
     "workspacesSection": "Clones ativos",
     "workspacesHint": "Cada clone ativo. Hibernar libera as portas do artisan e do Vite. Excluir remove o clone local.",

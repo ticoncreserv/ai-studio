@@ -43,6 +43,7 @@ const props = defineProps<{
   mcpEnabled?: boolean;
   canEdit?: boolean;
   queue?: QueuedPrompt[];
+  usageBlocked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -86,6 +87,7 @@ const skills = computed(() => props.skills ?? []);
 const mcpServers = computed(() => props.mcpServers ?? []);
 const enabledMcpCount = computed(() => mcpServers.value.filter((server) => server.enabled && !server.shadowed).length);
 const canSend = computed(() => Boolean(props.modelValue.trim() || props.recipeId || props.attachments.length));
+const sendBlocked = computed(() => props.spectator || props.usageBlocked === true || !canSend.value);
 const showStop = computed(() => props.sending && !canSend.value);
 
 type Recognition = {
@@ -235,7 +237,7 @@ function onComposerKey(event: KeyboardEvent) {
   }
   if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
     event.preventDefault();
-    emit("submit");
+    if (!props.usageBlocked) emit("submit");
   }
 }
 
@@ -548,7 +550,7 @@ onBeforeUnmount(() => recognition?.stop());
         <button
           v-else
           type="submit"
-          :disabled="spectator || !canSend"
+          :disabled="sendBlocked"
           class="cx-round"
           data-tone="primary"
           :aria-label="sending ? t('chat.queue') : t('chat.send')"

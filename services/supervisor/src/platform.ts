@@ -1,7 +1,16 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
-import type { ClientCommand, ProviderId, Role, SessionEvent, Viewport } from "@atelier/contracts";
+import type {
+  ClientCommand,
+  ProviderId,
+  Role,
+  SessionEvent,
+  UsageProfile,
+  UsageSummary,
+  Viewport,
+} from "@atelier/contracts";
+import { UsageProfileSchema } from "@atelier/contracts";
 import {
   applyFileDecision,
   applyHunkDecision,
@@ -51,7 +60,19 @@ import {
   hasPendingProposal,
   selectValidationCommands,
   summarizeValidation,
+  defaultUsageProfileId,
+  defaultUsageProfiles,
+  mergeRollups,
+  resolveUsageProfile,
+  rollupFromEntries,
+  runBudgetFromProfile,
+  splitExpiredEntries,
+  summarizeUsage,
+  usagePeriodKey,
+  usageRetentionDays,
+  usageTimezone,
   type McpEntry,
+  type UsageLedgerEntry,
 } from "@atelier/domain";
 import { bus } from "./bus.js";
 import { type PlatformStore, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
@@ -98,6 +119,17 @@ import { probeConnections } from "./runtime/connection-probe.js";
 import { mentionIndexFromWorktree, worktreeBytes } from "./runtime/worktree-meta.js";
 import { clearPreviewError, readPreviewLogs, suggestPreviewFixes, writePreviewLogs } from "./runtime/preview-logs.js";
 import { startSpan, recordUsage } from "./otel.js";
+import {
+  costDelta,
+  createRunMeter,
+  estimatePromptBlockTokens,
+  ledgerEntryFromMeter,
+  meterBillableTokens,
+  meterEstimatedTokens,
+  meterSessionEvent,
+  UsageLimitError,
+  type RunMeter,
+} from "./usage.js";
 import {
   commitWorktree,
   createProposalCommit,
@@ -146,6 +178,7 @@ export class Platform {
   private readonly pendingPermissions = new Map<string, { rpcId: number; respond: ProviderRun["respondPermission"] }>();
   private readonly promptText = new PromptTextBuffer();
   private readonly workspaceQueue = new Map<string, Promise<unknown>>();
+  private readonly runMeters = new Map<string, { meter: RunMeter; profile: UsageProfile; enforce: boolean }>();
 
   constructor(
     store: PlatformStore = createPlatformStore(),
@@ -462,6 +495,7 @@ export class Platform {
         });
       }
     }
+    this.pruneUsageLedger(new Date(now));
   }
 
   sessions(workspaceId: string, query?: string): SessionRecord[] {
@@ -554,6 +588,7 @@ export class Platform {
 
     if (input.command.type === "prompt") {
       const prompt = input.command;
+      this.assertUsageAllowed(input.user, session, prompt);
       await this.enqueueWorkspace(ws.id, () => this.runPrompt(input.user, session, ws, prompt));
       return;
     }
@@ -883,6 +918,39 @@ export class Platform {
     });
   }
 
+  /** Runs before the workspace queue so a blocked prompt never spawns a provider. */
+  private assertUsageAllowed(
+    user: UserRecord,
+    session: SessionRecord,
+    command: Extract<ClientCommand, { type: "prompt" }>,
+  ): void {
+    if (!isFlagOn(this.flags(), "usageLimits")) return;
+    const pendingTokens = estimateTokens(command.text) + command.mentions.length * 256;
+    const summary = this.usageSummary(user.id, {
+      pendingTokens,
+      provider: resolveSessionProvider(session.provider),
+    });
+    if (summary.decision.decision !== "block") return;
+    const reason = summary.decision.reason === "perRun" ? "tokens" : "period";
+    this.append(session.id, {
+      type: "budget",
+      id: randomUUID(),
+      at: new Date().toISOString(),
+      reason,
+      message: `Prompt blocked: ${summary.decision.reason} token limit reached`,
+    });
+    this.append(session.id, {
+      type: "run",
+      id: randomUUID(),
+      at: new Date().toISOString(),
+      v: 1,
+      runId: session.id,
+      status: "rejected",
+      reason: `usage:${summary.decision.reason}`,
+    });
+    throw new UsageLimitError(summary);
+  }
+
   private async runPrompt(
     user: UserRecord,
     session: SessionRecord,
@@ -990,7 +1058,13 @@ export class Platform {
     }
 
     const usage = { startedAt: Date.now(), toolCalls: 0, costUsd: 0 };
-    const budget = defaultBudget();
+    const usageProfile = this.usageProfileFor(user);
+    const usageLimitsOn = isFlagOn(flags, "usageLimits");
+    const meter = createRunMeter(packed.usedTokens);
+    // The ACP process and its `onEvent` closure outlive a single prompt, so the
+    // meter for the current run has to be looked up per event, not captured.
+    this.runMeters.set(session.id, { meter, profile: usageProfile, enforce: usageLimitsOn });
+    const budget = usageLimitsOn ? runBudgetFromProfile(usageProfile) : defaultBudget();
     const span = startSpan("agent.prompt", { sessionId: session.id, workspaceId: ws.id, mode: command.mode ?? "agent" });
     const budgetTimer = setTimeout(() => {
       this.append(session.id, {
@@ -1036,12 +1110,26 @@ export class Platform {
             // The ACP process is reused across prompts, so this closure must
             // write the session buffer — not a `let streamed` from the first start.
             if (event.type === "assistant_delta") this.promptText.append(session.id, event.text);
+            const metered = this.runMeters.get(session.id);
+            if (metered) meterSessionEvent(metered.meter, event);
             usage.toolCalls += event.type === "tool_call" ? 1 : 0;
             if (event.type === "tool_call") {
               this.store.update((d) => {
                 const current = d.runLock[ws.id];
                 if (current) d.runLock[ws.id] = heartbeatLease(createLease(current.sessionId, current.userId));
               });
+            }
+            const perRunTokens = metered?.profile.limits.perRunTokens ?? 0;
+            if (metered?.enforce && perRunTokens > 0 && meterBillableTokens(metered.meter, metered.profile) > perRunTokens) {
+              this.append(session.id, {
+                type: "budget",
+                id: randomUUID(),
+                at: new Date().toISOString(),
+                reason: "tokens",
+                message: "Run stopped: per-run token limit reached",
+              });
+              void this.runs.get(session.id)?.cancel();
+              return;
             }
             const reason = budgetExceeded(budget, usage);
             if (reason) {
@@ -1095,7 +1183,9 @@ export class Platform {
           });
         }
       }
-      const blocks: AcpPromptBlock[] = [{ type: "text", text: packed.text }, ...this.attachmentBlocks(command.attachments, ws.worktree)];
+      const attachmentBlocks = this.attachmentBlocks(command.attachments, ws.worktree);
+      meter.inputTokens += estimatePromptBlockTokens(attachmentBlocks);
+      const blocks: AcpPromptBlock[] = [{ type: "text", text: packed.text }, ...attachmentBlocks];
       const statesBefore = await worktreeFileStates(ws.worktree);
       const fingerprintBefore = await worktreeFingerprint(ws.worktree);
       this.promptText.reset(session.id);
@@ -1188,7 +1278,29 @@ export class Platform {
       });
     } finally {
       span.end({ toolCalls: usage.toolCalls });
-      recordUsage({ sessionId: session.id, tokens: packed.usedTokens, costUsd: usage.costUsd, toolCalls: usage.toolCalls });
+      const baseline = this.store.read().sessions.find((s) => s.id === session.id)?.costBaselineUsd ?? 0;
+      const runCostUsd = costDelta(baseline, meter.cumulativeCostUsd);
+      if (meter.cumulativeCostUsd > baseline) {
+        this.store.update((d) => {
+          const row = d.sessions.find((s) => s.id === session.id);
+          if (row) row.costBaselineUsd = meter.cumulativeCostUsd;
+        });
+      }
+      this.recordRunUsage(
+        ledgerEntryFromMeter({
+          id: randomUUID(),
+          meter,
+          userId: user.id,
+          workspaceId: ws.id,
+          sessionId: session.id,
+          runId,
+          provider: providerId,
+          costUsd: runCostUsd,
+          tz: usageTimezone(),
+        }),
+      );
+      recordUsage({ sessionId: session.id, tokens: meterEstimatedTokens(meter), costUsd: runCostUsd, toolCalls: usage.toolCalls });
+      this.runMeters.delete(session.id);
       clearTimeout(budgetTimer);
       this.store.update((d) => {
         delete d.runLock[ws.id];
@@ -1321,16 +1433,115 @@ export class Platform {
     };
   }
 
+  usageProfiles(): UsageProfile[] {
+    const stored = this.store.read().usageProfiles;
+    return stored.length ? stored : defaultUsageProfiles();
+  }
+
+  usageProfileFor(user: { id: string; usageProfileId?: string }): UsageProfile {
+    return resolveUsageProfile(user, this.usageProfiles(), defaultUsageProfileId());
+  }
+
+  saveUsageProfiles(actor: UserRecord, profiles: unknown): UsageProfile[] {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const parsed = UsageProfileSchema.array().min(1).parse(profiles);
+    const ids = new Set(parsed.map((row) => row.id));
+    if (ids.size !== parsed.length) throw new Error("Duplicate profile id");
+    this.store.update((d) => {
+      d.usageProfiles = parsed.map((row) => ({ ...d.usageProfiles.find((current) => current.id === row.id), ...row }));
+    });
+    return this.usageProfiles();
+  }
+
+  setUserUsageProfile(actor: UserRecord, userId: string, profileId: string): UsageSummary {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    if (!this.usageProfiles().some((row) => row.id === profileId)) throw new Error("Profile not found");
+    const target = this.store.read().users.find((row) => row.id === userId);
+    if (!target) throw new Error("User not found");
+    this.store.update((d) => {
+      const row = d.users.find((user) => user.id === userId);
+      if (row) row.usageProfileId = profileId;
+    });
+    return this.usageSummary(userId);
+  }
+
+  grantUsageTokens(actor: UserRecord, userId: string, tokens: number, reason: string): UsageSummary {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    if (!Number.isFinite(tokens) || tokens === 0) throw new Error("tokens must be a non-zero number");
+    const target = this.store.read().users.find((row) => row.id === userId);
+    if (!target) throw new Error("User not found");
+    this.store.update((d) => {
+      d.usageGrants.push({
+        id: randomUUID(),
+        userId,
+        periodKey: usagePeriodKey(new Date(), usageTimezone()),
+        tokens: Math.trunc(tokens),
+        reason: reason.trim(),
+        byUserId: actor.id,
+        at: new Date().toISOString(),
+      });
+    });
+    return this.usageSummary(userId);
+  }
+
+  usageSummary(
+    userId: string,
+    options: { pendingTokens?: number; provider?: string; at?: Date } = {},
+  ): UsageSummary {
+    const db = this.store.read();
+    const user = db.users.find((row) => row.id === userId);
+    const profile = this.usageProfileFor(user ?? { id: userId });
+    return summarizeUsage({
+      userId,
+      profile,
+      entries: db.usageLedger,
+      rollups: db.usageRollups,
+      grants: db.usageGrants,
+      at: options.at,
+      tz: usageTimezone(),
+      pendingTokens: options.pendingTokens,
+      provider: options.provider,
+    });
+  }
+
+  listUsageSummaries(): UsageSummary[] {
+    return this.store.read().users.map((user) => this.usageSummary(user.id));
+  }
+
+  /** Metering is independent of enforcement: the ledger fills even with limits off. */
+  private recordRunUsage(entry: UsageLedgerEntry): void {
+    if (!isFlagOn(this.flags(), "usageMetering")) return;
+    this.store.update((d) => {
+      d.usageLedger.push(entry);
+    });
+  }
+
+  pruneUsageLedger(now = new Date()): { pruned: number } {
+    const { expired } = splitExpiredEntries(this.store.read().usageLedger, now, usageRetentionDays());
+    if (!expired.length) return { pruned: 0 };
+    const expiredIds = new Set(expired.map((row) => row.id));
+    this.store.update((d) => {
+      const profiles = d.usageProfiles.length ? d.usageProfiles : defaultUsageProfiles();
+      const meter = profiles[0]?.meter ?? "max";
+      d.usageRollups = mergeRollups(d.usageRollups, rollupFromEntries(expired, meter));
+      d.usageLedger = d.usageLedger.filter((row) => !expiredIds.has(row.id));
+    });
+    return { pruned: expired.length };
+  }
+
   listUsers() {
     const db = this.store.read();
     return db.users.map((user) => {
       const workspace = db.workspaces.find((row) => row.userId === user.id && row.status !== "destroyed");
+      const profile = this.usageProfileFor(user);
       return {
         id: user.id,
         login: user.login,
         name: user.name,
         email: user.email,
         role: this.roleFor(user),
+        usageProfileId: profile.id,
+        usageProfileLabel: profile.label,
         accessPending: Boolean(user.accessPending),
         platformAdmin: this.isPlatformAdmin(user),
         envAdmin: adminLoginsFromEnv().some((login) => sameLogin(login, user.login)),

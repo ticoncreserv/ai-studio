@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -42,6 +42,51 @@ describe("store shape", () => {
     const again = assembleDb(rows, json.read());
     expect(compareStoreShapes(json.read(), again)).toEqual([]);
     expect(again.sessions[0]?.events[0]).toMatchObject({ type: "user_message", text: "hi" });
+  });
+
+  it("round-trips usage profiles, ledger, rollups, and grants", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-usage-shape-"));
+    dirs.push(dir);
+    const json = new JsonStore(join(dir, "platform.json"));
+    expect(json.read().usageProfiles.map((row) => row.id)).toEqual(["starter", "standard", "premium"]);
+    json.update((db) => {
+      db.usageProfiles = db.usageProfiles.map((row) =>
+        row.id === "starter" ? { ...row, limits: { ...row.limits, monthlyTokens: 1_234 } } : row,
+      );
+      db.usageLedger.push({
+        id: "l1",
+        userId: "u1",
+        workspaceId: "w1",
+        sessionId: "s1",
+        runId: "r1",
+        provider: "cursor",
+        at: "2026-09-10T00:00:00.000Z",
+        periodKey: "2026-09",
+        dayKey: "2026-09-10",
+        inputTokens: 10,
+        outputTokens: 20,
+        estimatedTokens: 30,
+        contextPeakTokens: 40,
+        costUsd: 0.5,
+        toolCalls: 1,
+        source: "mixed",
+      });
+      db.usageRollups.push({ userId: "u1", periodKey: "2026-08", tokens: 90, costUsd: 1, runs: 3, lastRunAt: "2026-08-31T00:00:00.000Z" });
+      db.usageGrants.push({ id: "g1", userId: "u1", periodKey: "2026-09", tokens: 500, reason: "launch", byUserId: "admin", at: "2026-09-09T00:00:00.000Z" });
+    });
+    const rows = flattenDb(json.read());
+    expect(rows.usageLedger).toHaveLength(1);
+    expect(compareStoreShapes(json.read(), assembleDb(rows, json.read()))).toEqual([]);
+  });
+
+  it("keeps the seeded profiles for a store written before usage limits existed", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-usage-legacy-"));
+    dirs.push(dir);
+    const file = join(dir, "platform.json");
+    writeFileSync(file, JSON.stringify({ users: [], workspaces: [], sessions: [] }));
+    const json = new JsonStore(file);
+    expect(json.read().usageProfiles.map((row) => row.id)).toEqual(["starter", "standard", "premium"]);
+    expect(json.read().usageLedger).toEqual([]);
   });
 
   it("imports json into a snapshot replica", () => {

@@ -1,4 +1,5 @@
 import { ClientCommandSchema } from "@atelier/contracts";
+import { UsageLimitError } from "@atelier/supervisor";
 import { requireUser } from "../../../utils/authz";
 import { platform } from "../../../utils/platform";
 
@@ -14,6 +15,18 @@ export default defineEventHandler(async (event) => {
   }
   const body = await readBody<{ command: unknown }>(event);
   const command = ClientCommandSchema.parse(body.command);
-  await platform().handleCommand({ user, sessionId, command });
+  try {
+    await platform().handleCommand({ user, sessionId, command });
+  } catch (error) {
+    if (error instanceof UsageLimitError) {
+      throw createError({
+        statusCode: 429,
+        statusMessage: "usage limit",
+        message: error.message,
+        data: { usageLimit: true, usage: error.summary, snapshot: platform().snapshot(sessionId) },
+      });
+    }
+    throw error;
+  }
   return { ok: true, snapshot: platform().snapshot(sessionId) };
 });

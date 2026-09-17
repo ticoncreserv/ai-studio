@@ -18,6 +18,7 @@ export interface SessionState {
   validation: Array<{ id: string; status: ValidationStatus; command: string }>;
   failures: Array<{ kind: string; message: string }>;
   push: { status: string; message: string; sha?: string } | null;
+  usage: { contextUsed: number; contextSize: number; costUsd: number } | null;
 }
 
 export const emptySession = (): SessionState => ({
@@ -38,6 +39,7 @@ export const emptySession = (): SessionState => ({
   validation: [],
   failures: [],
   push: null,
+  usage: null,
 });
 
 export function reduceSession(state: SessionState, event: SessionEvent): SessionState {
@@ -135,6 +137,11 @@ export function reduceSession(state: SessionState, event: SessionEvent): Session
       return { ...state, failures: [...state.failures, { kind: event.kind, message: event.message }] };
     case "push":
       return { ...state, push: { status: event.status, message: event.message, sha: event.sha } };
+    case "usage":
+      return {
+        ...state,
+        usage: { contextUsed: event.contextUsed, contextSize: event.contextSize, costUsd: event.costUsd },
+      };
     case "migration":
     case "prompt_manifest":
     case "available_skills":

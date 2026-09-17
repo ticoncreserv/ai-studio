@@ -66,4 +66,5 @@ export {
 export type { GitHubAppCredentials, GitHubAppManifest } from "./github-app.js";
 export { Reconciler } from "./reconciler.js";
 export { startSpan, recordUsage } from "./otel.js";
+export { UsageLimitError } from "./usage.js";
 export { signSession, verifySession } from "./session-cookie.js";

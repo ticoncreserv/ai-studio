@@ -321,10 +321,12 @@ export function useStudio() {
       if (pendingTurn.value && persistedUserCount() >= pendingTurn.value.waitUntilCount) {
         pendingTurn.value = null;
       }
-    } catch {
+    } catch (error) {
       if (generation !== runGeneration) return;
       if (pendingTurn.value) pendingTurn.value = { ...pendingTurn.value, status: "failed" };
-      flash(t("chat.promptFailed"));
+      const blocked = (error as { data?: { usageLimit?: boolean } }).data?.usageLimit === true;
+      flash(blocked ? t("chat.usageBlocked") : t("chat.promptFailed"));
+      if (blocked) void refresh();
     } finally {
       if (generation !== runGeneration) return;
       const next = queue.value[0];

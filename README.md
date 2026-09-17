@@ -96,7 +96,9 @@ On every preview start the studio writes the worktree `.env` as `.env.example` â
 
 ## Admin
 
-`/admin` is for platform admins: shared `.env`, providers, users, global rules (`AGENTS.md` prefix), global skills, MCP servers and policy, flags, and the workspace fleet.
+`/admin` is for platform admins: shared `.env`, providers, users, usage profiles, global rules (`AGENTS.md` prefix), global skills, MCP servers and policy, flags, and the workspace fleet.
+
+The Cursor key is global. Per-user spend is a local ledger (`usageProfiles` / `usageLedger` / `usageGrants`) with three seeded profiles â€” starter 5M, standard 20M, premium 60M tokens per month in `America/Sao_Paulo`. Limits ship on in `block` mode; an admin who needs room grants extra tokens (including to themselves). Assign a profile on the Users row or under Token limits.
 
 A user is a platform admin when their login is in `ATELIER_ADMIN_LOGINS`, or `platformAdmin` is set on their record, or **no explicit admin exists yet** and they are a GitHub `owner`. After the first admin is granted in the panel, other owners do not get the panel automatically. The last admin cannot be removed.
 
@@ -124,6 +126,6 @@ Sandbox profiles: `disabled` when `sandboxedAgent` is off, `best-effort` (defaul
 
 ## Feature flags
 
-Flags live in the platform store and are flipped in `/admin` without a deploy. Defaults stay off for `publish`, extra providers, postgres, required sandbox, live evals, and auto-push.
+Flags live in the platform store and are flipped in `/admin` without a deploy. Defaults stay off for `publish`, extra providers, postgres, required sandbox, live evals, and auto-push. `usageMetering` and `usageLimits` default on so the shared Cursor key is never uncapped. `ATELIER_USAGE_TZ` (default `America/Sao_Paulo`), `ATELIER_USAGE_RETENTION_DAYS` (default 120), and `ATELIER_DEFAULT_USAGE_PROFILE` (default `standard`) tune the ledger.
 
 Live ACP evals (`pnpm eval`) stay on transcript + worktree gold unless `ATELIER_LIVE_EVAL=1`. Missing CLIs skip instead of failing CI.
