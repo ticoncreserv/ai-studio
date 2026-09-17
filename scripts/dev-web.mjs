@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { startLoopbackProxy } from "./loopback-proxy.mjs";
 import { ensureCursorAgentCli } from "./ensure-cursor-agent.mjs";
 
@@ -36,6 +36,9 @@ const env = {
   NUXT_PORT: String(port),
 };
 if (listened.includes(80)) env.ATELIER_LOOPBACK_HTTP = "80";
+
+const disconnectGuard = pathToFileURL(join(web, "server/utils/disconnect-guard.ts")).href;
+env.NODE_OPTIONS = [process.env.NODE_OPTIONS, `--import ${disconnectGuard}`].filter(Boolean).join(" ");
 
 const child = spawn(process.execPath, [nuxtBin, "dev", "--host", "0.0.0.0", "--port", String(port)], {
   cwd: web,
