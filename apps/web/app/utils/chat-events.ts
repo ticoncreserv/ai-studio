@@ -1,4 +1,11 @@
 import type { AgentMode, InspectPin, SessionEvent } from "@atelier/contracts";
+import {
+  collapseSessionEvents,
+  sessionEventKey,
+  upsertSessionEvent,
+} from "@atelier/domain";
+
+export { collapseSessionEvents, sessionEventKey, upsertSessionEvent };
 
 export type PendingUserTurn = {
   id: string;
@@ -38,7 +45,6 @@ const PROGRESS_TYPES = new Set([
   "permission",
   "diff",
   "todos",
-  "run",
   "proposal",
   "validation",
 ]);
@@ -76,37 +82,62 @@ export function hasProgressAfterLastUser(events: SessionEvent[]): boolean {
   return events.slice(lastUser + 1).some((event) => PROGRESS_TYPES.has(event.type));
 }
 
-export function sessionEventKey(event: SessionEvent): string {
-  if (event.type === "tool_call") return `tool_call:${event.toolCallId}`;
-  return `${event.type}:${event.id}`;
+export type ToolCallEvent = Extract<SessionEvent, { type: "tool_call" }>;
+export type AssistantEvent = Extract<SessionEvent, { type: "assistant_message" | "assistant_delta" }>;
+
+export type ChatBlock =
+  | { type: "event"; event: SessionEvent }
+  | { type: "tools"; events: ToolCallEvent[] }
+  | { type: "assistant"; events: AssistantEvent[] };
+
+function isAssistantEvent(event: SessionEvent): event is AssistantEvent {
+  return event.type === "assistant_message" || event.type === "assistant_delta";
 }
 
-function preferSessionEvent(current: SessionEvent, incoming: SessionEvent): SessionEvent {
-  if (current.type === "tool_call" && incoming.type === "tool_call") {
-    if (current.status !== "running" && incoming.status === "running") return current;
-    return incoming;
+export function groupChatBlocks(events: SessionEvent[]): ChatBlock[] {
+  const blocks: ChatBlock[] = [];
+  for (const event of events) {
+    if (event.type === "run") continue;
+    if (event.type === "tool_call") {
+      const last = blocks.at(-1);
+      if (last?.type === "tools") last.events.push(event);
+      else blocks.push({ type: "tools", events: [event] });
+      continue;
+    }
+    if (isAssistantEvent(event)) {
+      const last = blocks.at(-1);
+      if (last?.type === "assistant") last.events.push(event);
+      else blocks.push({ type: "assistant", events: [event] });
+      continue;
+    }
+    blocks.push({ type: "event", event });
   }
-  if ("outcome" in current && "outcome" in incoming) {
-    if (current.outcome !== "pending" && incoming.outcome === "pending") return current;
-    if (incoming.outcome !== "pending") return incoming;
-  }
-  return incoming;
+  return blocks;
 }
 
-export function upsertSessionEvent(events: SessionEvent[], event: SessionEvent): SessionEvent[] {
-  if (event.type === "assistant_delta" || event.type === "available_skills") return events;
-  const key = sessionEventKey(event);
-  const index = events.findIndex((row) => sessionEventKey(row) === key);
-  if (index >= 0) {
-    const next = events.slice();
-    next[index] = preferSessionEvent(events[index]!, event);
-    return next;
+export function assistantBlockText(events: AssistantEvent[]): string {
+  return events
+    .map((event) => event.text.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export function turnActionsEventId(events: SessionEvent[]): string | null {
+  if (isSessionRunActive(events)) return null;
+  let lastUser = -1;
+  for (let i = 0; i < events.length; i++) {
+    if (events[i]?.type === "user_message") lastUser = i;
   }
-  return [...events, event];
+  if (lastUser < 0) return null;
+  let lastId: string | null = null;
+  for (const event of events.slice(lastUser + 1)) {
+    if (event.type === "assistant_message") lastId = event.id;
+  }
+  return lastId;
 }
 
 export function mergeSessionEvents(server: SessionEvent[], local: SessionEvent[]): SessionEvent[] {
-  let merged = server.slice();
+  let merged = collapseSessionEvents(server);
   for (const event of local) {
     merged = upsertSessionEvent(merged, event);
   }

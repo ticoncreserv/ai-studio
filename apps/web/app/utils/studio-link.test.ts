@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { absoluteAppUrl, fetchStatusCode } from "./studio-link";
+import { absoluteAppUrl, fetchStatusCode, fetchStatusMessage } from "./studio-link";
 
 describe("studio link", () => {
   it("joins origin and a relative path", () => {
@@ -15,5 +15,10 @@ describe("studio link", () => {
     expect(fetchStatusCode({ statusCode: 403 })).toBe(403);
     expect(fetchStatusCode({ status: 401 })).toBe(401);
     expect(fetchStatusCode("nope")).toBeUndefined();
+  });
+
+  it("reads fetch status messages from ofetch-shaped errors", () => {
+    expect(fetchStatusMessage({ statusMessage: "invite expired" })).toBe("invite expired");
+    expect(fetchStatusMessage("nope")).toBeUndefined();
   });
 });

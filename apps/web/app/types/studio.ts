@@ -75,8 +75,41 @@ export interface PreviewDebug {
   exceptions?: { count: number; message?: string };
 }
 
+export interface StudioWorkspaceMembership {
+  id: string;
+  ownerLogin: string;
+  ownerName: string;
+  role: "owner" | "editor" | "spectator";
+  status: string;
+  lastActiveAt: string;
+  sessionCount: number;
+  isOwn: boolean;
+}
+
+export interface StudioWorkspaceMember {
+  userId: string;
+  login: string;
+  name: string;
+  role: "owner" | "editor" | "spectator";
+  invitedBy: string | null;
+  acceptedAt: string | null;
+  isOwner: boolean;
+}
+
+export interface StudioPendingInvite {
+  id: string;
+  role: "editor" | "spectator";
+  expiresAt: string;
+  url: string;
+  createdByLogin: string;
+}
+
 export interface StudioPayload {
   user: { id: string; login: string; role: string; locale: "en" | "pt-BR"; platformAdmin?: boolean };
+  owner: { id: string; login: string; name: string };
+  isOwner: boolean;
+  workspaceRole: "owner" | "editor" | "spectator" | null;
+  memberships: StudioWorkspaceMembership[];
   workspace: StudioWorkspace;
   sessions: StudioSession[];
   session: StudioSession | null;
@@ -111,6 +144,8 @@ export interface StudioPayload {
   previewPath: string;
   canEdit: boolean;
   canInvite: boolean;
+  canHibernate: boolean;
+  canResume: boolean;
   agent: { ready: boolean; provider: string; error: string | null };
 }
 

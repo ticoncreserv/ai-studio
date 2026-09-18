@@ -43,6 +43,7 @@ const props = defineProps<{
   lastError?: string;
   resuming?: boolean;
   canEdit?: boolean;
+  canHibernate?: boolean;
   processRunning?: boolean;
 }>();
 
@@ -570,7 +571,8 @@ const showIframe = computed(() => processUp.value);
 const showIdlePanel = computed(() => !showIframe.value && !waiting.value);
 const powerDisabled = computed(() => {
   if (props.resuming || props.status === "provisioning") return true;
-  if (previewAwake.value && props.canEdit === false) return true;
+  if (previewAwake.value && (props.canHibernate ?? props.canEdit) === false) return true;
+  if (!previewAwake.value && props.canEdit === false) return true;
   return false;
 });
 
@@ -730,7 +732,7 @@ function togglePreviewPower() {
             :elapsed="elapsed"
             :tone="waitTone"
           >
-            <UiButton v-if="tabUnavailable" class="mt-3" size="sm" @click="emit('resume')">
+            <UiButton v-if="tabUnavailable && canEdit" class="mt-3" size="sm" @click="emit('resume')">
               {{ t("workspace.resume") }}
             </UiButton>
           </StudioPreviewWait>
@@ -774,7 +776,7 @@ function togglePreviewPower() {
           :hint="lastError || t('workspace.resumeHint')"
           tone="error"
         >
-          <UiButton class="mt-3" size="sm" @click="emit('resume')">{{ t("workspace.resume") }}</UiButton>
+          <UiButton v-if="canEdit" class="mt-3" size="sm" @click="emit('resume')">{{ t("workspace.resume") }}</UiButton>
         </StudioPreviewWait>
       </div>
     </div>

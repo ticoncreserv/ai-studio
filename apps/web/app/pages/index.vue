@@ -2,6 +2,7 @@
 import { ArrowRight, LogOut, Settings2 } from "@lucide/vue";
 
 const { t } = useI18n();
+const relativeTime = useRelativeTime();
 const route = useRoute();
 const { leaving, signOut } = useSignOut();
 const loading = ref(false);
@@ -11,8 +12,40 @@ const me = ref<null | {
   user: { login: string; platformAdmin?: boolean; disabled?: boolean };
   workspace: { id: string } | null;
   sessions?: Array<{ id: string; title: string }>;
+  memberships?: Array<{
+    id: string;
+    ownerLogin: string;
+    ownerName: string;
+    role: "owner" | "editor" | "spectator";
+    status: string;
+    lastActiveAt: string;
+    sessionCount: number;
+  }>;
 }>(null);
 const error = computed(() => (route.query.error === "github" ? t("auth.error") : ""));
+const notice = computed(() => (route.query.notice === "removed" ? t("invite.removed") : ""));
+const openingShared = ref<string | null>(null);
+
+function membershipRole(role: string) {
+  if (role === "spectator") return t("workspace.roleSpectator");
+  return t("workspace.roleEditor");
+}
+
+function membershipStatus(status: string) {
+  if (status === "running") return t("workspace.live");
+  if (status === "hibernated") return t("preview.hibernated");
+  if (status === "ready") return t("workspace.ready");
+  return status;
+}
+
+async function openShared(id: string) {
+  openingShared.value = id;
+  try {
+    await navigateTo(`/w/${id}`);
+  } finally {
+    openingShared.value = null;
+  }
+}
 
 onMounted(async () => {
   try {
@@ -136,6 +169,8 @@ function onGithub(event: MouseEvent) {
           <p class="login-kicker login-rise login-rise-2">{{ t("auth.welcomeBack") }}</p>
           <h1 class="login-title login-rise login-rise-3">{{ me.user.login }}</h1>
           <p class="login-copy login-rise login-rise-4">{{ t("auth.sessionReady") }}</p>
+          <p v-if="error" class="login-error login-rise login-rise-4" role="alert">{{ error }}</p>
+          <p v-if="notice" class="login-error login-rise login-rise-4" role="status">{{ notice }}</p>
           <button class="login-cta login-rise login-rise-5" type="button" :disabled="loading" @click="openWorkspace()">
             <UiSpinner v-if="loading" size="sm" :label="t('nav.working')" />
             {{ loading ? t("workspace.loading") : t("nav.openWorkspace") }}
@@ -154,6 +189,24 @@ function onGithub(event: MouseEvent) {
             >
               <span class="cx-session-dot" aria-hidden="true" />
               <span class="min-w-0 flex-1 truncate">{{ sessionTitle(session) }}</span>
+            </button>
+          </div>
+          <div v-if="me.memberships?.length" class="login-sessions login-rise login-rise-5">
+            <p class="login-sessions-label">{{ t("workspace.sharedWithYou") }}</p>
+            <button
+              v-for="row in me.memberships"
+              :key="row.id"
+              class="login-session"
+              type="button"
+              :disabled="Boolean(openingShared)"
+              :aria-label="t('nav.openSharedWorkspace', { owner: row.ownerLogin })"
+              @click="openShared(row.id)"
+            >
+              <span class="cx-session-dot" aria-hidden="true" />
+              <span class="min-w-0 flex-1 truncate">{{ row.ownerLogin }}</span>
+              <span class="max-w-[55%] shrink-0 truncate text-[11px] text-ink-400">
+                {{ membershipRole(row.role) }} · {{ membershipStatus(row.status) }} · {{ relativeTime(row.lastActiveAt) }}
+              </span>
             </button>
           </div>
         </template>

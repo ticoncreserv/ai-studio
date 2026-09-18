@@ -1,4 +1,6 @@
-import type { Role } from "@atelier/contracts";
+import type { Role, WorkspaceMemberRole } from "@atelier/contracts";
+
+export type WorkspaceAccessRole = "owner" | WorkspaceMemberRole;
 
 export function mapGitHubPermission(permissions: {
   admin?: boolean;
@@ -22,8 +24,25 @@ export function canInvite(role: Role): boolean {
   return role === "owner";
 }
 
+export function isWorkspaceMemberRole(value: unknown): value is WorkspaceMemberRole {
+  return value === "editor" || value === "spectator";
+}
+
+export function canEditWorkspaceAccess(role: WorkspaceAccessRole | null | undefined): boolean {
+  return role === "owner" || role === "editor";
+}
+
+export function canViewWorkspaceAccess(role: WorkspaceAccessRole | null | undefined): boolean {
+  return role === "owner" || role === "editor" || role === "spectator";
+}
+
+export function canManageWorkspaceAccess(isOwner: boolean, platformAdmin = false): boolean {
+  return isOwner || platformAdmin;
+}
+
+/** Workspace invites are minted by the workspace owner or a platform admin. */
 export function canCreateStudioInvite(role: Role, platformAdmin = false): boolean {
-  return canEdit(role) || platformAdmin;
+  return canInvite(role) || platformAdmin;
 }
 
 export function canSpectate(role: Role): boolean {

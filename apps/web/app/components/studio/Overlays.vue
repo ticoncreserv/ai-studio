@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Command } from "@lucide/vue";
-import type { StudioDialog, StudioMcpServer, StudioPayload, StudioSheet, StudioSkill, PreviewDebug } from "~/types/studio";
+import type { StudioDialog, StudioMcpServer, StudioPayload, StudioPendingInvite, StudioSheet, StudioSkill, StudioWorkspaceMember, PreviewDebug } from "~/types/studio";
 import type { PreviewDebugAction } from "~/utils/preview-debug-prompt";
 import type { SessionEvent } from "@atelier/contracts";
 import { STUDIO_SHORTCUTS } from "~/utils/studio-shortcuts";
@@ -12,6 +12,10 @@ const props = defineProps<{
   dialog: StudioDialog;
   linkUrl?: string;
   linkBusy?: boolean;
+  inviteRole?: "editor" | "spectator";
+  inviteMembers?: StudioWorkspaceMember[];
+  pendingInvites?: StudioPendingInvite[];
+  invitePanelBusy?: boolean;
   paletteQuery: string;
   commands: Array<{ id: string; label: string; keys?: string; run: () => void }>;
   filteredCommands: Array<{ id: string; label: string; keys?: string; run: () => void }>;
@@ -42,6 +46,12 @@ const emit = defineEmits<{
   toggleSkill: [payload: { name: string; enabled: boolean }];
   toggleMcp: [payload: { name: string; enabled: boolean }];
   copyInvite: [];
+  createInvite: [];
+  revokeInvite: [id: string];
+  copyPendingInvite: [url: string];
+  removeMember: [userId: string];
+  leaveWorkspace: [];
+  "update:inviteRole": [value: "editor" | "spectator"];
   copyShare: [];
   hibernate: [];
   sync: [];
@@ -113,6 +123,18 @@ const skills = computed(() => props.data.skills ?? []);
 const mcpServers = computed(() => props.data.mcp?.servers ?? []);
 const mcpPolicy = computed(() => props.data.mcp?.policy);
 const canEditTools = computed(() => props.data.canEdit);
+
+function memberRoleLabel(role: string) {
+  if (role === "owner") return t("invite.roleOwner");
+  if (role === "spectator") return t("invite.roleSpectator");
+  return t("invite.roleEditor");
+}
+
+const guestMembers = computed(() => (props.inviteMembers ?? []).filter((row) => !row.isOwner));
+const inviteRoleOptions = computed(() => [
+  { id: "editor", label: t("invite.roleEditor"), description: t("invite.roleEditorHint") },
+  { id: "spectator", label: t("invite.roleSpectator"), description: t("invite.roleSpectatorHint") },
+]);
 
 function sourceLabel(source: string) {
   if (source === "repo") return t("skills.source.repo");
@@ -382,7 +404,7 @@ function submitQuestion() {
     </ul>
     <div class="mt-6 flex gap-2">
       <UiButton size="sm" variant="outline" @click="emit('sync')">{{ t("workspace.syncBase") }}</UiButton>
-      <UiButton size="sm" variant="outline" @click="emit('hibernate')">{{ t("workspace.hibernate") }}</UiButton>
+      <UiButton v-if="data.canHibernate" size="sm" variant="outline" @click="emit('hibernate')">{{ t("workspace.hibernate") }}</UiButton>
     </div>
   </UiSheet>
 
@@ -528,25 +550,95 @@ function submitQuestion() {
     @action="emit('debugAction', $event)"
   />
 
-  <UiDialog :open="dialog === 'invite'" :title="t('invite.title')" @close="emit('update:dialog', null)">
-    <p class="text-sm leading-relaxed text-ink-500">{{ t("invite.hint") }}</p>
-    <p class="mt-2 text-[12px] text-ink-300">{{ t("invite.expires") }}</p>
-    <p v-if="!data.canInvite" class="mt-3 text-[12.5px] text-amber-200/90">{{ t("invite.forbidden") }}</p>
-    <template v-else>
+  <UiDialog
+    :open="dialog === 'invite'"
+    :title="data.canInvite ? t('invite.title') : t('invite.peopleTitle')"
+    @close="emit('update:dialog', null)"
+  >
+    <p v-if="data.canInvite" class="text-sm leading-relaxed text-ink-500">{{ t("invite.hint") }}</p>
+    <p v-if="data.canInvite" class="mt-2 text-[12px] text-ink-300">{{ t("invite.expires") }}</p>
+    <p v-if="invitePanelBusy" class="mt-3 text-[12.5px] text-ink-400">{{ t("invite.loading") }}</p>
+    <div class="mt-4 space-y-2">
+      <p class="text-[11px] text-ink-400">{{ t("invite.members") }}</p>
+      <div
+        v-for="member in inviteMembers"
+        :key="member.userId"
+        class="flex items-center justify-between gap-2 rounded-[6px] border border-line/70 px-2 py-1.5"
+      >
+        <div class="min-w-0">
+          <p class="truncate text-[13px] text-ink-950">
+            {{ member.login || member.name }}
+            <span v-if="member.userId === data.user.id" class="text-ink-400"> · {{ t("invite.you") }}</span>
+          </p>
+          <p class="text-[11px] text-ink-400">{{ memberRoleLabel(member.role) }}</p>
+        </div>
+        <UiButton
+          v-if="data.canInvite && !member.isOwner"
+          size="sm"
+          variant="ghost"
+          @click="emit('removeMember', member.userId)"
+        >
+          {{ t("invite.remove") }}
+        </UiButton>
+      </div>
+      <p v-if="!invitePanelBusy && !guestMembers.length" class="text-[12px] text-ink-400">{{ t("invite.emptyMembers") }}</p>
+    </div>
+    <template v-if="data.canInvite">
+      <div class="mt-4 space-y-2">
+        <p class="text-[11px] text-ink-400">{{ t("invite.pendingLinks") }}</p>
+        <div
+          v-for="invite in pendingInvites"
+          :key="invite.id"
+          class="flex items-center justify-between gap-2 rounded-[6px] border border-line/70 px-2 py-1.5"
+        >
+          <div class="min-w-0">
+            <p class="truncate font-mono text-[12px] text-ink-800">{{ invite.url }}</p>
+            <p class="text-[11px] text-ink-400">
+              {{ memberRoleLabel(invite.role) }} · {{ t("invite.expiresOn", { date: invite.expiresAt.slice(0, 10) }) }}
+            </p>
+          </div>
+          <div class="flex shrink-0 gap-1">
+            <UiButton size="sm" variant="ghost" @click="emit('copyPendingInvite', invite.url)">{{ t("invite.copy") }}</UiButton>
+            <UiButton size="sm" variant="ghost" @click="emit('revokeInvite', invite.id)">{{ t("invite.revoke") }}</UiButton>
+          </div>
+        </div>
+        <p v-if="!invitePanelBusy && !pendingInvites?.length" class="text-[12px] text-ink-400">{{ t("invite.emptyPending") }}</p>
+      </div>
       <label class="mt-4 block">
+        <span class="text-[11px] text-ink-400">{{ t("invite.role") }}</span>
+        <UiSelect
+          class="mt-1 w-full"
+          :model-value="inviteRole"
+          :options="inviteRoleOptions"
+          :allow-empty="false"
+          :aria-label="t('invite.role')"
+          @update:model-value="emit('update:inviteRole', $event === 'spectator' ? 'spectator' : 'editor')"
+        />
+      </label>
+      <UiButton class="mt-3 w-full" :loading="linkBusy" @click="emit('createInvite')">
+        {{ t("invite.generate") }}
+      </UiButton>
+      <label v-if="linkUrl" class="mt-3 block">
         <span class="text-[11px] text-ink-400">{{ t("invite.linkLabel") }}</span>
         <input
           :value="linkUrl"
           readonly
-          :placeholder="linkBusy ? t('nav.working') : ''"
           class="mt-1 h-8 w-full rounded-[6px] border border-line bg-white/[0.03] px-2 font-mono text-[12px] text-ink-950 outline-none"
           @focus="($event.target as HTMLInputElement).select()"
         />
       </label>
-      <UiButton class="mt-3 w-full" :loading="linkBusy" :disabled="!linkUrl" @click="emit('copyInvite')">
+      <UiButton v-if="linkUrl" class="mt-2 w-full" variant="outline" :disabled="!linkUrl" @click="emit('copyInvite')">
         {{ t("invite.copy") }}
       </UiButton>
     </template>
+    <UiButton
+      v-else-if="!data.isOwner"
+      class="mt-4 w-full"
+      variant="outline"
+      @click="emit('leaveWorkspace')"
+    >
+      {{ t("invite.leave") }}
+    </UiButton>
   </UiDialog>
 
   <UiDialog :open="dialog === 'share'" :title="t('share.title')" @close="emit('update:dialog', null)">

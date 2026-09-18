@@ -4,7 +4,7 @@ import { platform } from "../../utils/platform";
 export default defineEventHandler((event) => {
   const user = requireUser(event);
   try {
-    return platform().acceptInvite(getRouterParam(event, "token")!, user);
+    return platform().revokeInvite(user, getRouterParam(event, "token")!);
   } catch (error) {
     throwPlatformError(error);
   }

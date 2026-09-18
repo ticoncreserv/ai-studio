@@ -12,18 +12,20 @@ import type {
   UsageProfile,
   UsageSummary,
   Viewport,
+  WorkspaceMemberRole,
 } from "@atelier/contracts";
 import { UsageProfileSchema } from "@atelier/contracts";
 import {
   applyFileDecision,
   applyHunkDecision,
   budgetExceeded,
-  canEdit,
-  canCreateStudioInvite,
-  canSpectate,
+  canEditWorkspaceAccess,
+  canManageWorkspaceAccess,
+  canViewWorkspaceAccess,
   canTransition,
   adminLoginsFromEnv,
   isPermanentPlatformAdmin,
+  isWorkspaceMemberRole,
   sameLogin,
   adminRules,
   compileRules,
@@ -36,6 +38,8 @@ import {
   defaultFlags,
   evaluatePermission,
   foldEvents,
+  sessionEventKey,
+  upsertSessionEvent,
   isFlagOn,
   resolveSandboxProfile,
   isPlatformAdmin as matchPlatformAdmin,
@@ -98,9 +102,10 @@ import {
   usageTimezone,
   type McpEntry,
   type UsageLedgerEntry,
+  type WorkspaceAccessRole,
 } from "@atelier/domain";
 import { bus } from "./bus.js";
-import { type PlatformStore, type ProviderConfig, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceRecord } from "./store.js";
+import { type PlatformStore, type ProviderConfig, type RuleRecord, type SessionRecord, type UserRecord, type WorkspaceMemberRecord, type WorkspaceRecord } from "./store.js";
 import { createPlatformStore } from "./store-factory.js";
 import { hasCursorApiKey, implementedProviders, preferredAgentProvider, resolveSessionProvider, cursorAgentEnv } from "./providers/env.js";
 import { hydrateProviderKeys, isProviderKeyRef, listProviderCredentials, providerCredentialCandidates, providerSecretKey } from "./providers/credentials.js";
@@ -304,10 +309,32 @@ export class Platform {
     return this.store.read().members.find((m) => m.userId === user.id && m.projectId === projectId)?.role ?? user.role;
   }
 
+  workspaceAccessRole(user: UserRecord, workspace: WorkspaceRecord): WorkspaceAccessRole | null {
+    if (workspace.userId === user.id) return "owner";
+    const member = this.store
+      .read()
+      .workspaceMembers.find((row) => row.workspaceId === workspace.id && row.userId === user.id);
+    if (member) return member.role;
+    if (this.isPlatformAdmin(user)) return "editor";
+    return null;
+  }
+
   canAccessWorkspace(user: UserRecord, workspace: WorkspaceRecord, mode: "view" | "edit"): boolean {
-    if (workspace.userId === user.id) return true;
-    const role = this.roleFor(user, workspace.projectId);
-    return mode === "view" ? canSpectate(role) : canEdit(role);
+    if (user.disabled) return false;
+    const role = this.workspaceAccessRole(user, workspace);
+    return mode === "edit" ? canEditWorkspaceAccess(role) : canViewWorkspaceAccess(role);
+  }
+
+  canManageWorkspace(user: UserRecord, workspace: WorkspaceRecord): boolean {
+    if (user.disabled) return false;
+    return canManageWorkspaceAccess(workspace.userId === user.id, this.isPlatformAdmin(user));
+  }
+
+  canCreateInvite(user: UserRecord, workspaceId?: string): boolean {
+    if (!workspaceId) return this.isPlatformAdmin(user);
+    const ws = this.store.read().workspaces.find((row) => row.id === workspaceId);
+    if (!ws || ws.status === "destroyed") return false;
+    return this.canManageWorkspace(user, ws);
   }
 
   publicPreviewUrl(token: string): string {
@@ -600,9 +627,11 @@ export class Platform {
       bus.publish({ ...event, sessionId, workspaceId: session.workspaceId });
       return;
     }
-    session.events.push(event);
+    const next = upsertSessionEvent(session.events, event);
+    const published = next.find((row) => sessionEventKey(row) === sessionEventKey(event)) ?? event;
+    session.events = next;
     this.store.write(db);
-    bus.publish({ ...event, sessionId, workspaceId: session.workspaceId });
+    bus.publish({ ...published, sessionId, workspaceId: session.workspaceId });
   }
 
   private flushPromptText(sessionId: string): void {
@@ -635,7 +664,7 @@ export class Platform {
     if (!this.canAccessWorkspace(input.user, ws, "view")) throw new Error("Forbidden");
 
     const presence = this.store.read().presence.find((p) => p.workspaceId === ws.id && p.userId === input.user.id);
-    const canWrite = ws.userId === input.user.id || canEdit(this.roleFor(input.user, ws.projectId));
+    const canWrite = canEditWorkspaceAccess(this.workspaceAccessRole(input.user, ws));
     const spectator = Boolean(input.spectator || presence?.mode === "spectator" || !canWrite);
     if (spectator && input.command.type === "prompt") {
       throw new Error("Spectators cannot send prompts");
@@ -1164,6 +1193,7 @@ export class Platform {
     }
 
     const usage = { startedAt: Date.now(), toolCalls: 0, costUsd: 0 };
+    const seenToolCallIds = new Set<string>();
     const usageProfile = this.usageProfileFor(user);
     const usageLimitsOn = isFlagOn(flags, "usageLimits");
     const meter = createRunMeter(packed.usedTokens);
@@ -1223,7 +1253,10 @@ export class Platform {
       if (event.type === "assistant_delta") this.promptText.append(session.id, event.text);
       const metered = this.runMeters.get(session.id);
       if (metered) meterSessionEvent(metered.meter, event);
-      usage.toolCalls += event.type === "tool_call" ? 1 : 0;
+      if (event.type === "tool_call" && !seenToolCallIds.has(event.toolCallId)) {
+        seenToolCallIds.add(event.toolCallId);
+        usage.toolCalls += 1;
+      }
       if (event.type === "tool_call") {
         this.store.update((d) => {
           const current = d.runLock[ws.id];
@@ -1496,38 +1529,244 @@ export class Platform {
     }
   }
 
-  canCreateInvite(user: UserRecord): boolean {
-    return canCreateStudioInvite(this.roleFor(user), this.isPlatformAdmin(user));
-  }
-
-  createInvite(user: UserRecord): { token: string; url: string } {
-    if (!this.canCreateInvite(user)) throw new Error("Forbidden");
+  createInvite(
+    user: UserRecord,
+    input: { workspaceId: string; role?: string } = { workspaceId: "" },
+  ): { token: string; url: string; id: string; role: WorkspaceMemberRole; expiresAt: string } {
+    const workspaceId = input.workspaceId;
+    const ws = this.requireWorkspace(workspaceId);
+    if (ws.status === "destroyed") throw new Error("Workspace not found");
+    if (!this.canManageWorkspace(user, ws)) throw new Error("Forbidden");
+    const role = normalizeWorkspaceMemberRole(input.role);
     const token = randomBytes(16).toString("hex");
+    const id = randomUUID();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
     this.store.update((d) => {
       d.invites.push({
-        id: randomUUID(),
+        id,
         token,
-        projectId: "concreserv",
+        projectId: ws.projectId,
+        workspaceId: ws.id,
+        role,
         createdBy: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+        expiresAt,
       });
     });
-    return { token, url: `/invite/${token}` };
+    return { token, url: `/invite/${token}`, id, role, expiresAt };
   }
 
-  acceptInvite(token: string, user: UserRecord): { pending: boolean } {
+  invitePreview(token: string) {
+    const invite = this.store.read().invites.find((row) => row.token === token);
+    if (!invite) throw new Error("Invite not found");
+    const expired = new Date(invite.expiresAt).getTime() < Date.now();
+    const used = Boolean(invite.acceptedBy);
+    if (!invite.workspaceId) {
+      return {
+        valid: false,
+        expired: true,
+        accepted: used,
+        workspaceId: null,
+        ownerLogin: "",
+        ownerName: "",
+        role: invite.role ?? "editor",
+        expiresAt: invite.expiresAt,
+      };
+    }
+    const ws = this.store.read().workspaces.find((row) => row.id === invite.workspaceId && row.status !== "destroyed");
+    const owner = ws ? this.store.read().users.find((row) => row.id === ws.userId) : undefined;
+    const valid = Boolean(ws && !expired && !used);
+    return {
+      valid,
+      expired: expired || !ws,
+      accepted: used,
+      workspaceId: ws?.id ?? invite.workspaceId,
+      ownerLogin: owner?.login ?? "",
+      ownerName: owner?.name ?? "",
+      role: invite.role ?? "editor",
+      expiresAt: invite.expiresAt,
+    };
+  }
+
+  listWorkspaceInvites(workspaceId: string) {
+    const now = Date.now();
+    const db = this.store.read();
+    return db.invites
+      .filter(
+        (row) =>
+          row.workspaceId === workspaceId &&
+          !row.acceptedBy &&
+          new Date(row.expiresAt).getTime() >= now,
+      )
+      .map((row) => {
+        const creator = db.users.find((user) => user.id === row.createdBy);
+        return {
+          id: row.id,
+          role: row.role ?? "editor",
+          expiresAt: row.expiresAt,
+          url: `/invite/${row.token}`,
+          createdByLogin: creator?.login ?? "",
+        };
+      });
+  }
+
+  revokeInvite(actor: UserRecord, inviteId: string) {
+    const invite = this.store.read().invites.find((row) => row.id === inviteId);
+    if (!invite) throw new Error("Invite not found");
+    if (!invite.workspaceId) throw new Error("Invite expired");
+    const ws = this.requireWorkspace(invite.workspaceId);
+    if (!this.canManageWorkspace(actor, ws)) throw new Error("Forbidden");
+    if (invite.acceptedBy) throw new Error("Invite already used");
+    this.store.update((d) => {
+      d.invites = d.invites.filter((row) => row.id !== inviteId);
+    });
+    return { ok: true };
+  }
+
+  acceptInvite(
+    token: string,
+    user: UserRecord,
+  ): { pending: boolean; workspaceId?: string; role?: WorkspaceMemberRole; ownerLogin?: string } {
     const invite = this.store.read().invites.find((i) => i.token === token);
     if (!invite) throw new Error("Invite not found");
     if (new Date(invite.expiresAt).getTime() < Date.now()) throw new Error("Invite expired");
-    if (user.accessPending) return { pending: true };
+    if (invite.acceptedBy && invite.acceptedBy !== user.id) throw new Error("Invite already used");
+    if (!invite.workspaceId) throw new Error("Invite expired");
+    const ws = this.store.read().workspaces.find((row) => row.id === invite.workspaceId && row.status !== "destroyed");
+    if (!ws) throw new Error("Workspace not found");
+    if (ws.userId === user.id) throw new Error("Cannot accept own workspace invite");
+    if (user.accessPending) return { pending: true, workspaceId: ws.id };
+    const role: WorkspaceMemberRole = isWorkspaceMemberRole(invite.role) ? invite.role : "editor";
+    const owner = this.store.read().users.find((row) => row.id === ws.userId);
     this.store.update((d) => {
       const row = d.invites.find((i) => i.token === token)!;
       row.acceptedBy = user.id;
-      if (!d.members.some((m) => m.userId === user.id)) {
-        d.members.push({ userId: user.id, projectId: invite.projectId, role: user.role });
+      const existing = d.workspaceMembers.find((m) => m.workspaceId === ws.id && m.userId === user.id);
+      if (existing) {
+        existing.role = role;
+        existing.invitedBy = invite.createdBy;
+        existing.acceptedAt = existing.acceptedAt || new Date().toISOString();
+      } else {
+        d.workspaceMembers.push({
+          workspaceId: ws.id,
+          userId: user.id,
+          role,
+          invitedBy: invite.createdBy,
+          acceptedAt: new Date().toISOString(),
+        });
       }
     });
-    return { pending: false };
+    return { pending: false, workspaceId: ws.id, role, ownerLogin: owner?.login ?? "" };
+  }
+
+  listWorkspaceMembers(workspaceId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    const db = this.store.read();
+    const owner = db.users.find((row) => row.id === ws.userId);
+    const ownerRow = {
+      userId: ws.userId,
+      login: owner?.login ?? "",
+      name: owner?.name ?? "",
+      role: "owner" as const,
+      invitedBy: null as string | null,
+      acceptedAt: null as string | null,
+      isOwner: true,
+    };
+    const members = db.workspaceMembers
+      .filter((row) => row.workspaceId === workspaceId)
+      .map((row) => {
+        const user = db.users.find((item) => item.id === row.userId);
+        return {
+          userId: row.userId,
+          login: user?.login ?? "",
+          name: user?.name ?? "",
+          role: row.role,
+          invitedBy: row.invitedBy,
+          acceptedAt: row.acceptedAt,
+          isOwner: false,
+        };
+      })
+      .filter((row) => row.userId !== ws.userId);
+    return [ownerRow, ...members];
+  }
+
+  listAccessibleWorkspaces(user: UserRecord) {
+    const db = this.store.read();
+    const summarize = (ws: WorkspaceRecord, role: WorkspaceAccessRole) => {
+      const owner = db.users.find((row) => row.id === ws.userId);
+      return {
+        id: ws.id,
+        ownerLogin: owner?.login ?? "",
+        ownerName: owner?.name ?? "",
+        role,
+        status: ws.status,
+        lastActiveAt: ws.lastActiveAt,
+        sessionCount: db.sessions.filter((session) => session.workspaceId === ws.id).length,
+        isOwn: ws.userId === user.id,
+      };
+    };
+    const own = db.workspaces.find((row) => row.userId === user.id && row.status !== "destroyed");
+    const memberships = db.workspaceMembers
+      .filter((row) => row.userId === user.id)
+      .map((row) => {
+        const ws = db.workspaces.find((item) => item.id === row.workspaceId && item.status !== "destroyed");
+        if (!ws || ws.userId === user.id) return null;
+        return summarize(ws, row.role);
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    return { own: own ? summarize(own, "owner") : null, memberships };
+  }
+
+  removeWorkspaceMember(actor: UserRecord, workspaceId: string, userId: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    if (ws.userId === userId) throw new Error("Forbidden");
+    const manage = this.canManageWorkspace(actor, ws);
+    if (!manage && actor.id !== userId) throw new Error("Forbidden");
+    const existing = this.store.read().workspaceMembers.find((row) => row.workspaceId === workspaceId && row.userId === userId);
+    if (!existing) throw new Error("User not found");
+    this.store.update((d) => {
+      d.workspaceMembers = d.workspaceMembers.filter((row) => !(row.workspaceId === workspaceId && row.userId === userId));
+      d.presence = d.presence.filter((row) => !(row.workspaceId === workspaceId && row.userId === userId));
+    });
+    return { ok: true };
+  }
+
+  setWorkspaceMemberRole(actor: UserRecord, workspaceId: string, userId: string, role: string) {
+    const ws = this.requireWorkspace(workspaceId);
+    if (!this.canManageWorkspace(actor, ws)) throw new Error("Forbidden");
+    if (ws.userId === userId) throw new Error("Forbidden");
+    const nextRole = normalizeWorkspaceMemberRole(role);
+    const existing = this.store.read().workspaceMembers.find((row) => row.workspaceId === workspaceId && row.userId === userId);
+    if (!existing) throw new Error("User not found");
+    this.store.update((d) => {
+      const row = d.workspaceMembers.find((item) => item.workspaceId === workspaceId && item.userId === userId);
+      if (row) row.role = nextRole;
+    });
+    return this.listWorkspaceMembers(workspaceId).find((row) => row.userId === userId);
+  }
+
+  addWorkspaceMember(actor: UserRecord, workspaceId: string, input: { login: string; role?: string }) {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const ws = this.requireWorkspace(workspaceId);
+    if (ws.status === "destroyed") throw new Error("Workspace not found");
+    const role = normalizeWorkspaceMemberRole(input.role);
+    const target = this.store.read().users.find((row) => sameLogin(row.login, input.login.trim()));
+    if (!target) throw new Error("User not found");
+    if (target.accessPending) throw new Error("Forbidden");
+    if (target.id === ws.userId) throw new Error("Cannot accept own workspace invite");
+    this.store.update((d) => {
+      const existing = d.workspaceMembers.find((row) => row.workspaceId === workspaceId && row.userId === target.id);
+      if (existing) existing.role = role;
+      else {
+        d.workspaceMembers.push({
+          workspaceId,
+          userId: target.id,
+          role,
+          invitedBy: actor.id,
+          acceptedAt: new Date().toISOString(),
+        } satisfies WorkspaceMemberRecord);
+      }
+    });
+    return this.listWorkspaceMembers(workspaceId).find((row) => row.userId === target.id);
   }
 
   sharePreview(workspaceId: string): { token: string } {
@@ -1868,6 +2107,11 @@ export class Platform {
         workspaceId: workspace?.id ?? null,
         workspaceStatus: workspace?.status ?? null,
         lastActiveAt: workspace?.lastActiveAt ?? null,
+        memberships: this.listAccessibleWorkspaces(user).memberships.map((row) => ({
+          workspaceId: row.id,
+          ownerLogin: row.ownerLogin,
+          role: row.role,
+        })),
       };
     });
   }
@@ -1928,6 +2172,7 @@ export class Platform {
       .filter((row) => row.status !== "destroyed")
       .map((row) => {
         const user = db.users.find((item) => item.id === row.userId);
+        const members = this.listWorkspaceMembers(row.id);
         return {
           id: row.id,
           userId: row.userId,
@@ -1943,6 +2188,9 @@ export class Platform {
           worktree: row.worktree,
           previewPath: row.status === "running" && row.previewToken ? `/-/p/${row.previewToken}` : null,
           canDeactivateUser: user ? this.canDisableUser(user) : false,
+          memberCount: Math.max(0, members.length - 1),
+          members,
+          pendingInvites: this.listWorkspaceInvites(row.id),
         };
       });
   }
@@ -1974,6 +2222,9 @@ export class Platform {
       row.desired = "destroyed";
       row.port = undefined;
       row.vitePort = undefined;
+      d.workspaceMembers = d.workspaceMembers.filter((item) => item.workspaceId !== workspaceId);
+      d.invites = d.invites.filter((item) => item.workspaceId !== workspaceId);
+      d.presence = d.presence.filter((item) => item.workspaceId !== workspaceId);
     });
     if (options.deactivateUser && owner) {
       this.store.update((d) => {
@@ -3030,6 +3281,12 @@ function restoreMcpSecrets(incoming: McpEntry, current?: McpEntry): McpEntry {
     };
   }
   return incoming;
+}
+
+function normalizeWorkspaceMemberRole(role?: string): WorkspaceMemberRole {
+  if (!role) return "editor";
+  if (isWorkspaceMemberRole(role)) return role;
+  throw new Error("Invalid role");
 }
 
 function commandOnPath(command: string): boolean {

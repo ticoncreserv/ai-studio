@@ -80,7 +80,19 @@ export const invites = pgTable("invites", {
   createdBy: text("created_by").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   acceptedBy: text("accepted_by"),
+  workspaceId: text("workspace_id"),
+  role: text("role"),
 });
+
+export const workspaceMembers = pgTable("workspace_members", {
+  workspaceId: text("workspace_id").notNull(),
+  userId: text("user_id").notNull(),
+  role: text("role").notNull(),
+  invitedBy: text("invited_by").notNull(),
+  acceptedAt: timestamp("accepted_at").notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.workspaceId, table.userId] }),
+}));
 
 export const previewShares = pgTable("preview_shares", {
   token: text("token").primaryKey(),

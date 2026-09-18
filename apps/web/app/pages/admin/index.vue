@@ -138,6 +138,7 @@ const users = ref<
     workspaceId: string | null;
     workspaceStatus: string | null;
     lastActiveAt: string | null;
+    memberships?: Array<{ workspaceId: string; ownerLogin: string; role: string }>;
   }>
 >([]);
 const rules = ref<
@@ -187,8 +188,20 @@ const workspaces = ref<
     worktree: string;
     previewPath: string | null;
     canDeactivateUser: boolean;
+    memberCount?: number;
+    members?: Array<{
+      userId: string;
+      login: string;
+      name: string;
+      role: string;
+      isOwner: boolean;
+    }>;
+    pendingInvites?: Array<{ id: string; role: string; expiresAt: string; url: string }>;
   }>
 >([]);
+const addMemberLogin = ref("");
+const addMemberWorkspaceId = ref("");
+const addMemberRole = ref("editor");
 
 const pendingDestroy = ref<{ id: string; login: string; canDeactivate: boolean } | null>(null);
 const pendingDisable = ref<{ id: string; login: string; hasWorkspace: boolean } | null>(null);
@@ -270,7 +283,13 @@ const filteredUsers = computed(() => {
   const needle = fold(listQuery.value.trim());
   if (!needle) return users.value;
   return users.value.filter((user) => {
-    const haystack = [user.login, user.name, user.role, user.workspaceStatus ?? ""]
+    const haystack = [
+      user.login,
+      user.name,
+      user.role,
+      user.workspaceStatus ?? "",
+      ...(user.memberships ?? []).map((row) => row.ownerLogin),
+    ]
       .map((part) => fold(String(part)))
       .join(" ");
     return haystack.includes(needle);
@@ -290,6 +309,7 @@ const filteredWorkspaces = computed(() => {
       workspace.previewPath ?? "",
       workspace.port != null ? String(workspace.port) : "",
       workspace.vitePort != null ? String(workspace.vitePort) : "",
+      ...(workspace.members ?? []).map((row) => row.login),
     ]
       .map((part) => fold(String(part)))
       .join(" ");
@@ -909,6 +929,67 @@ async function hibernateWorkspace(id: string) {
   }
 }
 
+const memberRoleOptions = computed(() => [
+  { id: "editor", label: t("invite.roleEditor") },
+  { id: "spectator", label: t("invite.roleSpectator") },
+]);
+
+async function reloadAdminLists() {
+  const [userList, workspaceList] = await Promise.all([
+    $fetch<{ users: typeof users.value }>("/api/admin/users"),
+    $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
+  ]);
+  users.value = userList.users;
+  workspaces.value = workspaceList.workspaces;
+}
+
+async function removeWorkspaceMember(workspaceId: string, userId: string) {
+  busy.value = true;
+  error.value = "";
+  try {
+    await $fetch(`/api/admin/workspaces/${workspaceId}/members/${userId}`, { method: "DELETE" });
+    await reloadAdminLists();
+    flash(t("invite.memberRemoved"));
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function changeWorkspaceMemberRole(workspaceId: string, userId: string, role: string) {
+  busy.value = true;
+  error.value = "";
+  try {
+    await $fetch(`/api/admin/workspaces/${workspaceId}/members/${userId}`, { method: "PATCH", body: { role } });
+    await reloadAdminLists();
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function addWorkspaceMember(workspaceId: string) {
+  const login = addMemberLogin.value.trim();
+  if (!login || addMemberWorkspaceId.value !== workspaceId) return;
+  busy.value = true;
+  error.value = "";
+  try {
+    await $fetch(`/api/admin/workspaces/${workspaceId}/members`, {
+      method: "POST",
+      body: { login, role: addMemberRole.value },
+    });
+    addMemberLogin.value = "";
+    await reloadAdminLists();
+    flash(t("admin.memberAdded"));
+  } catch (err) {
+    error.value = apiErrorMessage(err);
+  } finally {
+    busy.value = false;
+  }
+}
+
 function requestDestroy(workspace: (typeof workspaces.value)[number]) {
   alsoDeactivate.value = false;
   pendingDestroy.value = {
@@ -1470,6 +1551,65 @@ function hintDetail(hint: ErrorHint) {
                       <UiButton size="sm" variant="ghost" :disabled="busy" @click.prevent="requestDestroy(workspace)">
                         {{ t("admin.deleteWorkspace") }}
                       </UiButton>
+                    </div>
+                    <div class="mt-3 w-full min-w-0 space-y-2">
+                      <p class="cx-row-desc">
+                        {{ t("admin.memberCount", { count: workspace.memberCount ?? 0 }) }}
+                      </p>
+                      <div
+                        v-for="member in workspace.members ?? []"
+                        :key="member.userId"
+                        class="flex flex-wrap items-center gap-1.5"
+                      >
+                        <p class="min-w-0 truncate text-[12.5px] text-ink-800">
+                          {{ member.login }}
+                          <span class="text-ink-400">
+                            · {{ member.isOwner ? t("admin.workspaceOwner") : member.role === "spectator" ? t("invite.roleSpectator") : t("invite.roleEditor") }}
+                          </span>
+                        </p>
+                        <UiSelect
+                          v-if="!member.isOwner"
+                          :model-value="member.role"
+                          :options="memberRoleOptions"
+                          :allow-empty="false"
+                          :disabled="busy"
+                          :aria-label="`${member.login} · ${t('admin.memberRole')}`"
+                          @update:model-value="changeWorkspaceMemberRole(workspace.id, member.userId, $event)"
+                        />
+                        <UiButton
+                          v-if="!member.isOwner"
+                          size="sm"
+                          variant="ghost"
+                          :disabled="busy"
+                          @click="removeWorkspaceMember(workspace.id, member.userId)"
+                        >
+                          {{ t("admin.removeMember") }}
+                        </UiButton>
+                      </div>
+                      <p v-if="workspace.pendingInvites?.length" class="cx-row-desc">
+                        {{ t("admin.pendingInvites") }} · {{ workspace.pendingInvites.length }}
+                      </p>
+                      <form class="flex flex-wrap items-center gap-1.5" @submit.prevent="addWorkspaceMember(workspace.id)">
+                        <input
+                          class="cx-textarea h-8 min-w-[8rem] flex-1"
+                          :value="addMemberWorkspaceId === workspace.id ? addMemberLogin : ''"
+                          :placeholder="t('admin.addMemberLogin')"
+                          :aria-label="t('admin.addMemberLogin')"
+                          @focus="addMemberWorkspaceId = workspace.id"
+                          @input="addMemberWorkspaceId = workspace.id; addMemberLogin = ($event.target as HTMLInputElement).value"
+                        />
+                        <UiSelect
+                          :model-value="addMemberWorkspaceId === workspace.id ? addMemberRole : 'editor'"
+                          :options="memberRoleOptions"
+                          :allow-empty="false"
+                          :disabled="busy"
+                          :aria-label="t('admin.memberRole')"
+                          @update:model-value="addMemberWorkspaceId = workspace.id; addMemberRole = $event"
+                        />
+                        <UiButton size="sm" variant="outline" :disabled="busy" type="submit">
+                          {{ t("admin.addMember") }}
+                        </UiButton>
+                      </form>
                     </div>
                   </div>
                 </div>

@@ -2,6 +2,7 @@ import {
   createAuthProvider,
   githubAppAuthorizeRedirectUri,
   hasGitHubOAuth,
+  parseOAuthState,
   saveGitHubInstallationId,
   signSession,
   syncGitHubAppPublicUrls,
@@ -37,11 +38,18 @@ export async function finishGitHubLogin(
   const fresh = platform().store.read().users.find((row) => row.id === user.id) ?? user;
   platform().syncMembership(fresh);
   setCookie(event, "atelier_session", signSession(user.id), { httpOnly: true, sameSite: "lax", path: "/" });
+  const redirectTo = safeAppPath(parseOAuthState(input.state)?.redirectTo);
   return {
     user: fresh,
     identity,
-    next: fresh.disabled ? "/disabled" : identity.accessPending ? "/pending" : "/",
+    next: fresh.disabled ? "/disabled" : identity.accessPending ? redirectTo || "/pending" : redirectTo || "/",
   };
+}
+
+export function safeAppPath(value: string | undefined): string | null {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return null;
+  if (value.includes("://")) return null;
+  return value;
 }
 
 export function oauthRedirectUri(event: H3Event): string {

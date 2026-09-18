@@ -3,6 +3,9 @@ import { z } from "zod";
 export const RoleSchema = z.enum(["owner", "editor", "viewer"]);
 export type Role = z.infer<typeof RoleSchema>;
 
+export const WorkspaceMemberRoleSchema = z.enum(["editor", "spectator"]);
+export type WorkspaceMemberRole = z.infer<typeof WorkspaceMemberRoleSchema>;
+
 export const WorkspaceStatusSchema = z.enum([
   "provisioning",
   "ready",
@@ -261,6 +264,8 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     at: z.string(),
     toolCallId: z.string(),
     name: z.string(),
+    kind: z.string().optional(),
+    target: z.string().optional(),
     input: z.unknown().optional(),
     status: z.enum(["running", "completed", "failed"]),
     output: z.string().optional(),

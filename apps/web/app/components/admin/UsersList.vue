@@ -18,6 +18,7 @@ export type AdminUserRow = {
   workspaceId: string | null;
   workspaceStatus: string | null;
   lastActiveAt: string | null;
+  memberships?: Array<{ workspaceId: string; ownerLogin: string; role: string }>;
 };
 
 const props = defineProps<{
@@ -77,6 +78,14 @@ function lockLabel(user: AdminUserRow) {
 function userInitial(login: string) {
   return (login || "?").slice(0, 1).toUpperCase();
 }
+
+function memberOfLabel(user: AdminUserRow) {
+  const rows = user.memberships ?? [];
+  if (!rows.length) return "";
+  return rows
+    .map((row) => (row.role === "spectator" ? `${row.ownerLogin} (${t("invite.roleSpectator")})` : row.ownerLogin))
+    .join(", ");
+}
 </script>
 
 <template>
@@ -126,6 +135,10 @@ function userInitial(login: string) {
               <div v-if="studioFact(user)">
                 <dt>{{ t("admin.factStudio") }}</dt>
                 <dd :data-tone="studioTone(user.workspaceStatus) || undefined">{{ studioFact(user) }}</dd>
+              </div>
+              <div v-if="memberOfLabel(user)">
+                <dt>{{ t("admin.factMemberOf") }}</dt>
+                <dd>{{ memberOfLabel(user) }}</dd>
               </div>
             </dl>
             <p v-if="lockLabel(user)" class="admin-user-lock">{{ lockLabel(user) }}</p>

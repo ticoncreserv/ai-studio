@@ -82,6 +82,15 @@ describe("run meter", () => {
     expect(meterEstimatedTokens(meter)).toBe(220);
   });
 
+  it("counts a toolCallId once across running and completed updates", () => {
+    const meter = createRunMeter(0);
+    meterSessionEvent(meter, { type: "tool_call", id: "1", at: "t", toolCallId: "c1", name: "Read", status: "running" });
+    meterSessionEvent(meter, { type: "tool_call", id: "2", at: "t", toolCallId: "c1", name: "tool", status: "completed", output: "y".repeat(80) });
+    meterSessionEvent(meter, { type: "tool_call", id: "3", at: "t", toolCallId: "c2", name: "Grep", status: "completed" });
+    expect(meter.toolCalls).toBe(2);
+    expect(meter.outputTokens).toBe(20);
+  });
+
   it("keeps the provider context peak and cumulative cost", () => {
     const meter = createRunMeter(0);
     meterSessionEvent(meter, { type: "usage", id: "1", at: "t", v: 1, contextUsed: 53_000, contextSize: 200_000, costUsd: 0.045 });

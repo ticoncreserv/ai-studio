@@ -42,10 +42,18 @@ describe("store shape", () => {
         createdAt: "t",
         events: [{ type: "user_message", id: "e1", at: "t", text: "hi", attachments: [], mentions: [] }],
       });
+      db.workspaceMembers.push({
+        workspaceId: "w1",
+        userId: "u2",
+        role: "editor",
+        invitedBy: "u1",
+        acceptedAt: "t",
+      });
     });
     const rows = flattenDb(json.read());
     expect(rows.events).toHaveLength(1);
     expect(rows.leases).toHaveLength(1);
+    expect(rows.workspaceMembers).toHaveLength(1);
     expect(rows.providers.find((row) => row.id === "cursor")).toMatchObject({
       model: "gpt-5",
       cliAccounts: [{ id: "default", loggedIn: true }],

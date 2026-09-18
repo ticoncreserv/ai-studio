@@ -37,4 +37,50 @@ describe("ACP event mapping", () => {
       }),
     ).toEqual([]);
   });
+
+  it("maps kind, locations, and content onto a tool call", () => {
+    expect(
+      eventsFromAcpUpdate({
+        params: {
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "t1",
+            kind: "read",
+            status: "in_progress",
+            locations: [{ path: "app/Models/Form.php" }],
+            content: [{ type: "content", content: { type: "text", text: "class Form" } }],
+          },
+        },
+      })[0],
+    ).toMatchObject({
+      type: "tool_call",
+      name: "read",
+      kind: "read",
+      target: "app/Models/Form.php",
+      status: "running",
+      output: "class Form",
+    });
+  });
+
+  it("prefers a title over the generic tool fallback and reads command input", () => {
+    expect(
+      eventsFromAcpUpdate({
+        params: {
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "t2",
+            title: "database-query",
+            status: "completed",
+            rawInput: { command: "select * from forms" },
+            rawOutput: "[]",
+          },
+        },
+      })[0],
+    ).toMatchObject({
+      name: "database-query",
+      target: "select * from forms",
+      output: "[]",
+      status: "completed",
+    });
+  });
 });

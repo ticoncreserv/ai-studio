@@ -1,6 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { CursorCliAccount, ProviderKeyState, ProviderModel, Role, SessionEvent, UsageProfile, WorkspaceStatus } from "@atelier/contracts";
+import type {
+  CursorCliAccount,
+  ProviderKeyState,
+  ProviderModel,
+  Role,
+  SessionEvent,
+  UsageProfile,
+  WorkspaceMemberRole,
+  WorkspaceStatus,
+} from "@atelier/contracts";
 import {
   DEFAULT_RULES,
   defaultFlags,
@@ -74,6 +83,17 @@ export interface InviteRecord {
   createdBy: string;
   expiresAt: string;
   acceptedBy?: string;
+  /** Bound workspace. Missing on legacy project-only invites, which can no longer be accepted. */
+  workspaceId?: string;
+  role?: WorkspaceMemberRole;
+}
+
+export interface WorkspaceMemberRecord {
+  workspaceId: string;
+  userId: string;
+  role: WorkspaceMemberRole;
+  invitedBy: string;
+  acceptedAt: string;
 }
 
 export interface PreviewShare {
@@ -110,6 +130,7 @@ export interface DbShape {
   recipes: RecipeRecord[];
   rules: RuleRecord[];
   members: Array<{ userId: string; projectId: string; role: Role }>;
+  workspaceMembers: WorkspaceMemberRecord[];
   flags: Record<string, boolean>;
   providers: Record<string, ProviderConfig>;
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
@@ -170,6 +191,7 @@ const emptyDb = (): DbShape => ({
   ],
   rules: DEFAULT_RULES.map((row) => ({ ...row })),
   members: [],
+  workspaceMembers: [],
   flags: { ...defaultFlags },
   providers: { cursor: { enabled: true } },
   presence: [],
@@ -219,6 +241,7 @@ export class JsonStore implements PlatformStore {
       invites: raw.invites ?? [],
       shares: raw.shares ?? [],
       members: raw.members ?? [],
+      workspaceMembers: raw.workspaceMembers ?? [],
       presence: raw.presence ?? [],
       runLock: raw.runLock ?? {},
       migrationLog: raw.migrationLog ?? [],

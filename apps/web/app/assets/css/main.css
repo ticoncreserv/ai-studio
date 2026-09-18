@@ -843,6 +843,31 @@ a.cx-rail-identity-link:focus-visible {
   object-fit: cover;
 }
 
+/* Consecutive assistant fragments in a turn sit closer than user bubbles. */
+.cx-assistant-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Consecutive tools sit tighter than assistant turns. */
+.cx-tool-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cx-tool-stack .pulse-dot {
+  box-shadow: 0 0 0 0 rgb(var(--color-coral-rgb) / 0.45);
+  animation-name: cx-tool-pulse;
+}
+
+@keyframes cx-tool-pulse {
+  70% {
+    box-shadow: 0 0 0 6px rgb(var(--color-coral-rgb) / 0);
+  }
+}
+
 /* Muted one-line summary for tool calls, checkpoints, and notices. */
 .cx-summary {
   display: flex;
@@ -878,6 +903,31 @@ a.cx-rail-identity-link:focus-visible {
   font-size: 12px;
   line-height: 20px;
   color: var(--color-ink-500);
+}
+
+.cx-jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: var(--color-paper);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.28);
+  transform: translateX(-50%);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--color-ink-950);
+}
+
+.cx-jump-latest:hover {
+  color: var(--color-ink-950);
+  border-color: var(--color-ink-400);
 }
 
 .cx-working-dots {

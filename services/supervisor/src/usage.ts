@@ -21,6 +21,8 @@ export interface RunMeter {
   cumulativeCostUsd: number;
   toolCalls: number;
   sawProvider: boolean;
+  seenToolCallIds: Set<string>;
+  seenToolOutputIds: Set<string>;
 }
 
 export function createRunMeter(inputTokens = 0): RunMeter {
@@ -32,6 +34,8 @@ export function createRunMeter(inputTokens = 0): RunMeter {
     cumulativeCostUsd: 0,
     toolCalls: 0,
     sawProvider: false,
+    seenToolCallIds: new Set(),
+    seenToolOutputIds: new Set(),
   };
 }
 
@@ -41,8 +45,14 @@ export function meterSessionEvent(meter: RunMeter, event: SessionEvent): void {
     return;
   }
   if (event.type === "tool_call") {
-    meter.toolCalls += 1;
-    if (event.output) meter.outputTokens += estimateTokens(event.output);
+    if (!meter.seenToolCallIds.has(event.toolCallId)) {
+      meter.seenToolCallIds.add(event.toolCallId);
+      meter.toolCalls += 1;
+    }
+    if (event.output && !meter.seenToolOutputIds.has(event.toolCallId)) {
+      meter.seenToolOutputIds.add(event.toolCallId);
+      meter.outputTokens += estimateTokens(event.output);
+    }
     return;
   }
   if (event.type === "usage") {

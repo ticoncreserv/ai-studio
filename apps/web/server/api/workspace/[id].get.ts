@@ -12,8 +12,19 @@ export default defineEventHandler(async (event) => {
   const quota = await platform().workspaceQuota(id);
   const mentions = await platform().mentionIndex(id);
   const canEditWorkspace = platform().canAccessWorkspace(user, workspace, "edit");
+  const ownerUser = db.users.find((row) => row.id === workspace.userId);
+  const workspaceRole = platform().workspaceAccessRole(user, workspace);
+  const access = platform().listAccessibleWorkspaces(user);
   return {
     user: { ...user, platformAdmin: platform().isPlatformAdmin(user) },
+    owner: {
+      id: workspace.userId,
+      login: ownerUser?.login ?? "",
+      name: ownerUser?.name ?? "",
+    },
+    isOwner: workspace.userId === user.id,
+    workspaceRole,
+    memberships: access.own ? [access.own, ...access.memberships] : access.memberships,
     workspace: {
       ...workspace,
       previewProcessRunning: Boolean(workspace.port && platform().runtime.isRunning(id)),
@@ -40,7 +51,9 @@ export default defineEventHandler(async (event) => {
     migrationLog: db.migrationLog,
     previewPath: `/-/p/${workspace.previewToken}/`,
     canEdit: canEditWorkspace,
-    canInvite: platform().canCreateInvite(user),
+    canInvite: platform().canCreateInvite(user, id),
+    canHibernate: platform().canManageWorkspace(user, workspace),
+    canResume: canEditWorkspace,
     agent: platform().agentStatus(),
     skills: platform().skillCatalog(id, user).skills,
     mcp: platform().mcpCatalog(id, user),

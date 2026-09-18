@@ -2,12 +2,66 @@
 import { Keyboard, LogOut, Settings2 } from "@lucide/vue";
 import { STUDIO_SHORTCUTS } from "~/utils/studio-shortcuts";
 import { THEMES, type ThemeId } from "~/utils/theme";
+import type { StudioWorkspaceMembership } from "~/types/studio";
 
 type LocaleId = "pt-BR" | "en";
 
 const { t, locale, setLocale } = useI18n();
+const route = useRoute();
 const { current: theme, setTheme, themes } = useTheme();
 const { leaving, signOut } = useSignOut();
+const ownWorkspaceId = ref<string | null>(null);
+const memberships = ref<StudioWorkspaceMembership[]>([]);
+const currentWorkspaceId = computed(() => String(route.params.workspace ?? ""));
+
+async function loadWorkspaces() {
+  try {
+    const me = await $fetch<{
+      workspace: { id: string } | null;
+      memberships?: StudioWorkspaceMembership[];
+    }>("/api/me");
+    ownWorkspaceId.value = me.workspace?.id ?? null;
+    memberships.value = me.memberships ?? [];
+  } catch {
+    ownWorkspaceId.value = null;
+    memberships.value = [];
+  }
+}
+
+const workspaceChoices = computed(() => {
+  const rows: Array<{ id: string; label: string; current: boolean }> = [];
+  if (ownWorkspaceId.value) {
+    rows.push({
+      id: ownWorkspaceId.value,
+      label: t("workspace.yours"),
+      current: ownWorkspaceId.value === currentWorkspaceId.value,
+    });
+  }
+  for (const row of memberships.value) {
+    if (row.id === ownWorkspaceId.value) continue;
+    rows.push({
+      id: row.id,
+      label: t("workspace.guestTitle", { owner: row.ownerLogin }),
+      current: row.id === currentWorkspaceId.value,
+    });
+  }
+  return rows;
+});
+
+async function openWorkspace(id: string) {
+  close();
+  if (id === currentWorkspaceId.value) return;
+  await navigateTo(`/w/${id}`);
+}
+
+async function openOwnWorkspace() {
+  close();
+  if (ownWorkspaceId.value) {
+    if (ownWorkspaceId.value !== currentWorkspaceId.value) await navigateTo(`/w/${ownWorkspaceId.value}`);
+    return;
+  }
+  await navigateTo("/");
+}
 
 const THEME_KEYS = {
   crimson: "theme.crimson",
@@ -72,6 +126,7 @@ function toggle() {
   }
   place();
   open.value = true;
+  void loadWorkspaces();
   void nextTick(() => {
     place();
     bindOutside();
@@ -135,6 +190,29 @@ onBeforeUnmount(unbindOutside);
         :aria-label="t('nav.accountSettings')"
         :style="trayPos"
       >
+        <p v-if="workspaceChoices.length" class="cx-account-tray-label">{{ t("workspace.switchWorkspace") }}</p>
+        <button
+          v-for="item in workspaceChoices"
+          :key="item.id"
+          type="button"
+          role="menuitemradio"
+          class="cx-menu-row"
+          :aria-checked="item.current"
+          :data-active="item.current || undefined"
+          @click="openWorkspace(item.id)"
+        >
+          <span class="cx-menu-name">{{ item.label }}</span>
+        </button>
+        <button
+          v-if="!ownWorkspaceId"
+          type="button"
+          role="menuitem"
+          class="cx-menu-row"
+          @click="openOwnWorkspace"
+        >
+          <span class="cx-menu-name">{{ t("workspace.yours") }}</span>
+        </button>
+
         <p class="cx-account-tray-label">{{ t("settings.language") }}</p>
         <button
           v-for="item in localeOptions"

@@ -290,21 +290,71 @@ describe("platform", () => {
     expect(stored.some((event) => event.type === "permission" && event.outcome === "allow-once")).toBe(true);
   });
 
-  it("creates invite and share tokens", async () => {
+  it("upserts tool_call updates instead of appending a new row", async () => {
+    const p = platform();
+    const user = await p.loginDev("tool-upsert");
+    const ws = await p.ensureWorkspace(user);
+    const session = p.createSession(ws.id, "mock");
+    p.append(session.id, {
+      type: "tool_call",
+      id: "t1",
+      at: new Date().toISOString(),
+      toolCallId: "c1",
+      name: "Read",
+      kind: "read",
+      target: "Form.php",
+      status: "running",
+    });
+    p.append(session.id, {
+      type: "tool_call",
+      id: "t2",
+      at: new Date().toISOString(),
+      toolCallId: "c1",
+      name: "tool",
+      status: "completed",
+      output: "ok",
+    });
+    const stored = p.store.read().sessions.find((row) => row.id === session.id)?.events ?? [];
+    const tools = stored.filter((event) => event.type === "tool_call");
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({
+      id: "t1",
+      name: "Read",
+      kind: "read",
+      target: "Form.php",
+      status: "completed",
+      output: "ok",
+    });
+  });
+
+  it("creates workspace invites and shares the host sessions", async () => {
     const p = platform();
     const user = await p.loginDev("diego");
-    const invite = p.createInvite(user);
+    const ws = await p.ensureWorkspace(user);
+    const session = p.createSession(ws.id, "mock");
+    const invite = p.createInvite(user, { workspaceId: ws.id, role: "editor" });
     expect(invite.token.length).toBeGreaterThan(8);
     const guest = await p.loginDev("eva");
-    expect(p.acceptInvite(invite.token, guest).pending).toBe(false);
-    const ws = await p.ensureWorkspace(user);
+    const accepted = p.acceptInvite(invite.token, guest);
+    expect(accepted).toMatchObject({ pending: false, workspaceId: ws.id, role: "editor" });
+    expect(p.store.read().members.filter((row) => row.userId === guest.id)).toHaveLength(1);
+    expect(p.canManageWorkspace(guest, ws)).toBe(false);
+    expect(p.listAccessibleWorkspaces(guest).memberships.map((row) => row.id)).toEqual([ws.id]);
+    expect(p.listAdminWorkspaces().find((row) => row.id === ws.id)?.memberCount).toBe(1);
+    expect(p.store.read().workspaceMembers).toContainEqual(
+      expect.objectContaining({ workspaceId: ws.id, userId: guest.id, role: "editor" }),
+    );
+    expect(p.canAccessWorkspace(guest, ws, "edit")).toBe(true);
+    expect(p.sessions(ws.id).some((row) => row.id === session.id)).toBe(true);
     const share = p.sharePreview(ws.id);
     expect(p.resolveShare(share.token)?.id).toBe(ws.id);
   });
 
-  it("lets editors create invites, not viewers", async () => {
+  it("lets only the workspace owner mint invites, not a project editor", async () => {
     const p = platform();
-    const editor = await p.loginDev("helena");
+    const owner = await p.loginDev("helena");
+    const ws = await p.ensureWorkspace(owner);
+    const editor = await p.loginDev("ivo");
     p.store.update((db) => {
       const row = db.users.find((item) => item.id === editor.id);
       const member = db.members.find((item) => item.userId === editor.id);
@@ -312,18 +362,120 @@ describe("platform", () => {
       if (member) member.role = "editor";
     });
     const asEditor = p.store.read().users.find((item) => item.id === editor.id)!;
-    expect(p.canCreateInvite(asEditor)).toBe(true);
-    expect(p.createInvite(asEditor).url).toMatch(/^\/invite\//);
+    expect(p.canCreateInvite(asEditor, ws.id)).toBe(false);
+    expect(p.canAccessWorkspace(asEditor, ws, "view")).toBe(false);
+    expect(() => p.createInvite(asEditor, { workspaceId: ws.id })).toThrow(/forbidden/i);
+    expect(p.canCreateInvite(owner, ws.id)).toBe(true);
+    expect(p.createInvite(owner, { workspaceId: ws.id }).url).toMatch(/^\/invite\//);
+  });
+
+  it("rejects leftover project-only invites and self-accepts", async () => {
+    const p = platform();
+    const owner = await p.loginDev("julia");
+    const ws = await p.ensureWorkspace(owner);
+    const guest = await p.loginDev("kai");
+    p.store.update((db) => {
+      db.invites.push({
+        id: "legacy",
+        token: "legacy-token",
+        projectId: "concreserv",
+        createdBy: owner.id,
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      });
+    });
+    expect(() => p.acceptInvite("legacy-token", guest)).toThrow(/expired/i);
+    const invite = p.createInvite(owner, { workspaceId: ws.id });
+    expect(() => p.acceptInvite(invite.token, owner)).toThrow(/own workspace/i);
+  });
+
+  it("lets a guest editor prompt in the host workspace and blocks spectators", async () => {
+    const p = platform();
+    const owner = await p.loginDev("lia");
+    const ws = await p.ensureWorkspace(owner);
+    const session = p.createSession(ws.id, "mock");
+    const editor = await p.loginDev("miguel");
+    const spectator = await p.loginDev("nina");
+    p.createInvite(owner, { workspaceId: ws.id, role: "editor" });
+    const editorInvite = p.store.read().invites.at(-1)!;
+    p.acceptInvite(editorInvite.token, editor);
+    const specInvite = p.createInvite(owner, { workspaceId: ws.id, role: "spectator" });
+    p.acceptInvite(specInvite.token, spectator);
+    await p.handleCommand({
+      user: editor,
+      sessionId: session.id,
+      command: { type: "prompt", text: "Add a field", attachments: [], mentions: [] },
+    });
+    await settleSession(p, session.id);
+    expect(p.store.read().sessions.find((row) => row.id === session.id)?.events.some((event) => event.type === "user_message")).toBe(true);
+    await expect(
+      p.handleCommand({
+        user: spectator,
+        sessionId: session.id,
+        command: { type: "prompt", text: "Nope", attachments: [], mentions: [] },
+      }),
+    ).rejects.toThrow(/spectator/i);
+    expect(p.canManageWorkspace(editor, ws)).toBe(false);
+    expect(p.canAccessWorkspace(editor, ws, "edit")).toBe(true);
+    expect(p.canAccessWorkspace(spectator, ws, "view")).toBe(true);
+    expect(p.canAccessWorkspace(spectator, ws, "edit")).toBe(false);
+  });
+
+  it("keeps GitHub pending orthogonal and enforces one-shot membership invites", async () => {
+    const p = platform();
+    const owner = await p.loginDev("otavio");
+    const ws = await p.ensureWorkspace(owner);
+    const pending = await p.loginDev("paula");
+    p.store.update((db) => {
+      const row = db.users.find((item) => item.id === pending.id);
+      if (row) row.accessPending = true;
+    });
+    const invite = p.createInvite(owner, { workspaceId: ws.id, role: "editor" });
+    expect(p.invitePreview(invite.token)).toMatchObject({ valid: true, ownerLogin: owner.login, role: "editor" });
+    expect(p.acceptInvite(invite.token, p.store.read().users.find((row) => row.id === pending.id)!)).toMatchObject({
+      pending: true,
+      workspaceId: ws.id,
+    });
+    expect(p.store.read().workspaceMembers).toEqual([]);
+
+    const guest = await p.loginDev("quirino");
+    expect(p.acceptInvite(invite.token, guest)).toMatchObject({ pending: false, workspaceId: ws.id, role: "editor" });
+    expect(p.acceptInvite(invite.token, guest)).toMatchObject({ pending: false, role: "editor" });
+    const other = await p.loginDev("rita");
+    expect(() => p.acceptInvite(invite.token, other)).toThrow(/already used/i);
+
+    const specInvite = p.createInvite(owner, { workspaceId: ws.id, role: "spectator" });
+    p.acceptInvite(specInvite.token, other);
+    expect(p.canAccessWorkspace(guest, ws, "edit")).toBe(true);
+    expect(p.canManageWorkspace(guest, ws)).toBe(false);
+    expect(p.canAccessWorkspace(other, ws, "edit")).toBe(false);
+    expect(p.canAccessWorkspace(other, ws, "view")).toBe(true);
+
+    p.setWorkspaceMemberRole(owner, ws.id, other.id, "editor");
+    expect(p.canAccessWorkspace(other, ws, "edit")).toBe(true);
+    p.removeWorkspaceMember(other, ws.id, other.id);
+    expect(p.canAccessWorkspace(other, ws, "view")).toBe(false);
+
+    const leftover = p.createInvite(owner, { workspaceId: ws.id });
+    p.revokeInvite(owner, leftover.id);
+    expect(p.listWorkspaceInvites(ws.id).some((row) => row.id === leftover.id)).toBe(false);
+    expect(p.listUsers().find((row) => row.id === guest.id)?.memberships).toEqual(
+      expect.arrayContaining([expect.objectContaining({ workspaceId: ws.id, ownerLogin: owner.login, role: "editor" })]),
+    );
 
     p.store.update((db) => {
-      const row = db.users.find((item) => item.id === editor.id);
-      const member = db.members.find((item) => item.userId === editor.id);
-      if (row) row.role = "viewer";
-      if (member) member.role = "viewer";
+      const row = db.users.find((item) => item.id === guest.id);
+      if (row) row.disabled = true;
     });
-    const asViewer = p.store.read().users.find((item) => item.id === editor.id)!;
-    expect(p.canCreateInvite(asViewer)).toBe(false);
-    expect(() => p.createInvite(asViewer)).toThrow(/forbidden/i);
+    const disabled = p.store.read().users.find((row) => row.id === guest.id)!;
+    expect(p.canAccessWorkspace(disabled, ws, "view")).toBe(false);
+
+    const admin = await p.loginDev("ticoncreserv");
+    expect(p.canAccessWorkspace(admin, ws, "edit")).toBe(true);
+    expect(p.canManageWorkspace(admin, ws)).toBe(true);
+    expect(p.addWorkspaceMember(admin, ws.id, { login: other.login, role: "spectator" })).toMatchObject({
+      userId: other.id,
+      role: "spectator",
+    });
   });
 
   it("does not invent schema divergence without an applied snapshot", async () => {

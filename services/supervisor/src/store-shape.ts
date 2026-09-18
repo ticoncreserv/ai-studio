@@ -12,6 +12,7 @@ export interface StoreRows {
   recipes: DbShape["recipes"];
   rules: DbShape["rules"];
   members: DbShape["members"];
+  workspaceMembers: DbShape["workspaceMembers"];
   flags: Array<{ key: string; enabled: boolean }>;
   providers: Array<{
     id: string;
@@ -50,6 +51,7 @@ export function flattenDb(db: DbShape): StoreRows {
     recipes: db.recipes,
     rules: db.rules,
     members: db.members,
+    workspaceMembers: db.workspaceMembers,
     flags: Object.entries(db.flags).map(([key, enabled]) => ({ key, enabled })),
     providers: Object.entries(db.providers).map(([id, row]) => ({
       id,
@@ -95,6 +97,7 @@ export function assembleDb(rows: StoreRows, base: DbShape): DbShape {
     recipes: rows.recipes.length ? rows.recipes : base.recipes,
     rules: rows.rules.length ? rows.rules : base.rules,
     members: rows.members,
+    workspaceMembers: rows.workspaceMembers ?? [],
     flags: { ...base.flags, ...Object.fromEntries(rows.flags.map((row) => [row.key, row.enabled])) },
     providers: {
       ...base.providers,
@@ -131,6 +134,7 @@ export function compareStoreShapes(left: DbShape, right: DbShape): string[] {
     "shares",
     "connections",
     "members",
+    "workspaceMembers",
     "presence",
     "migrationLog",
     "skillPrefs",

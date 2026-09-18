@@ -12,6 +12,14 @@ export function fetchStatusCode(error: unknown): number | undefined {
   return undefined;
 }
 
+export function fetchStatusMessage(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const record = error as { statusMessage?: unknown; statusText?: unknown };
+  if (typeof record.statusMessage === "string") return record.statusMessage;
+  if (typeof record.statusText === "string") return record.statusText;
+  return undefined;
+}
+
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);

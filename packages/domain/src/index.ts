@@ -1,5 +1,6 @@
 export * from "./workspace-fsm.js";
 export * from "./session-reducer.js";
+export * from "./session-events.js";
 export * from "./rules.js";
 export * from "./permission.js";
 export * from "./context.js";

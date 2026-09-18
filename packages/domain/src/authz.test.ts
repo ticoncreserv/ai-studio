@@ -2,22 +2,41 @@ import { describe, expect, it } from "vitest";
 import {
   adminLoginsFromEnv,
   canCreateStudioInvite,
+  canEditWorkspaceAccess,
   canInvite,
+  canManageWorkspaceAccess,
+  canViewWorkspaceAccess,
   FALLBACK_REPO_OWNER_LOGIN,
   isPermanentPlatformAdmin,
   isPlatformAdmin,
+  isWorkspaceMemberRole,
   mapGitHubPermission,
 } from "./authz.js";
 
 describe("studio invite permission", () => {
-  it("lets editors and platform admins create invites, not viewers", () => {
+  it("lets workspace owners and platform admins mint invites, not project editors", () => {
     expect(canInvite("owner")).toBe(true);
     expect(canInvite("editor")).toBe(false);
     expect(canInvite("viewer")).toBe(false);
     expect(canCreateStudioInvite("owner")).toBe(true);
-    expect(canCreateStudioInvite("editor")).toBe(true);
+    expect(canCreateStudioInvite("editor")).toBe(false);
     expect(canCreateStudioInvite("viewer")).toBe(false);
     expect(canCreateStudioInvite("viewer", true)).toBe(true);
+  });
+});
+
+describe("workspace access roles", () => {
+  it("treats owner and editor as writers and spectator as view-only", () => {
+    expect(canEditWorkspaceAccess("owner")).toBe(true);
+    expect(canEditWorkspaceAccess("editor")).toBe(true);
+    expect(canEditWorkspaceAccess("spectator")).toBe(false);
+    expect(canViewWorkspaceAccess("spectator")).toBe(true);
+    expect(canViewWorkspaceAccess(null)).toBe(false);
+    expect(canManageWorkspaceAccess(true)).toBe(true);
+    expect(canManageWorkspaceAccess(false)).toBe(false);
+    expect(canManageWorkspaceAccess(false, true)).toBe(true);
+    expect(isWorkspaceMemberRole("editor")).toBe(true);
+    expect(isWorkspaceMemberRole("owner")).toBe(false);
   });
 });
 

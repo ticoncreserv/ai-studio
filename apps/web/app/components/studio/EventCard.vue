@@ -20,8 +20,16 @@ import {
 import { visiblePromptText } from "@atelier/domain";
 import { renderMarkdown, splitDiffLines } from "~/utils/markdown";
 import { mcpServerFromToolName, slashInvocation } from "~/utils/slash";
+import { toolCallPresentation } from "~/utils/tool-label";
 
-const props = defineProps<{ event: SessionEvent; enter?: boolean; failed?: boolean; commandBusy?: boolean }>();
+const props = defineProps<{
+  event: SessionEvent;
+  enter?: boolean;
+  failed?: boolean;
+  commandBusy?: boolean;
+  showActions?: boolean;
+  copySource?: string;
+}>();
 const emit = defineEmits<{
   command: [payload: { type: string; [key: string]: unknown }];
   reuse: [text: string];
@@ -44,13 +52,9 @@ const clampPrompt = computed(() => {
   return visible.length > 220 || visible.split("\n").length > 5;
 });
 
-/* Tool names arrive with markdown backticks around their arguments; the summary
-   line is already monospace-free, so drop them. */
-const toolName = computed(() =>
-  props.event.type === "tool_call" ? props.event.name.replaceAll("`", "") : "",
-);
-
 const mcpServer = computed(() => (props.event.type === "tool_call" ? mcpServerFromToolName(props.event.name) : null));
+
+const toolLine = computed(() => (props.event.type === "tool_call" ? toolCallPresentation(props.event) : null));
 
 const invokedSkill = computed(() => {
   if (props.event.type !== "user_message") return null;
@@ -195,7 +199,7 @@ function act(key: string, payload?: { type: string; [key: string]: unknown }) {
 
     <div v-else-if="event.type === 'assistant_message' || event.type === 'assistant_delta'">
       <div class="markdown-body text-ink-800" v-html="html" />
-      <div v-if="event.type === 'assistant_message'" class="mt-1.5 flex items-center gap-0.5">
+      <div v-if="event.type === 'assistant_message' && showActions" class="mt-1.5 flex items-center gap-0.5">
         <UiIconButton
           :label="t('chat.helpful')"
           size="sm"
@@ -212,7 +216,7 @@ function act(key: string, payload?: { type: string; [key: string]: unknown }) {
         >
           <ThumbsDown class="h-3 w-3" />
         </UiIconButton>
-        <UiIconButton :label="copied ? t('nav.copied') : t('chat.copy')" size="sm" @click="copyText(event.text)">
+        <UiIconButton :label="copied ? t('nav.copied') : t('chat.copy')" size="sm" @click="copyText(copySource || event.text)">
           <Check v-if="copied" class="h-3 w-3" />
           <Copy v-else class="h-3 w-3" />
         </UiIconButton>
@@ -223,14 +227,15 @@ function act(key: string, payload?: { type: string; [key: string]: unknown }) {
       </div>
     </div>
 
-    <div v-else-if="event.type === 'tool_call'">
-      <button type="button" class="cx-summary" @click="open = !open">
+    <div v-else-if="event.type === 'tool_call' && toolLine">
+      <button type="button" class="cx-summary" :title="toolLine.title" @click="open = !open">
         <span
           class="h-1 w-1 shrink-0 rounded-full"
-          :class="event.status === 'running' ? 'bg-coral-400' : event.status === 'failed' ? 'bg-red-400' : 'bg-ink-300'"
+          :class="event.status === 'running' ? 'pulse-dot bg-coral-400' : event.status === 'failed' ? 'bg-red-400' : 'bg-ink-300'"
         />
         <span class="min-w-0 truncate">
-          {{ event.status === "running" ? t("chat.toolRunning", { name: toolName }) : t("chat.toolDone", { name: toolName }) }}
+          {{ toolLine.verbKey ? t(toolLine.verbKey) : toolLine.name }}
+          <span v-if="toolLine.target" class="ml-1 font-mono text-[11px] text-ink-400">{{ toolLine.target }}</span>
         </span>
         <span v-if="mcpServer" class="cx-pill shrink-0">{{ mcpServer }}</span>
         <ChevronDown v-if="event.output" class="h-3 w-3 shrink-0 transition-transform" :class="open && 'rotate-180'" />

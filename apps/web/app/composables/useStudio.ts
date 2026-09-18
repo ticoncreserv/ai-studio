@@ -1,4 +1,4 @@
-import { foldEvents, shouldAutoResumePreview } from "@atelier/domain";
+import { collapseSessionEvents, foldEvents, shouldAutoResumePreview } from "@atelier/domain";
 import type { AgentMode, ClientCommand, InspectPin, SessionEvent, Viewport } from "@atelier/contracts";
 import type {
   PreviewDebug,
@@ -8,8 +8,10 @@ import type {
   StudioDialog,
   StudioMcp,
   StudioPayload,
+  StudioPendingInvite,
   StudioSheet,
   StudioSkill,
+  StudioWorkspaceMember,
 } from "~/types/studio";
 import {
   CHAT_POLL_CONNECTED_MS,
@@ -34,10 +36,12 @@ import { committedSlashSkill, insertSlashCommand, mergeSlashCatalog, removeSlash
 import { previewToolAfterEscape } from "~/utils/studio-shortcuts";
 import { absoluteAppUrl, copyTextToClipboard, fetchStatusCode } from "~/utils/studio-link";
 import { mergeInspectPins, toInspectPin, type PreviewInspectTarget } from "~/utils/preview-inspect";
+import { isStaleSessionRefresh, selectedSessionView, sessionQuery } from "~/utils/studio-session";
 
 export function useStudio() {
   const { t, locale, setLocale } = useI18n();
   const route = useRoute();
+  const router = useRouter();
   const rel = useRelativeTime();
   const { signOut } = useSignOut();
   const workspaceId = computed(() => String(route.params.workspace));
@@ -51,6 +55,10 @@ export function useStudio() {
   const dialog = ref<StudioDialog>(null);
   const linkUrl = ref("");
   const linkBusy = ref(false);
+  const inviteRole = ref<"editor" | "spectator">("editor");
+  const inviteMembers = ref<StudioWorkspaceMember[]>([]);
+  const pendingInvites = ref<StudioPendingInvite[]>([]);
+  const invitePanelBusy = ref(false);
   const sheet = ref<StudioSheet>(null);
   const paletteQuery = ref("");
   const mentionsOpen = ref(false);
@@ -110,25 +118,46 @@ export function useStudio() {
   }
 
   let loadedSessionId: string | undefined;
+  let refreshGeneration = 0;
+  const promptDrafts = new Map<string, string>();
+
+  function stashPromptDraft(sessionId?: string) {
+    if (!sessionId) return;
+    promptDrafts.set(sessionId, prompt.value);
+  }
+
+  function restorePromptDraft(sessionId?: string) {
+    prompt.value = sessionId ? (promptDrafts.get(sessionId) ?? "") : "";
+  }
+
+  function syncSessionQuery(sessionId: string) {
+    if (!import.meta.client || route.query.session === sessionId) return;
+    void router.replace({ query: sessionQuery(route.query, sessionId) });
+  }
 
   async function refresh() {
+    const generation = ++refreshGeneration;
+    const wantSessionId = activeSessionId();
     loadError.value = false;
     try {
       const payload = await $fetch<StudioPayload>(`/api/workspace/${workspaceId.value}`, {
-        query: { q: query.value || undefined, session: activeSessionId() },
+        query: { q: query.value || undefined, session: wantSessionId },
       });
+      if (generation !== refreshGeneration || isStaleSessionRefresh(wantSessionId, activeSessionId())) return;
+      let events = collapseSessionEvents((payload.events ?? []) as SessionEvent[]);
       if (payload.session?.id && payload.session.id === loadedSessionId) {
-        payload.events = mergeSessionEvents(
-          (payload.events ?? []) as SessionEvent[],
-          (data.value?.events ?? []) as SessionEvent[],
-        );
-        if (payload.session) payload.session.events = payload.events;
+        events = mergeSessionEvents(events, (data.value?.events ?? []) as SessionEvent[]);
       }
+      payload.events = events;
+      if (payload.session) payload.session.events = events;
       loadedSessionId = payload.session?.id;
       data.value = payload;
       hydratePresence();
+      if (payload.session?.id) syncSessionQuery(payload.session.id);
+      void syncPresence(payload);
     } catch (err) {
-      const status = (err as { statusCode?: number }).statusCode;
+      if (generation !== refreshGeneration) return;
+      const status = fetchStatusCode(err);
       const disabled = (err as { data?: { disabled?: boolean; message?: string } }).data?.disabled
         || (err as { statusMessage?: string }).statusMessage === "disabled";
       if (status === 401) {
@@ -139,14 +168,39 @@ export function useStudio() {
         await navigateTo("/disabled");
         return;
       }
+      if (status === 403) {
+        await navigateTo({ path: "/", query: { notice: "removed" } });
+        return;
+      }
       loadError.value = true;
     }
   }
+
+  let presenceSyncedFor = "";
+  watch(workspaceId, (id, previous) => {
+    if (id !== previous) presenceSyncedFor = "";
+  });
 
   function hydratePresence() {
     if (!data.value) return;
     const mine = data.value.presence.find((row) => row.userId === data.value?.user.id);
     spectator.value = !data.value.canEdit || mine?.mode === "spectator";
+  }
+
+  async function syncPresence(payload: StudioPayload) {
+    const mine = payload.presence.find((row) => row.userId === payload.user.id);
+    if (mine || presenceSyncedFor === payload.workspace.id) return;
+    presenceSyncedFor = payload.workspace.id;
+    const mode = payload.canEdit ? "editor" : "spectator";
+    try {
+      await $fetch("/api/presence", {
+        method: "POST",
+        body: { workspaceId: payload.workspace.id, mode },
+      });
+      await refresh();
+    } catch {
+      presenceSyncedFor = "";
+    }
   }
 
   let socket: WebSocket | null = null;
@@ -155,6 +209,7 @@ export function useStudio() {
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectDelay = CHAT_RECONNECT_MIN_MS;
   let socketGeneration = 0;
+  let openedSocketSessionId: string | undefined;
   let chatUnmounted = false;
 
   function socketIsOpen() {
@@ -205,7 +260,9 @@ export function useStudio() {
       pingTimer = setInterval(() => {
         if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "ping" }));
       }, CHAT_SOCKET_PING_MS);
-      void refresh();
+      const catchUp = openedSocketSessionId === sessionId;
+      openedSocketSessionId = sessionId;
+      if (catchUp) void refresh();
       schedulePoll();
     };
     socket.onmessage = (frame) => {
@@ -318,6 +375,13 @@ export function useStudio() {
   watch(
     () => data.value?.session?.id,
     () => connectSocket(),
+  );
+
+  watch(
+    () => route.query.session,
+    (id) => {
+      if (typeof id === "string" && id) void selectSession(id);
+    },
   );
 
   watch([previewKey, previewSrc], () => {
@@ -545,6 +609,15 @@ export function useStudio() {
     { id: "invite", label: t("command.invite"), run: () => (dialog.value = "invite") },
     { id: "share", label: t("command.share"), run: () => (dialog.value = "share") },
     { id: "shortcuts", label: t("command.shortcuts"), keys: "⌘/", run: () => (dialog.value = "shortcuts") },
+    ...(data.value?.memberships ?? [])
+      .filter((row) => row.id !== workspaceId.value)
+      .map((row) => ({
+        id: `workspace-${row.id}`,
+        label: row.isOwn
+          ? `${t("command.switchWorkspace")} · ${t("workspace.yours")}`
+          : t("command.openWorkspace", { owner: row.ownerLogin }),
+        run: () => void navigateTo(`/w/${row.id}`),
+      })),
   ]);
 
   const filteredCommands = computed(() =>
@@ -560,31 +633,53 @@ export function useStudio() {
   }
 
   async function newSession() {
+    stashPromptDraft(data.value?.session?.id);
     resetConversationUi();
-    loadedSessionId = undefined;
+    prompt.value = "";
+    attachments.value = [];
     const created = await $fetch<{ id: string }>("/api/sessions", {
       method: "POST",
       body: { workspaceId: workspaceId.value, provider: data.value?.preferredProvider ?? data.value?.session?.provider ?? "cursor" },
     });
     if (data.value) {
+      const session = {
+        ...(data.value.session as StudioPayload["session"]),
+        ...created,
+        title: "",
+        events: [] as SessionEvent[],
+        provider: data.value.preferredProvider ?? data.value.session?.provider ?? "cursor",
+        createdAt: new Date().toISOString(),
+      };
       data.value.events = [];
-      data.value.session = { ...(data.value.session as StudioPayload["session"]), ...created, title: "", events: [], provider: data.value.preferredProvider ?? data.value.session?.provider ?? "cursor", createdAt: new Date().toISOString() };
+      data.value.session = session;
+      data.value.sessions = [session, ...data.value.sessions.filter((row) => row.id !== session.id)];
+      loadedSessionId = session.id;
+      syncSessionQuery(session.id);
     }
     await refresh();
   }
 
   async function selectSession(id: string) {
-    if (!data.value) return;
+    if (!data.value || data.value.session?.id === id) return;
+    const view = selectedSessionView(data.value.sessions, id);
+    if (!view) return;
+    stashPromptDraft(data.value.session?.id);
     resetConversationUi();
-    loadedSessionId = undefined;
-    data.value.events = [];
-    data.value.session = data.value.sessions.find((s) => s.id === id) ?? data.value.session;
+    attachments.value = [];
+    data.value.session = view.session;
+    data.value.events = view.events;
+    loadedSessionId = view.session.id;
+    restorePromptDraft(id);
+    syncSessionQuery(id);
     await refresh();
   }
 
   async function mintLink(kind: "invite" | "share"): Promise<string> {
     if (kind === "invite") {
-      const res = await $fetch<{ url: string }>("/api/invite", { method: "POST" });
+      const res = await $fetch<{ url: string }>("/api/invite", {
+        method: "POST",
+        body: { workspaceId: workspaceId.value, role: inviteRole.value },
+      });
       return absoluteAppUrl(location.origin, res.url);
     }
     const res = await $fetch<{ token: string }>("/api/share", {
@@ -592,6 +687,80 @@ export function useStudio() {
       body: { workspaceId: workspaceId.value },
     });
     return absoluteAppUrl(location.origin, `/share/${res.token}`);
+  }
+
+  async function loadInvitePanel() {
+    if (!workspaceId.value) return;
+    invitePanelBusy.value = true;
+    try {
+      const res = await $fetch<{ members: StudioWorkspaceMember[]; pendingInvites: StudioPendingInvite[] }>(
+        `/api/workspace/${workspaceId.value}/members`,
+      );
+      inviteMembers.value = res.members;
+      pendingInvites.value = res.pendingInvites;
+    } catch (error) {
+      flash(linkFailureMessage("invite", error));
+    } finally {
+      invitePanelBusy.value = false;
+    }
+  }
+
+  async function createInviteLink() {
+    if (!data.value?.canInvite) return;
+    const request = ++linkRequest;
+    linkBusy.value = true;
+    try {
+      const url = await mintLink("invite");
+      if (request !== linkRequest) return;
+      linkUrl.value = url;
+      await loadInvitePanel();
+      const copied = await copyTextToClipboard(url);
+      flash(copied ? t("nav.copied") : t("share.copyFailed"));
+    } catch (error) {
+      if (request !== linkRequest) return;
+      flash(linkFailureMessage("invite", error));
+    } finally {
+      if (request === linkRequest) linkBusy.value = false;
+    }
+  }
+
+  async function revokeInvite(id: string) {
+    try {
+      await $fetch(`/api/invite/${id}`, { method: "DELETE" });
+      pendingInvites.value = pendingInvites.value.filter((row) => row.id !== id);
+      flash(t("invite.revoked"));
+    } catch (error) {
+      flash(linkFailureMessage("invite", error));
+    }
+  }
+
+  async function copyPendingInvite(path: string) {
+    const url = absoluteAppUrl(location.origin, path);
+    const copied = await copyTextToClipboard(url);
+    flash(copied ? t("nav.copied") : t("share.copyFailed"));
+  }
+
+  async function removeMember(userId: string) {
+    try {
+      await $fetch(`/api/workspace/${workspaceId.value}/members/${userId}`, { method: "DELETE" });
+      inviteMembers.value = inviteMembers.value.filter((row) => row.userId !== userId);
+      flash(t("invite.memberRemoved"));
+    } catch (error) {
+      flash(linkFailureMessage("invite", error));
+    }
+  }
+
+  async function leaveWorkspace() {
+    const userId = data.value?.user.id;
+    if (!userId) return;
+    try {
+      await $fetch(`/api/workspace/${workspaceId.value}/members/${userId}`, { method: "DELETE" });
+      dialog.value = null;
+      flash(t("invite.left"));
+      await navigateTo("/");
+    } catch (error) {
+      flash(linkFailureMessage("invite", error));
+    }
   }
 
   function linkFailureMessage(kind: "invite" | "share", error: unknown): string {
@@ -605,9 +774,12 @@ export function useStudio() {
 
   watch(dialog, async (value) => {
     linkUrl.value = "";
-    if (value !== "invite" && value !== "share") return;
-    if (value === "invite" && !data.value?.canInvite) return;
-    if (value === "share" && !data.value?.canEdit) return;
+    if (value === "invite") {
+      void loadInvitePanel();
+      return;
+    }
+    if (value !== "share") return;
+    if (!data.value?.canEdit) return;
     const request = ++linkRequest;
     linkBusy.value = true;
     try {
@@ -812,6 +984,7 @@ export function useStudio() {
   }
 
   async function hibernate() {
+    if (!data.value?.canHibernate) return;
     await $fetch(`/api/workspace/${workspaceId.value}/hibernate`, { method: "POST" });
     await refresh();
   }
@@ -872,6 +1045,10 @@ export function useStudio() {
     dialog,
     linkUrl,
     linkBusy,
+    inviteRole,
+    inviteMembers,
+    pendingInvites,
+    invitePanelBusy,
     sheet,
     paletteQuery,
     mentionsOpen,
@@ -927,6 +1104,11 @@ export function useStudio() {
     newSession,
     selectSession,
     copyLink,
+    createInviteLink,
+    revokeInvite,
+    copyPendingInvite,
+    removeMember,
+    leaveWorkspace,
     insertMention,
     attachFiles,
     toggleSpectator,

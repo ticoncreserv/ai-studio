@@ -84,6 +84,15 @@ const {
   newSession,
   selectSession,
   copyLink,
+  createInviteLink,
+  revokeInvite,
+  copyPendingInvite,
+  removeMember,
+  leaveWorkspace,
+  inviteRole,
+  inviteMembers,
+  pendingInvites,
+  invitePanelBusy,
   insertMention,
   attachFiles,
   toggleSpectator,
@@ -224,7 +233,18 @@ const usageNotice = computed(() => {
     : t("usage.warn", { reason, remaining });
 });
 
-const conversationTitle = computed(() => data.value?.session?.title || t("workspace.project"));
+const conversationTitle = computed(() => {
+  if (data.value && !data.value.isOwner && data.value.owner?.login) {
+    return t("workspace.guestTitle", { owner: data.value.owner.login });
+  }
+  return data.value?.session?.title || t("workspace.project");
+});
+
+function workspaceRoleLabel(role: string | null | undefined) {
+  if (role === "spectator") return t("workspace.roleSpectator");
+  if (role === "owner") return t("workspace.roleOwner");
+  return t("workspace.roleEditor");
+}
 
 function onCommand(payload: { type: string; [key: string]: unknown }) {
   void sendCommand(payload as ClientCommand);
@@ -298,7 +318,7 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
         :branch="data.workspace.branch"
         :status-label="statusLabel(data.workspace.status)"
         :show-status="data.workspace.status !== 'running'"
-        :login="data.user.login"
+        :login="data.owner?.login || data.user.login"
         :presence-count="data.presence.length"
         :presence-label="t('workspace.presence', { count: data.presence.length })"
         :rail-overlay-open="railOverlayOpen"
@@ -308,6 +328,13 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
         @toggle-rail="toggleRailOverlay"
         @close-sidebar="persistSidebar(false)"
       />
+
+      <p
+        v-if="!data.isOwner"
+        class="shrink-0 px-3 pb-2 text-[12px] leading-relaxed text-ink-400"
+      >
+        {{ t("workspace.guestBanner", { owner: data.owner.login, role: workspaceRoleLabel(data.workspaceRole) }) }}
+      </p>
 
       <div v-if="usageAlertOpen && usageKind" class="shrink-0 px-3 pb-2">
         <StudioUsageAlert
@@ -329,6 +356,7 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
           :enter-event-id="enterEventId"
           :command-busy="commandBusy"
           :has-alert="usageAlertOpen"
+          :session-id="data.session?.id"
           @command="onCommand"
           @suggestion="useSuggestion"
           @fork="newSession"
@@ -409,6 +437,7 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
       :resuming="previewBusy"
       :process-running="data.workspace.previewProcessRunning"
       :can-edit="data.canEdit"
+      :can-hibernate="data.canHibernate"
       @update:viewport="viewport = $event"
       @update:rotated="rotated = $event"
       @update:tool-mode="toolMode = $event"
@@ -445,6 +474,10 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
       :dialog="dialog"
       :link-url="linkUrl"
       :link-busy="linkBusy"
+      :invite-role="inviteRole"
+      :invite-members="inviteMembers"
+      :pending-invites="pendingInvites"
+      :invite-panel-busy="invitePanelBusy"
       :palette-query="paletteQuery"
       :commands="commands"
       :filtered-commands="filteredCommands"
@@ -472,6 +505,12 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
       @toggle-skill="toggleSkill($event.name, $event.enabled)"
       @toggle-mcp="toggleMcp($event.name, $event.enabled)"
       @copy-invite="copyLink('invite')"
+      @create-invite="createInviteLink"
+      @revoke-invite="revokeInvite"
+      @copy-pending-invite="copyPendingInvite"
+      @remove-member="removeMember"
+      @leave-workspace="leaveWorkspace"
+      @update:invite-role="inviteRole = $event"
       @copy-share="copyLink('share')"
       @hibernate="hibernate"
       @sync="sendCommand({ type: 'sync_base' })"
