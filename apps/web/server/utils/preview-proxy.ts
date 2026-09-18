@@ -1,12 +1,13 @@
 import type { H3Event } from "h3";
 import { sendStream } from "h3";
+import { APP_LOCALE_COOKIE } from "../../app/utils/app-locale";
 import { runPreviewProxy } from "./preview-proxy-core";
 import type { PreviewUnavailableReason } from "./preview-unavailable";
 import { previewUnavailablePayload } from "./preview-unavailable";
 import { previewTokenCookie, rewriteSetCookie, viteSearchForAssetModule } from "./preview-rewrite";
 
 function sendPreviewUnavailable(event: H3Event, statusCode: number, reason: PreviewUnavailableReason) {
-  const payload = previewUnavailablePayload(reason, getHeader(event, "accept"), getCookie(event, "atelier-locale"));
+  const payload = previewUnavailablePayload(reason, getHeader(event, "accept"), getCookie(event, APP_LOCALE_COOKIE));
   setResponseStatus(event, statusCode, payload.statusMessage);
   setHeader(event, "cache-control", "no-store");
   setHeader(event, "content-type", payload.contentType);

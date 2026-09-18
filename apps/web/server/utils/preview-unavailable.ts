@@ -1,3 +1,4 @@
+import { resolveAppLocale } from "../../app/utils/app-locale";
 import en from "../../i18n/locales/en.json";
 import ptBR from "../../i18n/locales/pt-BR.json";
 import { PREVIEW_WAIT_ROOT, previewWaitStyle } from "./preview-wait";
@@ -7,7 +8,7 @@ export type PreviewUnavailableReason = "hibernated" | "missing" | "down";
 const catalogs = { en, "pt-BR": ptBR } as const;
 
 export function previewLocaleFromCookie(cookie: string | undefined): keyof typeof catalogs {
-  return cookie?.toLowerCase().startsWith("en") ? "en" : "pt-BR";
+  return resolveAppLocale(cookie);
 }
 
 export function wantsHtmlPreview(accept: string | undefined): boolean {

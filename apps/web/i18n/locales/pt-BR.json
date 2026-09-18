@@ -445,6 +445,7 @@
   },
   "invite": {
     "title": "Convidar para este workspace",
+    "landingTitle": "Você recebeu um convite",
     "peopleTitle": "Pessoas neste workspace",
     "created": "Você foi convidado ao estúdio de {owner}.",
     "createdRole": "Você foi convidado ao estúdio de {owner} como {role}.",

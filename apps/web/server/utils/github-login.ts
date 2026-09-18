@@ -7,9 +7,14 @@ import {
   signSession,
   syncGitHubAppPublicUrls,
 } from "@atelier/supervisor";
+import { APP_LOCALE_COOKIE, resolveAppLocale } from "../../app/utils/app-locale";
 import { requestPublicUrl } from "./public-url";
 import { platform } from "./platform";
 import type { H3Event } from "h3";
+
+function requestLocale(event: H3Event, fallback?: string) {
+  return resolveAppLocale(fallback || getCookie(event, APP_LOCALE_COOKIE));
+}
 
 export async function finishGitHubLogin(
   event: H3Event,
@@ -19,7 +24,7 @@ export async function finishGitHubLogin(
   const provider = createAuthProvider();
   const identity = await provider.completeLogin({
     code: input.code,
-    locale: input.locale || String(getCookie(event, "atelier-locale") ?? "pt-BR"),
+    locale: requestLocale(event, input.locale),
     // Must match authorize: ATELIER_PUBLIC_URL, not the incoming Host (127.0.0.1 vs localhost).
     redirectUri: oauthRedirectUri(event),
     state: input.state,
@@ -81,7 +86,7 @@ export async function handleGitHubOAuthCallback(event: H3Event) {
     const { next } = await finishGitHubLogin(event, {
       code,
       installationId,
-      locale: String(getCookie(event, "atelier-locale") ?? "pt-BR"),
+      locale: requestLocale(event),
       state: String(query.state ?? ""),
     });
     return sendRedirect(event, next);

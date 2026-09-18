@@ -445,6 +445,7 @@
   },
   "invite": {
     "title": "Invite to this workspace",
+    "landingTitle": "You've been invited",
     "peopleTitle": "People in this workspace",
     "created": "You were invited to {owner}'s studio.",
     "createdRole": "You were invited to {owner}'s studio as {role}.",

@@ -14,7 +14,7 @@ describe("preview unavailable pages", () => {
   it("picks the cookie locale and HTML accept", () => {
     expect(previewLocaleFromCookie(undefined)).toBe("pt-BR");
     expect(previewLocaleFromCookie("en")).toBe("en");
-    expect(previewLocaleFromCookie("en-US")).toBe("en");
+    expect(previewLocaleFromCookie("en-US")).toBe("pt-BR");
     expect(previewLocaleFromCookie("pt-BR")).toBe("pt-BR");
     expect(wantsHtmlPreview("text/html,application/xhtml+xml")).toBe(true);
     expect(wantsHtmlPreview("*/*")).toBe(false);

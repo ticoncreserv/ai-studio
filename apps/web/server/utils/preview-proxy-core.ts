@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { ensureViteHotFile, publicViteOrigin, viteDevAssetPath } from "@atelier/supervisor";
+import { APP_LOCALE_COOKIE } from "../../app/utils/app-locale";
 import { platform } from "./platform";
 import { previewUnavailablePayload, type PreviewUnavailableReason } from "./preview-unavailable";
 import {
@@ -81,7 +82,7 @@ export function resolveOrphanPreviewToken(referer: string | undefined, cookie: s
 export async function runPreviewProxy(input: PreviewProxyRequest): Promise<PreviewProxyResult> {
   const ws = platform().store.read().workspaces.find((row) => row.previewToken === input.token);
   const accept = input.header("accept");
-  const locale = cookieNamed(input.header("cookie"), "atelier-locale");
+  const locale = cookieNamed(input.header("cookie"), APP_LOCALE_COOKIE);
   if (!ws) return { kind: "unavailable", status: 404, reason: "missing", accept, locale };
   if (!ws.port) {
     return { kind: "unavailable", status: 503, reason: "hibernated", accept, locale };
@@ -179,7 +180,7 @@ function writeUnavailable(res: ServerResponse, status: number, reason: PreviewUn
   const payload = previewUnavailablePayload(
     reason,
     headerValue(req.headers.accept),
-    cookieNamed(headerValue(req.headers.cookie), "atelier-locale"),
+    cookieNamed(headerValue(req.headers.cookie), APP_LOCALE_COOKIE),
   );
   res.statusCode = status;
   res.setHeader("cache-control", "no-store");

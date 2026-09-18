@@ -48,12 +48,7 @@ export default defineNuxtConfig({
     strategy: "no_prefix",
     lazy: true,
     langDir: "locales",
-    detectBrowserLanguage: {
-      useCookie: true,
-      cookieKey: "atelier-locale",
-      fallbackLocale: "pt-BR",
-      redirectOn: "root",
-    },
+    detectBrowserLanguage: false,
     experimental: {
       typedOptionsAndMessages: "default",
     },
