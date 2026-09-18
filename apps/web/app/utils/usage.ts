@@ -1,4 +1,57 @@
-import type { UsageSummary } from "@atelier/contracts";
+import type { UsageLimitReason, UsageSummary } from "@atelier/contracts";
+
+export type UsageAlertKind = "warn" | "exhausted";
+
+/** Remaining below this share of the monthly cap is a credit warning, even if the profile warns later. */
+export const USAGE_ALERT_REMAINING_RATIO = 0.2;
+
+const CREDIT_ALERT_REASONS = new Set<UsageLimitReason>(["monthly", "daily", "cost"]);
+
+export function usageAlertKind(
+  usage: Pick<UsageSummary, "unlimited" | "remainingTokens" | "limitTokens" | "decision">,
+): UsageAlertKind | null {
+  if (usage.unlimited) return null;
+  const reason = usage.decision.reason;
+  const creditReason = reason != null && CREDIT_ALERT_REASONS.has(reason);
+  if (usage.remainingTokens <= 0) return "exhausted";
+  if (usage.decision.decision === "block" && creditReason) return "exhausted";
+  if (usage.limitTokens > 0 && usage.remainingTokens / usage.limitTokens < USAGE_ALERT_REMAINING_RATIO) {
+    return "warn";
+  }
+  if (usage.decision.decision === "warn" && creditReason) return "warn";
+  return null;
+}
+
+export function usageAlertStorageKey(userId: string, periodKey: string, kind: UsageAlertKind): string {
+  return `atelier.usage-alert:${userId}:${periodKey}:${kind}`;
+}
+
+function browserStorage(): Storage | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function isUsageAlertDismissed(key: string, storage: Pick<Storage, "getItem"> | null = browserStorage()): boolean {
+  if (!storage) return false;
+  try {
+    return storage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function dismissUsageAlert(key: string, storage: Pick<Storage, "setItem"> | null = browserStorage()): void {
+  if (!storage) return;
+  try {
+    storage.setItem(key, "1");
+  } catch {
+    /* private mode */
+  }
+}
 
 /** Millions of tokens are unreadable unformatted, and admins still need the exact figure. */
 export function formatTokens(value: number, locale = "pt-BR"): string {

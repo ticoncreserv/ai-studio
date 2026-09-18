@@ -10,6 +10,8 @@ const props = defineProps<{
   data: StudioPayload;
   sheet: StudioSheet;
   dialog: StudioDialog;
+  linkUrl?: string;
+  linkBusy?: boolean;
   paletteQuery: string;
   commands: Array<{ id: string; label: string; keys?: string; run: () => void }>;
   filteredCommands: Array<{ id: string; label: string; keys?: string; run: () => void }>;
@@ -30,7 +32,8 @@ const emit = defineEmits<{
   "update:dialog": [value: StudioDialog];
   "update:paletteQuery": [value: string];
   command: [payload: { type: string; [key: string]: unknown }];
-  saveRules: [];
+  saveUserRule: [payload: { id?: string; title: string; description: string; slug: string; body: string; alwaysApply: boolean }];
+  deleteUserRule: [id: string];
   saveUserEnv: [payload: { env?: Record<string, string>; raw?: string }];
   saveUserSkill: [payload: { name: string; description: string; body: string; paths?: string[]; manualOnly?: boolean }];
   deleteUserSkill: [name: string];
@@ -224,9 +227,15 @@ function submitQuestion() {
     </div>
   </div>
 
-  <div v-if="toast" class="cx-panel fixed bottom-5 left-1/2 z-50 -translate-x-1/2 px-3 py-1.5 text-[12px] text-ink-950 shadow-float">
-    {{ toast }}
-  </div>
+  <Teleport to="body">
+    <div
+      v-if="toast"
+      class="cx-panel cx-toast pointer-events-none fixed bottom-5 left-1/2 z-[70] -translate-x-1/2 text-ink-950"
+      role="status"
+    >
+      {{ toast }}
+    </div>
+  </Teleport>
 
   <div v-if="dialog === 'palette'" class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-8" @click.self="emit('update:dialog', null)">
     <div class="cx-menu w-full max-w-md p-1 shadow-float">
@@ -252,33 +261,13 @@ function submitQuestion() {
     </div>
   </div>
 
-  <UiSheet :open="sheet === 'rules'" :title="t('rules.title')" @close="emit('update:sheet', null)">
-    <p class="text-sm leading-relaxed text-ink-500">{{ t("rules.hint") }}</p>
-    <p class="mt-3 text-[12px] text-ink-400">{{ t("rules.lockedHint") }}</p>
-    <label v-for="layer in data.rules" :key="layer.id" class="mt-4 block">
-      <span class="text-[12px] text-ink-400">{{
-        layer.level === "platform" ? t("rules.platform") : layer.level === "project" ? t("rules.project") : t("rules.user")
-      }}</span>
-      <p class="mb-1 text-[12px] text-ink-400">
-        {{
-          layer.level === "platform"
-            ? t("rules.platformHint")
-            : layer.level === "project"
-              ? t("rules.projectHint")
-              : t("rules.userHint")
-        }}
-      </p>
-      <textarea
-        v-model="layer.body"
-        :readonly="layer.level !== 'user'"
-        :class="layer.level !== 'user' ? 'opacity-70' : ''"
-        class="mt-1 h-28 w-full rounded-[6px] border border-line bg-white/[0.03] p-2.5 text-[12.5px] leading-relaxed outline-none focus:border-coral-500/50"
-      />
-    </label>
-    <template #footer>
-      <UiButton class="w-full" @click="emit('saveRules')">{{ t("rules.save") }}</UiButton>
-    </template>
-  </UiSheet>
+  <StudioRulesSheet
+    :open="sheet === 'rules'"
+    :rules="data.rules"
+    @close="emit('update:sheet', null)"
+    @save="emit('saveUserRule', $event)"
+    @delete="emit('deleteUserRule', $event)"
+  />
 
   <UiSheet :open="sheet === 'connections'" :title="t('connections.title')" @close="emit('update:sheet', null)">
     <p class="text-sm text-ink-500">{{ t("connections.erpReadOnly") }}</p>
@@ -542,13 +531,43 @@ function submitQuestion() {
   <UiDialog :open="dialog === 'invite'" :title="t('invite.title')" @close="emit('update:dialog', null)">
     <p class="text-sm leading-relaxed text-ink-500">{{ t("invite.hint") }}</p>
     <p class="mt-2 text-[12px] text-ink-300">{{ t("invite.expires") }}</p>
-    <UiButton class="mt-4 w-full" @click="emit('copyInvite')">{{ t("nav.invite") }}</UiButton>
+    <p v-if="!data.canInvite" class="mt-3 text-[12.5px] text-amber-200/90">{{ t("invite.forbidden") }}</p>
+    <template v-else>
+      <label class="mt-4 block">
+        <span class="text-[11px] text-ink-400">{{ t("invite.linkLabel") }}</span>
+        <input
+          :value="linkUrl"
+          readonly
+          :placeholder="linkBusy ? t('nav.working') : ''"
+          class="mt-1 h-8 w-full rounded-[6px] border border-line bg-white/[0.03] px-2 font-mono text-[12px] text-ink-950 outline-none"
+          @focus="($event.target as HTMLInputElement).select()"
+        />
+      </label>
+      <UiButton class="mt-3 w-full" :loading="linkBusy" :disabled="!linkUrl" @click="emit('copyInvite')">
+        {{ t("invite.copy") }}
+      </UiButton>
+    </template>
   </UiDialog>
 
   <UiDialog :open="dialog === 'share'" :title="t('share.title')" @close="emit('update:dialog', null)">
     <p class="text-sm leading-relaxed text-ink-500">{{ t("share.hint") }}</p>
     <p class="mt-2 text-[12px] text-ink-300">{{ t("share.expires") }}</p>
-    <UiButton class="mt-4 w-full" @click="emit('copyShare')">{{ t("share.copy") }}</UiButton>
+    <p v-if="!data.canEdit" class="mt-3 text-[12.5px] text-amber-200/90">{{ t("share.forbidden") }}</p>
+    <template v-else>
+      <label class="mt-4 block">
+        <span class="text-[11px] text-ink-400">{{ t("share.linkLabel") }}</span>
+        <input
+          :value="linkUrl"
+          readonly
+          :placeholder="linkBusy ? t('nav.working') : ''"
+          class="mt-1 h-8 w-full rounded-[6px] border border-line bg-white/[0.03] px-2 font-mono text-[12px] text-ink-950 outline-none"
+          @focus="($event.target as HTMLInputElement).select()"
+        />
+      </label>
+      <UiButton class="mt-3 w-full" :loading="linkBusy" :disabled="!linkUrl" @click="emit('copyShare')">
+        {{ t("share.copy") }}
+      </UiButton>
+    </template>
   </UiDialog>
 
   <UiDialog :open="dialog === 'shortcuts'" :title="t('nav.shortcuts')" @close="emit('update:dialog', null)">

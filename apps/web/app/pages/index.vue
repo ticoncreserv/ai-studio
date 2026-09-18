@@ -89,7 +89,7 @@ function sessionTitle(session: { title: string }) {
     <div class="login-stage">
       <div class="login-stack">
         <div class="login-rise login-rise-1">
-          <AuthLoginMark :size="84" />
+          <AuthLoginMark />
         </div>
 
         <template v-if="!ready">

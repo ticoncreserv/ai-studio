@@ -22,6 +22,10 @@ export function canInvite(role: Role): boolean {
   return role === "owner";
 }
 
+export function canCreateStudioInvite(role: Role, platformAdmin = false): boolean {
+  return canEdit(role) || platformAdmin;
+}
+
 export function canSpectate(role: Role): boolean {
   return role === "owner" || role === "editor" || role === "viewer";
 }

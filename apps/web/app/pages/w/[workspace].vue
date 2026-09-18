@@ -12,10 +12,18 @@ import {
   studioRailOverlays,
   type SidebarOverride,
 } from "~/utils/studio-layout";
+import {
+  dismissUsageAlert,
+  formatTokens,
+  isUsageAlertDismissed,
+  usageAlertKind,
+  usageAlertStorageKey,
+} from "~/utils/usage";
 
 const studio = useStudio();
 const {
   t,
+  locale,
   data,
   loadError,
   prompt,
@@ -23,6 +31,8 @@ const {
   viewport,
   rotated,
   dialog,
+  linkUrl,
+  linkBusy,
   sheet,
   paletteQuery,
   mentionsOpen,
@@ -78,7 +88,8 @@ const {
   attachFiles,
   toggleSpectator,
   setProvider,
-  saveRules,
+  saveUserRule,
+  deleteUserRule,
   saveUserEnv,
   hibernate,
   resume,
@@ -93,7 +104,11 @@ const railDockedClosed = ref(false);
 const sidebarOverride = ref<SidebarOverride>(null);
 const sidebarPaneClass = computed(() => sidebarVisibilityClass(sidebarOverride.value));
 
+const clientReady = ref(false);
+const usageDismissTick = ref(0);
+
 onMounted(() => {
+  clientReady.value = true;
   sidebarOverride.value = sidebarOverrideFromStorage(sessionStorage.getItem(SIDEBAR_STORAGE_KEY));
   railDockedClosed.value = sidebarOverrideFromStorage(sessionStorage.getItem(RAIL_STORAGE_KEY)) === false;
 });
@@ -153,13 +168,60 @@ function onInspectPin(targets: PreviewInspectTarget[]) {
 }
 
 const usageBlocked = computed(() => data.value?.usage?.decision.decision === "block");
+const usageKind = computed(() => (data.value?.usage ? usageAlertKind(data.value.usage) : null));
+const usagePaused = computed(
+  () =>
+    Boolean(data.value?.flags?.usageLimits) &&
+    data.value?.usage?.decision.decision === "block" &&
+    usageKind.value === "exhausted",
+);
+const usageRemainingLabel = computed(() =>
+  data.value?.usage ? formatTokens(data.value.usage.remainingTokens, locale.value) : "0",
+);
+const usageLimitLabel = computed(() =>
+  data.value?.usage ? formatTokens(data.value.usage.limitTokens, locale.value) : "0",
+);
+const usageAlertOpen = computed(() => {
+  void usageDismissTick.value;
+  if (!clientReady.value) return false;
+  const kind = usageKind.value;
+  const usage = data.value?.usage;
+  const userId = data.value?.user.id;
+  if (!kind || !usage || !userId) return false;
+  return !isUsageAlertDismissed(usageAlertStorageKey(userId, usage.periodKey, kind));
+});
+
+function dismissCreditAlert() {
+  const kind = usageKind.value;
+  const usage = data.value?.usage;
+  const userId = data.value?.user.id;
+  if (!kind || !usage || !userId) return;
+  dismissUsageAlert(usageAlertStorageKey(userId, usage.periodKey, kind));
+  usageDismissTick.value += 1;
+}
+
 const usageNotice = computed(() => {
   const usage = data.value?.usage;
-  if (!usage || usage.decision.decision === "allow" || !usage.decision.reason) return "";
+  if (!usage) return "";
+  if (usageKind.value && usageAlertOpen.value) return "";
+  const remaining = usageRemainingLabel.value;
+  if (usageKind.value === "exhausted") {
+    const reason = usage.decision.reason
+      ? t(`usage.reason.${usage.decision.reason}`)
+      : t("usage.reason.monthly");
+    return t("usage.blocked", { reason });
+  }
+  if (usageKind.value === "warn") {
+    const reason = usage.decision.reason
+      ? t(`usage.reason.${usage.decision.reason}`)
+      : t("usage.reason.monthly");
+    return t("usage.warn", { reason, remaining });
+  }
+  if (usage.decision.decision === "allow" || !usage.decision.reason) return "";
   const reason = t(`usage.reason.${usage.decision.reason}`);
   return usage.decision.decision === "block"
     ? t("usage.blocked", { reason })
-    : t("usage.warn", { reason, remaining: usage.remainingTokens });
+    : t("usage.warn", { reason, remaining });
 });
 
 const conversationTitle = computed(() => data.value?.session?.title || t("workspace.project"));
@@ -247,6 +309,16 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
         @close-sidebar="persistSidebar(false)"
       />
 
+      <div v-if="usageAlertOpen && usageKind" class="shrink-0 px-3 pb-2">
+        <StudioUsageAlert
+          :kind="usageKind"
+          :remaining="usageRemainingLabel"
+          :limit="usageLimitLabel"
+          :paused="usagePaused"
+          @dismiss="dismissCreditAlert"
+        />
+      </div>
+
       <div class="flex min-h-0 min-w-0 flex-1">
         <StudioChatPane
           :events="events"
@@ -256,11 +328,21 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
           :failed-event-id="failedEventId"
           :enter-event-id="enterEventId"
           :command-busy="commandBusy"
+          :has-alert="usageAlertOpen"
           @command="onCommand"
           @suggestion="useSuggestion"
           @fork="newSession"
           @retry="retryFailed"
         >
+          <template v-if="usageAlertOpen && usageKind" #alert>
+            <StudioUsageAlert
+              :kind="usageKind"
+              :remaining="usageRemainingLabel"
+              :limit="usageLimitLabel"
+              :paused="usagePaused"
+              @dismiss="dismissCreditAlert"
+            />
+          </template>
           <p v-if="data.agent?.error" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ t("chat.providerRequired") }}</p>
           <p v-else-if="usageNotice" class="px-3 pb-1.5 text-[11px] text-amber-200/80">{{ usageNotice }}</p>
           <StudioComposer
@@ -361,6 +443,8 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
       :data="data"
       :sheet="sheet"
       :dialog="dialog"
+      :link-url="linkUrl"
+      :link-busy="linkBusy"
       :palette-query="paletteQuery"
       :commands="commands"
       :filtered-commands="filteredCommands"
@@ -378,7 +462,8 @@ function onFixDebug(payload?: { action: PreviewDebugAction; sql?: string }) {
       @update:dialog="dialog = $event"
       @update:palette-query="paletteQuery = $event"
       @command="onCommand"
-      @save-rules="saveRules"
+      @save-user-rule="saveUserRule"
+      @delete-user-rule="deleteUserRule"
       @save-user-env="saveUserEnv"
       @save-user-skill="saveUserSkill"
       @delete-user-skill="deleteUserSkill"

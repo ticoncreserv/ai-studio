@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   adminLoginsFromEnv,
+  canCreateStudioInvite,
+  canInvite,
   FALLBACK_REPO_OWNER_LOGIN,
   isPermanentPlatformAdmin,
   isPlatformAdmin,
   mapGitHubPermission,
 } from "./authz.js";
+
+describe("studio invite permission", () => {
+  it("lets editors and platform admins create invites, not viewers", () => {
+    expect(canInvite("owner")).toBe(true);
+    expect(canInvite("editor")).toBe(false);
+    expect(canInvite("viewer")).toBe(false);
+    expect(canCreateStudioInvite("owner")).toBe(true);
+    expect(canCreateStudioInvite("editor")).toBe(true);
+    expect(canCreateStudioInvite("viewer")).toBe(false);
+    expect(canCreateStudioInvite("viewer", true)).toBe(true);
+  });
+});
 
 describe("github permission mapping", () => {
   it("maps admin to owner and push to editor", () => {

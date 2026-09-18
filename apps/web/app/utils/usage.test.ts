@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { formatTokens, formatTokenCompact, usageBarTone, usageBarWidth } from "./usage";
+import type { UsageSummary } from "@atelier/contracts";
+import {
+  dismissUsageAlert,
+  formatTokens,
+  formatTokenCompact,
+  isUsageAlertDismissed,
+  usageAlertKind,
+  usageAlertStorageKey,
+  usageBarTone,
+  usageBarWidth,
+} from "./usage";
+
+function usage(
+  over: Partial<Pick<UsageSummary, "unlimited" | "remainingTokens" | "limitTokens" | "decision">> = {},
+): Pick<UsageSummary, "unlimited" | "remainingTokens" | "limitTokens" | "decision"> {
+  return {
+    unlimited: false,
+    remainingTokens: 5_000,
+    limitTokens: 10_000,
+    decision: { decision: "allow", reason: null },
+    ...over,
+  };
+}
 
 describe("usage formatting", () => {
   it("groups token counts per locale", () => {
@@ -25,5 +47,65 @@ describe("usage formatting", () => {
     expect(usageBarTone("allow")).toBe("bg-emerald-500");
     expect(usageBarTone("warn")).toBe("bg-amber-500");
     expect(usageBarTone("block")).toBe("bg-red-500");
+  });
+});
+
+describe("usageAlertKind", () => {
+  it("stays quiet on an unlimited profile", () => {
+    expect(usageAlertKind(usage({ unlimited: true, remainingTokens: 0 }))).toBeNull();
+  });
+
+  it("warns below 20% remaining and stays quiet at 21%", () => {
+    expect(usageAlertKind(usage({ remainingTokens: 2_100, limitTokens: 10_000 }))).toBeNull();
+    expect(usageAlertKind(usage({ remainingTokens: 1_900, limitTokens: 10_000 }))).toBe("warn");
+  });
+
+  it("treats a spent monthly cap as exhausted", () => {
+    expect(usageAlertKind(usage({ remainingTokens: 0, limitTokens: 10_000 }))).toBe("exhausted");
+  });
+
+  it("treats a monthly, daily, or cost block as exhausted", () => {
+    expect(usageAlertKind(usage({ remainingTokens: 4_000, decision: { decision: "block", reason: "monthly" } }))).toBe(
+      "exhausted",
+    );
+    expect(usageAlertKind(usage({ remainingTokens: 4_000, decision: { decision: "block", reason: "daily" } }))).toBe(
+      "exhausted",
+    );
+    expect(usageAlertKind(usage({ remainingTokens: 4_000, decision: { decision: "block", reason: "cost" } }))).toBe(
+      "exhausted",
+    );
+  });
+
+  it("does not treat a provider or per-run block as a credit alert", () => {
+    expect(usageAlertKind(usage({ decision: { decision: "block", reason: "provider" } }))).toBeNull();
+    expect(usageAlertKind(usage({ decision: { decision: "block", reason: "perRun" } }))).toBeNull();
+  });
+
+  it("warns when the profile decision already fired", () => {
+    expect(
+      usageAlertKind(usage({ remainingTokens: 6_000, decision: { decision: "warn", reason: "monthly" } })),
+    ).toBe("warn");
+  });
+});
+
+describe("usage alert dismiss", () => {
+  it("keys dismiss per user, period, and kind", () => {
+    expect(usageAlertStorageKey("u1", "2026-09", "warn")).toBe("atelier.usage-alert:u1:2026-09:warn");
+  });
+
+  it("remembers a dismiss without hiding the other kind", () => {
+    const memory = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value);
+      },
+    };
+    const warn = usageAlertStorageKey("u1", "2026-09", "warn");
+    const exhausted = usageAlertStorageKey("u1", "2026-09", "exhausted");
+    expect(isUsageAlertDismissed(warn, storage)).toBe(false);
+    dismissUsageAlert(warn, storage);
+    expect(isUsageAlertDismissed(warn, storage)).toBe(true);
+    expect(isUsageAlertDismissed(exhausted, storage)).toBe(false);
   });
 });

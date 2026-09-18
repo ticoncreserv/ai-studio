@@ -32,6 +32,7 @@ import {
 import { nextPreviewEventId, shouldReloadPreviewOnCommand, shouldReloadPreviewOnEvent } from "~/utils/preview-reload";
 import { committedSlashSkill, insertSlashCommand, mergeSlashCatalog, removeSlashCommand, resolvedSlashSkill, slashMatches, slashQuery } from "~/utils/slash";
 import { previewToolAfterEscape } from "~/utils/studio-shortcuts";
+import { absoluteAppUrl, copyTextToClipboard, fetchStatusCode } from "~/utils/studio-link";
 import { mergeInspectPins, toInspectPin, type PreviewInspectTarget } from "~/utils/preview-inspect";
 
 export function useStudio() {
@@ -48,6 +49,8 @@ export function useStudio() {
   const viewport = ref<Viewport>("desktop");
   const rotated = ref(false);
   const dialog = ref<StudioDialog>(null);
+  const linkUrl = ref("");
+  const linkBusy = ref(false);
   const sheet = ref<StudioSheet>(null);
   const paletteQuery = ref("");
   const mentionsOpen = ref(false);
@@ -579,14 +582,60 @@ export function useStudio() {
     await refresh();
   }
 
+  async function mintLink(kind: "invite" | "share"): Promise<string> {
+    if (kind === "invite") {
+      const res = await $fetch<{ url: string }>("/api/invite", { method: "POST" });
+      return absoluteAppUrl(location.origin, res.url);
+    }
+    const res = await $fetch<{ token: string }>("/api/share", {
+      method: "POST",
+      body: { workspaceId: workspaceId.value },
+    });
+    return absoluteAppUrl(location.origin, `/share/${res.token}`);
+  }
+
+  function linkFailureMessage(kind: "invite" | "share", error: unknown): string {
+    if (fetchStatusCode(error) === 403) {
+      return kind === "invite" ? t("invite.forbidden") : t("share.forbidden");
+    }
+    return t("errors.generic");
+  }
+
+  let linkRequest = 0;
+
+  watch(dialog, async (value) => {
+    linkUrl.value = "";
+    if (value !== "invite" && value !== "share") return;
+    if (value === "invite" && !data.value?.canInvite) return;
+    if (value === "share" && !data.value?.canEdit) return;
+    const request = ++linkRequest;
+    linkBusy.value = true;
+    try {
+      const url = await mintLink(value);
+      if (request !== linkRequest) return;
+      linkUrl.value = url;
+    } catch (error) {
+      if (request !== linkRequest) return;
+      flash(linkFailureMessage(value, error));
+    } finally {
+      if (request === linkRequest) linkBusy.value = false;
+    }
+  });
+
   async function copyLink(kind: "invite" | "share") {
-    const url =
-      kind === "invite"
-        ? `${location.origin}${(await $fetch<{ url: string }>("/api/invite", { method: "POST" })).url}`
-        : `${location.origin}/share/${(await $fetch<{ token: string }>("/api/share", { method: "POST", body: { workspaceId: workspaceId.value } })).token}`;
-    await navigator.clipboard.writeText(url);
-    flash(t("nav.copied"));
-    return url;
+    try {
+      const url = linkUrl.value || (await mintLink(kind));
+      linkUrl.value = url;
+      const copied = await copyTextToClipboard(url);
+      if (!copied) {
+        flash(t("share.copyFailed"));
+        return;
+      }
+      dialog.value = null;
+      flash(t("nav.copied"));
+    } catch (error) {
+      flash(linkFailureMessage(kind, error));
+    }
   }
 
   function flash(message: string) {
@@ -727,13 +776,28 @@ export function useStudio() {
     await refresh();
   }
 
-  async function saveRules() {
-    if (!data.value) return;
-    await $fetch("/api/rules", {
-      method: "PATCH",
-      body: { rules: data.value.rules, workspaceId: workspaceId.value },
-    });
-    flash(t("rules.saved"));
+  async function saveUserRule(payload: { id?: string; title: string; description: string; slug: string; body: string; alwaysApply: boolean }) {
+    try {
+      if (payload.id) {
+        await $fetch(`/api/me/rules/${encodeURIComponent(payload.id)}`, { method: "PUT", body: payload });
+      } else {
+        await $fetch("/api/me/rules", { method: "PUT", body: payload });
+      }
+      await refresh();
+      flash(t("rules.saved"));
+    } catch (error) {
+      flash((error as { statusMessage?: string }).statusMessage || t("admin.error"));
+    }
+  }
+
+  async function deleteUserRule(id: string) {
+    try {
+      await $fetch(`/api/me/rules/${encodeURIComponent(id)}`, { method: "DELETE" });
+      await refresh();
+      flash(t("rules.deleted"));
+    } catch (error) {
+      flash((error as { statusMessage?: string }).statusMessage || t("admin.error"));
+    }
   }
 
   async function saveUserEnv(payload: { env?: Record<string, string>; raw?: string }) {
@@ -806,6 +870,8 @@ export function useStudio() {
     viewport,
     rotated,
     dialog,
+    linkUrl,
+    linkBusy,
     sheet,
     paletteQuery,
     mentionsOpen,
@@ -865,7 +931,8 @@ export function useStudio() {
     attachFiles,
     toggleSpectator,
     setProvider,
-    saveRules,
+    saveUserRule,
+    deleteUserRule,
     saveUserEnv,
     patchFlags,
     hibernate,

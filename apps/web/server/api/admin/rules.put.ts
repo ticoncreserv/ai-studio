@@ -4,8 +4,20 @@ import { platform } from "../../utils/platform";
 export default defineEventHandler(async (event) => {
   const user = requirePlatformAdmin(event);
   const body = await readBody<{
-    rules: Array<{ id: string; level: "platform" | "project" | "user"; title: string; body: string }>;
+    id?: string;
+    level: "platform" | "project";
+    title: string;
+    body: string;
+    description?: string;
+    slug?: string;
+    alwaysApply?: boolean;
   }>(event);
-  if (!body.rules?.length) throw createError({ statusCode: 400 });
-  return { rules: platform().saveAdminRules(body.rules, user.locale) };
+  try {
+    return { rules: platform().saveAdminRule(user, body) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "error";
+    if (message === "Rule not found") throw createError({ statusCode: 404, statusMessage: message });
+    if (message === "Forbidden") throw createError({ statusCode: 403, statusMessage: message });
+    throw createError({ statusCode: 400, statusMessage: message });
+  }
 });

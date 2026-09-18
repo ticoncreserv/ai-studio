@@ -10,6 +10,7 @@ const props = defineProps<{
   failedEventId: string;
   enterEventId: string;
   commandBusy?: boolean;
+  hasAlert?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -85,6 +86,9 @@ const workingLabel = computed(() =>
 <template>
   <section class="flex min-h-0 min-w-0 flex-1 flex-col">
     <div ref="scroller" class="thin-scroll min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3 pt-2">
+      <div v-if="hasAlert" class="sticky top-0 z-10 -mx-3 bg-canvas px-3 pb-0.5">
+        <slot name="alert" />
+      </div>
       <div v-if="!events.length" class="pt-2">
         <p class="text-[13px] text-ink-950">{{ t("chat.emptyTitle") }}</p>
         <p class="mt-1 text-[12px] leading-relaxed text-ink-500">{{ t("chat.emptyHint") }}</p>

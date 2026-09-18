@@ -1286,6 +1286,11 @@ iframe.preview {
   background: rgb(251 191 36 / 0.07);
 }
 
+.cx-panel-danger {
+  border-color: rgb(var(--color-coral-rgb) / 0.35);
+  background: rgb(var(--color-coral-rgb) / 0.1);
+}
+
 .cx-panel-ok {
   border-color: rgb(52 211 153 / 0.22);
   background: rgb(52 211 153 / 0.08);
@@ -2864,8 +2869,7 @@ iframe.preview {
   text-align: center;
 }
 
-.ui-logo,
-.login-mark {
+.ui-logo {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -2874,34 +2878,28 @@ iframe.preview {
     radial-gradient(circle at 50% 35%, rgb(var(--color-coral-rgb) / 0.16), transparent 68%),
     rgb(255 255 255 / 0.03);
   color: var(--color-coral-500);
-}
-
-/* Doubled class beats UiMark's scoped 100% box so the C insets like the 84px hero. */
-.ui-logo > .ui-mark.ui-mark,
-.login-mark > .ui-mark.ui-mark {
-  width: 58%;
-  height: 58%;
-}
-
-.ui-logo {
   border-radius: 6px;
   border: 1px solid var(--color-line);
 }
 
+/* Doubled class beats UiMark's scoped 100% box so the C insets in the header tile. */
+.ui-logo > .ui-mark.ui-mark {
+  width: 58%;
+  height: 58%;
+}
+
 .login-mark {
-  border-radius: 22px;
-  border: 1px solid rgb(255 255 255 / 0.08);
-  background:
-    radial-gradient(circle at 50% 35%, rgb(var(--color-coral-rgb) / 0.2), transparent 68%),
-    rgb(255 255 255 / 0.03);
-  box-shadow:
-    0 0 0 12px rgb(var(--color-coral-rgb) / 0.05),
-    0 24px 60px rgb(0 0 0 / 0.35);
+  display: grid;
+  flex-shrink: 0;
+  width: min(240px, calc(100vw - 64px));
+  aspect-ratio: 1020 / 205;
+  color: var(--color-coral-500);
+  filter: drop-shadow(0 12px 28px rgb(0 0 0 / 0.28));
 }
 
 .login-pending,
 .login-kicker {
-  margin-top: 28px;
+  margin-top: 24px;
 }
 
 .login-kicker {

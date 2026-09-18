@@ -140,7 +140,26 @@ const users = ref<
     lastActiveAt: string | null;
   }>
 >([]);
-const rules = ref<Array<{ id: string; level: "platform" | "project" | "user"; title: string; body: string }>>([]);
+const rules = ref<
+  Array<{
+    id: string;
+    level: "platform" | "project";
+    title: string;
+    body: string;
+    description: string;
+    slug: string;
+    alwaysApply: boolean;
+  }>
+>([]);
+const ruleDraft = ref({
+  level: "platform" as "platform" | "project",
+  title: "",
+  description: "",
+  slug: "",
+  body: "",
+  alwaysApply: true,
+});
+const pendingRuleDelete = ref<(typeof rules.value)[number] | null>(null);
 const globalSkills = ref<Array<{ name: string; description: string; paths: string; manualOnly: boolean; body: string }>>([]);
 const skillDraft = ref({ name: "", description: "", paths: "", manualOnly: true, body: "" });
 const pendingSkillDelete = ref<string | null>(null);
@@ -627,10 +646,28 @@ async function toggleAdmin(userId: string, next: boolean) {
   });
 }
 
-async function saveRules() {
+async function saveRule(rule: (typeof rules.value)[number]) {
   await wrap(async () => {
-    const res = await $fetch<{ rules: typeof rules.value }>("/api/admin/rules", { method: "PUT", body: { rules: rules.value } });
-    rules.value = res.rules.filter((row) => row.level !== "user");
+    const res = await $fetch<{ rules: typeof rules.value }>("/api/admin/rules", { method: "PUT", body: rule });
+    rules.value = res.rules;
+  });
+}
+
+async function createRule() {
+  await wrap(async () => {
+    const res = await $fetch<{ rules: typeof rules.value }>("/api/admin/rules", { method: "PUT", body: ruleDraft.value });
+    rules.value = res.rules;
+    ruleDraft.value = { level: "platform", title: "", description: "", slug: "", body: "", alwaysApply: true };
+  });
+}
+
+async function confirmDeleteRule() {
+  const rule = pendingRuleDelete.value;
+  if (!rule) return;
+  await wrap(async () => {
+    const res = await $fetch<{ rules: typeof rules.value }>(`/api/admin/rules/${encodeURIComponent(rule.id)}`, { method: "DELETE" });
+    rules.value = res.rules;
+    pendingRuleDelete.value = null;
   });
 }
 
@@ -986,16 +1023,14 @@ function statusLabel(status: string | null) {
   return status ?? "";
 }
 
-function ruleLabel(level: "platform" | "project" | "user") {
+function ruleLabel(level: "platform" | "project") {
   if (level === "platform") return t("rules.platform");
-  if (level === "project") return t("rules.project");
-  return t("rules.user");
+  return t("rules.project");
 }
 
-function ruleHint(level: "platform" | "project" | "user") {
+function ruleHint(level: "platform" | "project") {
   if (level === "platform") return t("rules.platformHint");
-  if (level === "project") return t("rules.projectHint");
-  return t("rules.userHint");
+  return t("rules.projectHint");
 }
 
 function hintTitle(hint: ErrorHint) {
@@ -1444,19 +1479,65 @@ function hintDetail(hint: ErrorHint) {
                 <p class="cx-section-label">{{ t("admin.rulesSection") }}</p>
                 <p class="cx-section-note">{{ t("admin.rulesHint") }}</p>
                 <div class="cx-panel">
-                  <div v-for="layer in rules" :key="layer.id" class="cx-row cx-row-stack">
-                    <p class="cx-row-title">{{ ruleLabel(layer.level) }}</p>
-                    <p class="cx-row-desc">{{ ruleHint(layer.level) }}</p>
-                    <textarea
-                      v-model="layer.body"
-                      class="cx-textarea cx-row-control h-28"
-                      :aria-label="ruleLabel(layer.level)"
-                    />
+                  <div v-for="rule in rules" :key="rule.id" class="cx-row cx-row-stack">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="min-w-0">
+                        <p class="cx-row-title">{{ rule.title }}</p>
+                        <p class="cx-row-desc font-mono">{{ rule.slug }}</p>
+                      </div>
+                      <div class="flex items-center gap-1.5">
+                        <UiBadge tone="neutral">{{ ruleLabel(rule.level) }}</UiBadge>
+                        <UiButton size="sm" variant="ghost" :disabled="busy" @click="pendingRuleDelete = rule">
+                          {{ t("admin.deleteRule") }}
+                        </UiButton>
+                      </div>
+                    </div>
+                    <p class="cx-row-desc">{{ ruleHint(rule.level) }}</p>
+                    <label class="block text-[12px] text-ink-400">
+                      {{ t("rules.titleLabel") }}
+                      <input v-model="rule.title" class="cx-textarea cx-row-control mt-1 h-8" />
+                    </label>
+                    <label class="block text-[12px] text-ink-400">
+                      {{ t("rules.description") }}
+                      <input v-model="rule.description" class="cx-textarea cx-row-control mt-1 h-8" />
+                    </label>
+                    <label class="block text-[12px] text-ink-400">
+                      {{ t("rules.slug") }}
+                      <input v-model="rule.slug" class="cx-textarea cx-row-control mt-1 h-8 font-mono" />
+                    </label>
+                    <label class="flex items-center justify-between text-[12px] text-ink-400">
+                      {{ t("rules.alwaysApply") }}
+                      <UiSwitch :model-value="rule.alwaysApply" :label="t('rules.alwaysApply')" @update:model-value="rule.alwaysApply = $event" />
+                    </label>
+                    <textarea v-model="rule.body" class="cx-textarea cx-row-control h-28" :aria-label="rule.title" />
+                    <div class="admin-action-bar">
+                      <UiButton size="sm" variant="outline" :disabled="busy" @click="saveRule(rule)">
+                        {{ t("admin.saveRules") }}
+                      </UiButton>
+                    </div>
                   </div>
-                  <div class="admin-action-bar">
-                    <UiButton size="sm" variant="outline" :disabled="busy" @click="saveRules">
-                      {{ t("admin.saveRules") }}
-                    </UiButton>
+                  <div class="cx-row cx-row-stack">
+                    <p class="cx-row-title">{{ t("admin.newRule") }}</p>
+                    <label class="block text-[12px] text-ink-400">
+                      {{ t("admin.ruleLevel") }}
+                      <select v-model="ruleDraft.level" class="cx-textarea cx-row-control mt-1 h-8">
+                        <option value="platform">{{ t("rules.platform") }}</option>
+                        <option value="project">{{ t("rules.project") }}</option>
+                      </select>
+                    </label>
+                    <input v-model="ruleDraft.title" class="cx-textarea cx-row-control h-8" :placeholder="t('rules.titleLabel')" />
+                    <input v-model="ruleDraft.description" class="cx-textarea cx-row-control h-8" :placeholder="t('rules.description')" />
+                    <input v-model="ruleDraft.slug" class="cx-textarea cx-row-control h-8 font-mono" :placeholder="t('rules.slug')" />
+                    <label class="flex items-center justify-between text-[12px] text-ink-400">
+                      {{ t("rules.alwaysApply") }}
+                      <UiSwitch :model-value="ruleDraft.alwaysApply" :label="t('rules.alwaysApply')" @update:model-value="ruleDraft.alwaysApply = $event" />
+                    </label>
+                    <textarea v-model="ruleDraft.body" class="cx-textarea cx-row-control h-28" :placeholder="t('rules.body')" />
+                    <div class="admin-action-bar">
+                      <UiButton size="sm" variant="outline" :disabled="busy" @click="createRule">
+                        {{ t("admin.saveRules") }}
+                      </UiButton>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -1653,6 +1734,21 @@ function hintDetail(hint: ErrorHint) {
       </UiButton>
       <UiButton size="sm" variant="danger" :disabled="busy" @click="confirmDisable">
         {{ t("admin.deactivate") }}
+      </UiButton>
+    </div>
+  </UiDialog>
+  <UiDialog
+    :open="pendingRuleDelete != null"
+    :title="t('admin.deleteRuleTitle', { title: pendingRuleDelete?.title ?? '' })"
+    @close="pendingRuleDelete = null"
+  >
+    <p class="text-[13px] leading-relaxed text-ink-500">{{ t("admin.deleteRuleBody") }}</p>
+    <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <UiButton size="sm" variant="outline" @click="pendingRuleDelete = null">
+        {{ t("admin.removeKeyCancel") }}
+      </UiButton>
+      <UiButton size="sm" variant="danger" :disabled="busy" @click="confirmDeleteRule">
+        {{ t("admin.deleteRule") }}
       </UiButton>
     </div>
   </UiDialog>

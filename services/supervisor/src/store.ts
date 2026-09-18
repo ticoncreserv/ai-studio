@@ -2,12 +2,16 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { CursorCliAccount, ProviderKeyState, ProviderModel, Role, SessionEvent, UsageProfile, WorkspaceStatus } from "@atelier/contracts";
 import {
+  DEFAULT_RULES,
   defaultFlags,
   defaultUsageProfiles,
+  type RuleRecord,
   type UsageGrant,
   type UsageLedgerEntry,
   type UsageRollup,
 } from "@atelier/domain";
+
+export type { RuleRecord };
 
 export interface UserRecord {
   id: string;
@@ -96,13 +100,6 @@ export interface RecipeRecord {
   variables: string[];
 }
 
-export interface RuleRecord {
-  id: string;
-  level: "platform" | "project" | "user";
-  title: string;
-  body: string;
-}
-
 export interface DbShape {
   users: UserRecord[];
   workspaces: WorkspaceRecord[];
@@ -171,32 +168,7 @@ const emptyDb = (): DbShape => ({
       variables: [],
     },
   ],
-  rules: [
-    {
-      id: "platform",
-      level: "platform",
-      title: "Platform",
-      body: "Never run migrate:fresh, db:wipe, or write to ERP connections. Do not read .env files.",
-    },
-    {
-      id: "project",
-      level: "project",
-      title: "Concreserv",
-      body: "Follow Inertia + Vue page conventions. Keep Laravel Boost MCP available. Workaround comments are normative.",
-    },
-    {
-      id: "repository-actions",
-      level: "platform",
-      title: "Repository actions",
-      body: "Work only inside the current repository. Inspect relevant files before editing, preserve unrelated user changes, make the smallest coherent change, follow existing conventions, and run targeted validation before reporting completion.",
-    },
-    {
-      id: "user",
-      level: "user",
-      title: "User",
-      body: "Prefer small, reviewable diffs and explain each file change.",
-    },
-  ],
+  rules: DEFAULT_RULES.map((row) => ({ ...row })),
   members: [],
   flags: { ...defaultFlags },
   providers: { cursor: { enabled: true } },

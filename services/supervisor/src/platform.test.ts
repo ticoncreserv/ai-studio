@@ -302,6 +302,30 @@ describe("platform", () => {
     expect(p.resolveShare(share.token)?.id).toBe(ws.id);
   });
 
+  it("lets editors create invites, not viewers", async () => {
+    const p = platform();
+    const editor = await p.loginDev("helena");
+    p.store.update((db) => {
+      const row = db.users.find((item) => item.id === editor.id);
+      const member = db.members.find((item) => item.userId === editor.id);
+      if (row) row.role = "editor";
+      if (member) member.role = "editor";
+    });
+    const asEditor = p.store.read().users.find((item) => item.id === editor.id)!;
+    expect(p.canCreateInvite(asEditor)).toBe(true);
+    expect(p.createInvite(asEditor).url).toMatch(/^\/invite\//);
+
+    p.store.update((db) => {
+      const row = db.users.find((item) => item.id === editor.id);
+      const member = db.members.find((item) => item.userId === editor.id);
+      if (row) row.role = "viewer";
+      if (member) member.role = "viewer";
+    });
+    const asViewer = p.store.read().users.find((item) => item.id === editor.id)!;
+    expect(p.canCreateInvite(asViewer)).toBe(false);
+    expect(() => p.createInvite(asViewer)).toThrow(/forbidden/i);
+  });
+
   it("does not invent schema divergence without an applied snapshot", async () => {
     const p = platform();
     const user = await p.loginDev("fernanda");
@@ -852,6 +876,75 @@ describe("platform", () => {
       if (previousHome === undefined) delete process.env.ATELIER_CURSOR_HOME;
       else process.env.ATELIER_CURSOR_HOME = previousHome;
     }
+  });
+
+  it("keeps user rules isolated and does not overwrite repository AGENTS.md", async () => {
+    const prompts: string[] = [];
+    const p = platform(() => ({
+      capability: {
+        id: "mock",
+        label: "Rules provider",
+        command: "mock",
+        args: [],
+        modes: ["agent"],
+        images: false,
+        todos: false,
+        plans: false,
+        questions: false,
+      },
+      start: async () => ({
+        prompt: async (blocks) => {
+          prompts.push(blocks[0]?.text ?? "");
+        },
+        cancel: async () => undefined,
+        stop: () => undefined,
+      }),
+    }));
+    const ana = await p.loginDev("ana-rules", "en");
+    const bruno = await p.loginDev("bruno-rules", "en");
+    p.store.update((db) => {
+      const row = db.users.find((user) => user.id === ana.id);
+      if (row) row.platformAdmin = true;
+    });
+    const anaWs = await p.ensureWorkspace(ana);
+    const brunoWs = await p.ensureWorkspace(bruno);
+    const agentsBefore = readFileSync(join(anaWs.worktree, "AGENTS.md"), "utf8");
+    expect(agentsBefore).toContain("Fixture app");
+
+    p.saveUserRule(ana, { title: "Ana diffs", slug: "ana-diffs", body: "Ana prefers small diffs.", alwaysApply: true });
+    p.saveUserRule(bruno, { title: "Bruno logs", slug: "bruno-logs", body: "Bruno wants verbose logs.", alwaysApply: true });
+    p.saveUserRule(ana, {
+      title: "Ana style",
+      slug: "ana-style",
+      body: "Ana commit style is requestable only.",
+      alwaysApply: false,
+    });
+
+    expect(p.getRulesFor(ana).some((row) => row.body.includes("Bruno wants verbose logs."))).toBe(false);
+    expect(p.getRulesFor(bruno).some((row) => row.body.includes("Ana prefers small diffs."))).toBe(false);
+    expect(() => p.deleteUserRule(bruno, p.getRulesFor(ana).find((row) => row.slug === "ana-diffs")!.id)).toThrow(/not found/);
+    expect(() =>
+      p.saveAdminRule(bruno, { level: "platform", title: "Nope", body: "Should not save.", slug: "nope" }),
+    ).toThrow(/Forbidden/);
+
+    const anaMdc = readFileSync(join(anaWs.worktree, ".cursor", "rules", "user-ana-diffs.mdc"), "utf8");
+    expect(anaMdc).toContain("Ana prefers small diffs.");
+    expect(existsSync(join(anaWs.worktree, ".cursor", "rules", "user-bruno-logs.mdc"))).toBe(false);
+    expect(existsSync(join(brunoWs.worktree, ".cursor", "rules", "user-ana-diffs.mdc"))).toBe(false);
+    expect(readFileSync(join(anaWs.worktree, "AGENTS.md"), "utf8")).toBe(agentsBefore);
+    expect(existsSync(join(anaWs.worktree, ".cursor", "rules", "platform-safety.mdc"))).toBe(true);
+
+    const session = p.createSession(anaWs.id, "mock");
+    await p.handleCommand({
+      user: ana,
+      sessionId: session.id,
+      command: { type: "prompt", text: "Hello rules", attachments: [], mentions: [] },
+    });
+    await settleSession(p, session.id);
+    expect(prompts[0]).toContain("Ana prefers small diffs.");
+    expect(prompts[0]).not.toContain("Bruno wants verbose logs.");
+    expect(prompts[0]).not.toContain("Ana commit style is requestable only.");
+    expect(prompts[0]).toContain("Reply to the user in English");
   });
 });
 

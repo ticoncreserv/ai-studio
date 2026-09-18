@@ -1,7 +1,7 @@
-import { platform, userFromEvent } from "../utils/platform";
+import { requireUser } from "../utils/authz";
+import { platform } from "../utils/platform";
 
 export default defineEventHandler((event) => {
-  const user = userFromEvent(event);
-  if (!user) throw createError({ statusCode: 401 });
-  return { rules: platform().getRules() };
+  const user = requireUser(event);
+  return { rules: platform().getRulesFor(user) };
 });

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join } from "node:path";
 import type {
   ClientCommand,
   CursorCliAccount,
@@ -19,13 +19,18 @@ import {
   applyHunkDecision,
   budgetExceeded,
   canEdit,
-  canInvite,
+  canCreateStudioInvite,
   canSpectate,
   canTransition,
   adminLoginsFromEnv,
   isPermanentPlatformAdmin,
   sameLogin,
+  adminRules,
   compileRules,
+  isRuleSlug,
+  normalizeRule,
+  rulesForActor,
+  storedRules,
   defaultBudget,
   defaultDiskPolicy,
   defaultFlags,
@@ -390,8 +395,7 @@ export class Platform {
       userId: user.id,
       envRoot: this.envRoot(),
     });
-    this.hydrateProjectRules(worktree);
-    this.materializeRules(worktree, user.locale, this.getRules());
+    this.materializeRules(worktree, user.locale, this.rulesForWorktree(user.id));
     this.materializeWorkspaceTools(worktree, user.id);
     const bytes = await worktreeBytes(worktree);
     ws = {
@@ -1128,7 +1132,7 @@ export class Platform {
       };
     });
 
-    const rules = compileRules(this.getRules(), user.locale);
+    const rules = compileRules(this.getRulesFor(user), user.locale);
     const packed = packPrompt(
       [
         { id: "user", kind: "user", text: agentText, tokens: estimateTokens(agentText), priority: 0 },
@@ -1492,8 +1496,12 @@ export class Platform {
     }
   }
 
+  canCreateInvite(user: UserRecord): boolean {
+    return canCreateStudioInvite(this.roleFor(user), this.isPlatformAdmin(user));
+  }
+
   createInvite(user: UserRecord): { token: string; url: string } {
-    if (!canInvite(this.roleFor(user))) throw new Error("Forbidden");
+    if (!this.canCreateInvite(user)) throw new Error("Forbidden");
     const token = randomBytes(16).toString("hex");
     this.store.update((d) => {
       d.invites.push({
@@ -1563,33 +1571,124 @@ export class Platform {
   }
 
   getRules(): RuleRecord[] {
-    return this.store.read().rules;
+    return storedRules(this.store.read().rules);
   }
 
-  saveRules(layers: RuleRecord[], locale: "en" | "pt-BR", worktree?: string) {
-    this.store.update((d) => {
-      d.rules = layers;
-    });
-    if (worktree) this.materializeRules(worktree, locale, layers);
+  getRulesFor(actor: UserRecord): RuleRecord[] {
+    return rulesForActor(this.getRules(), actor.id);
   }
 
-  saveRulesFromActor(actor: UserRecord, layers: RuleRecord[], locale: "en" | "pt-BR", worktree?: string) {
+  listAdminRules(): RuleRecord[] {
+    return adminRules(this.getRules());
+  }
+
+  studioRules(actor: UserRecord, worktree?: string): Array<RuleRecord & { editable: boolean; origin?: "repo" }> {
+    const rows = this.getRulesFor(actor).map((row) => ({
+      ...row,
+      editable: row.level === "user" && row.userId === actor.id,
+    }));
+    const repo = this.readRepoAgents(worktree);
+    return repo ? [...rows, repo] : rows;
+  }
+
+  saveUserRule(
+    actor: UserRecord,
+    input: { id?: string; title: string; body: string; description?: string; slug?: string; alwaysApply?: boolean },
+  ): RuleRecord[] {
+    const title = (input.title ?? "").trim();
+    const body = (input.body ?? "").trim();
+    if (!title || !body) throw new Error("Rule title and body are required");
     const current = this.getRules();
-    const next = this.isPlatformAdmin(actor)
-      ? layers
-      : current.map((row) => (row.level === "user" ? (layers.find((layer) => layer.id === row.id) ?? row) : row));
-    this.saveRules(next, locale, worktree);
-    return this.getRules();
+    if (input.id) {
+      const existing = current.find((row) => row.id === input.id && row.level === "user" && row.userId === actor.id);
+      if (!existing) throw new Error("Rule not found");
+    }
+    const id = input.id?.trim() || randomUUID();
+    const record = normalizeRule({
+      id,
+      level: "user",
+      title,
+      body,
+      description: input.description,
+      slug: input.slug,
+      alwaysApply: input.alwaysApply,
+      userId: actor.id,
+    });
+    if (!isRuleSlug(record.slug)) throw new Error("Invalid rule slug");
+    if (
+      current.some(
+        (row) => row.level === "user" && row.userId === actor.id && row.slug === record.slug && row.id !== record.id,
+      )
+    ) {
+      throw new Error("Rule slug already exists");
+    }
+    this.replaceRule(record);
+    this.materializeOwnerRules(actor.id, actor.locale);
+    return this.getRulesFor(actor);
   }
 
-  saveAdminRules(layers: RuleRecord[], locale: "en" | "pt-BR") {
-    const userLayers = this.getRules().filter((row) => row.level === "user");
-    const next = [...layers.filter((row) => row.level !== "user"), ...userLayers];
+  deleteUserRule(actor: UserRecord, id: string): RuleRecord[] {
+    const current = this.getRules();
+    const existing = current.find((row) => row.id === id && row.level === "user" && row.userId === actor.id);
+    if (!existing) throw new Error("Rule not found");
     this.store.update((d) => {
-      d.rules = next;
+      d.rules = current.filter((row) => row.id !== id);
     });
-    this.materializeRulesEverywhere(locale, next);
-    return this.getRules();
+    this.materializeOwnerRules(actor.id, actor.locale);
+    return this.getRulesFor(actor);
+  }
+
+  saveAdminRule(
+    actor: UserRecord,
+    input: {
+      id?: string;
+      level: "platform" | "project";
+      title: string;
+      body: string;
+      description?: string;
+      slug?: string;
+      alwaysApply?: boolean;
+    },
+  ): RuleRecord[] {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const title = (input.title ?? "").trim();
+    const body = (input.body ?? "").trim();
+    if (!title || !body) throw new Error("Rule title and body are required");
+    if (input.level !== "platform" && input.level !== "project") throw new Error("Invalid rule level");
+    const current = this.getRules();
+    if (input.id) {
+      const existing = current.find((row) => row.id === input.id && row.level !== "user");
+      if (!existing) throw new Error("Rule not found");
+    }
+    const id = input.id?.trim() || randomUUID();
+    const record = normalizeRule({
+      id,
+      level: input.level,
+      title,
+      body,
+      description: input.description,
+      slug: input.slug,
+      alwaysApply: input.alwaysApply,
+    });
+    if (!isRuleSlug(record.slug)) throw new Error("Invalid rule slug");
+    if (current.some((row) => row.level !== "user" && row.slug === record.slug && row.id !== record.id)) {
+      throw new Error("Rule slug already exists");
+    }
+    this.replaceRule(record);
+    this.materializeRulesEverywhere(actor.locale);
+    return this.listAdminRules();
+  }
+
+  deleteAdminRule(actor: UserRecord, id: string): RuleRecord[] {
+    if (!this.isPlatformAdmin(actor)) throw new Error("Forbidden");
+    const current = this.getRules();
+    const existing = current.find((row) => row.id === id && row.level !== "user");
+    if (!existing) throw new Error("Rule not found");
+    this.store.update((d) => {
+      d.rules = current.filter((row) => row.id !== id);
+    });
+    this.materializeRulesEverywhere(actor.locale);
+    return this.listAdminRules();
   }
 
   adminOverview() {
@@ -2851,32 +2950,60 @@ export class Platform {
     return blocks;
   }
 
-  private hydrateProjectRules(worktree: string) {
-    const file = join(worktree, "AGENTS.md");
-    if (!existsSync(file)) return;
-    const body = readFileSync(file, "utf8").trim();
-    if (!body) return;
+  private replaceRule(record: RuleRecord) {
+    const current = this.getRules();
     this.store.update((d) => {
-      const project = d.rules.find((rule) => rule.level === "project");
-      if (!project) {
-        d.rules.push({ id: "project", level: "project", title: "Project", body: body.slice(0, 8000) });
-        return;
-      }
-      if (project.body.includes("Follow Inertia + Vue page conventions")) {
-        project.body = body.slice(0, 8000);
-      }
+      d.rules = [...current.filter((row) => row.id !== record.id), record];
     });
   }
 
-  private materializeRulesEverywhere(locale: "en" | "pt-BR", layers = this.getRules()) {
+  private rulesForWorktree(ownerId: string): RuleRecord[] {
+    return rulesForActor(this.getRules(), ownerId);
+  }
+
+  private materializeOwnerRules(userId: string, locale: "en" | "pt-BR") {
     for (const ws of this.store.read().workspaces) {
-      if (ws.status === "destroyed" || !existsSync(ws.worktree)) continue;
-      this.materializeRules(ws.worktree, locale, layers);
+      if (ws.status === "destroyed" || ws.userId !== userId || !existsSync(ws.worktree)) continue;
+      this.materializeRules(ws.worktree, locale, this.rulesForWorktree(userId));
+      this.invalidateWorkspaceRuns(ws.id);
     }
   }
 
-  private materializeRules(worktree: string, locale: "en" | "pt-BR", layers = this.getRules()) {
+  private readRepoAgents(worktree?: string): (RuleRecord & { editable: boolean; origin: "repo" }) | null {
+    if (!worktree) return null;
+    const file = join(worktree, "AGENTS.md");
+    if (!existsSync(file)) return null;
+    const body = readFileSync(file, "utf8").trim();
+    if (!body) return null;
+    return {
+      id: "repo-agents",
+      level: "project",
+      title: "AGENTS.md",
+      slug: "agents",
+      description: "Repository agent instructions.",
+      body: body.slice(0, 8000),
+      alwaysApply: true,
+      editable: false,
+      origin: "repo",
+    };
+  }
+
+  private materializeRulesEverywhere(locale: "en" | "pt-BR") {
+    for (const ws of this.store.read().workspaces) {
+      if (ws.status === "destroyed" || !existsSync(ws.worktree)) continue;
+      this.materializeRules(ws.worktree, locale, this.rulesForWorktree(ws.userId));
+    }
+  }
+
+  private materializeRules(worktree: string, locale: "en" | "pt-BR", layers: RuleRecord[]) {
     const compiled = compileRules(layers, locale);
+    const dir = join(worktree, ".cursor", "rules");
+    mkdirSync(dir, { recursive: true });
+    const keep = new Set(compiled.files.map((file) => basename(file.path)));
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith(".mdc") || keep.has(name)) continue;
+      unlinkSync(join(dir, name));
+    }
     for (const file of compiled.files) {
       const target = join(worktree, file.path);
       mkdirSync(dirname(target), { recursive: true });

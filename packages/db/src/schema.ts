@@ -111,6 +111,10 @@ export const rules = pgTable("rules", {
   level: text("level").notNull(),
   title: text("title").notNull(),
   body: text("body").notNull(),
+  description: text("description").notNull().default(""),
+  slug: text("slug").notNull().default(""),
+  alwaysApply: boolean("always_apply").notNull().default(true),
+  userId: text("user_id"),
 });
 
 export const featureFlags = pgTable("feature_flags", {

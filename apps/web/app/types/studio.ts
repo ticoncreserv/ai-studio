@@ -96,7 +96,7 @@ export interface StudioPayload {
     port?: number;
     database: string;
   }>;
-  rules: Array<{ id: string; level: "platform" | "project" | "user"; title: string; body: string }>;
+  rules: StudioRule[];
   providers: ProviderCapability[];
   preferredProvider: string;
   presence: Array<{ workspaceId: string; userId: string; mode: "editor" | "spectator"; at: string }>;
@@ -110,12 +110,26 @@ export interface StudioPayload {
   migrationLog: Array<{ id: string; author: string; branch: string; name: string; at: string; output: string }>;
   previewPath: string;
   canEdit: boolean;
+  canInvite: boolean;
   agent: { ready: boolean; provider: string; error: string | null };
 }
 
 export interface StudioAttachment {
   name: string;
   path: string;
+}
+
+export interface StudioRule {
+  id: string;
+  level: "platform" | "project" | "user";
+  title: string;
+  body: string;
+  description: string;
+  slug: string;
+  alwaysApply: boolean;
+  userId?: string | null;
+  origin?: "repo";
+  editable: boolean;
 }
 
 export interface StudioSkill {
