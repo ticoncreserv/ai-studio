@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { SessionEvent } from "@atelier/contracts";
 import { ChevronDown } from "@lucide/vue";
-import { assistantBlockText, groupChatBlocks, sessionEventKey, turnActionsEventId, type ChatBlock } from "~/utils/chat-events";
+import { assistantBlockText, assistantBlockVoice, groupChatBlocks, sessionEventKey, turnActionsEventId, type ChatBlock } from "~/utils/chat-events";
 import { isChatNearBottom } from "~/utils/chat-scroll";
 
 const props = defineProps<{
@@ -139,6 +139,10 @@ function blockKey(block: ChatBlock) {
   if (block.type === "assistant") return `assistant:${block.events.map((event) => event.id).join(",")}`;
   return sessionEventKey(block.event);
 }
+
+function blockVoice(block: Extract<ChatBlock, { type: "assistant" }>) {
+  return assistantBlockVoice(props.events, block);
+}
 </script>
 
 <template>
@@ -150,7 +154,7 @@ function blockKey(block: ChatBlock) {
         class="thin-scroll absolute inset-0 overflow-y-auto px-3 pb-3 pt-2"
         @scroll.passive="syncPinnedFromScroll"
       >
-        <div ref="content" class="space-y-2.5">
+        <div ref="content" class="cx-chat-thread">
           <div v-if="hasAlert" class="sticky top-0 z-10 -mx-3 bg-canvas px-3 pb-0.5">
             <slot name="alert" />
           </div>
@@ -186,7 +190,11 @@ function blockKey(block: ChatBlock) {
                 @retry="emit('retry')"
               />
             </div>
-            <div v-else-if="block.type === 'assistant'" class="cx-assistant-stack">
+            <div
+              v-else-if="block.type === 'assistant'"
+              class="cx-assistant-stack"
+              :data-voice="blockVoice(block)"
+            >
               <StudioEventCard
                 v-for="event in block.events"
                 :key="sessionEventKey(event)"
@@ -194,6 +202,7 @@ function blockKey(block: ChatBlock) {
                 :enter="event.id === enterEventId"
                 :failed="event.id === failedEventId"
                 :command-busy="commandBusy"
+                :voice="blockVoice(block)"
                 :show-actions="event.id === actionEventId"
                 :copy-source="assistantBlockText(block.events)"
                 @command="emit('command', $event)"

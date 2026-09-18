@@ -5,6 +5,7 @@ describe("admin section query", () => {
   it("reads a known tab from the query string", () => {
     expect(parseAdminSection("users")).toBe("users");
     expect(parseAdminSection("flags")).toBe("flags");
+    expect(parseAdminSection("recipes")).toBe("recipes");
   });
 
   it("falls back to overview when the tab is missing or unknown", () => {

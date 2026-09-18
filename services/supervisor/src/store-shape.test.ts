@@ -118,6 +118,36 @@ describe("store shape", () => {
     expect(json.read().usageProfiles.map((row) => row.id)).toEqual(["standard", "premium"]);
   });
 
+  it("keeps the seeded recipes when the file never stored a catalog", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-recipe-legacy-"));
+    dirs.push(dir);
+    const file = join(dir, "platform.json");
+    writeFileSync(file, JSON.stringify({ users: [], workspaces: [], sessions: [] }));
+    const json = new JsonStore(file);
+    expect(json.read().recipes.map((row) => row.id)).toEqual(["inertia-crud", "add-field", "fix-preview"]);
+  });
+
+  it("does not resurrect a deleted recipe from the seeds", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-recipe-delete-"));
+    dirs.push(dir);
+    const json = new JsonStore(join(dir, "platform.json"));
+    json.update((db) => {
+      db.recipes = db.recipes.filter((row) => row.id !== "inertia-crud");
+    });
+    expect(json.read().recipes.map((row) => row.id)).toEqual(["add-field", "fix-preview"]);
+  });
+
+  it("keeps an empty recipe catalog empty", () => {
+    const dir = mkdtempSync(join(tmpdir(), "atelier-recipe-empty-"));
+    dirs.push(dir);
+    const json = new JsonStore(join(dir, "platform.json"));
+    json.update((db) => {
+      db.recipes = [];
+    });
+    expect(json.read().recipes).toEqual([]);
+    expect(assembleDb(flattenDb(json.read()), json.read()).recipes).toEqual([]);
+  });
+
   it("imports json into a snapshot replica", () => {
     const dir = mkdtempSync(join(tmpdir(), "atelier-import-"));
     dirs.push(dir);

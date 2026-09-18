@@ -231,7 +231,7 @@ export class JsonStore implements PlatformStore {
       ...base,
       ...raw,
       connections: raw.connections ?? [],
-      recipes: mergeById(raw.recipes, base.recipes),
+      recipes: Array.isArray(raw.recipes) ? raw.recipes : base.recipes,
       rules: mergeById(raw.rules, base.rules),
       flags: { ...base.flags, ...raw.flags },
       providers: { ...base.providers, ...raw.providers },

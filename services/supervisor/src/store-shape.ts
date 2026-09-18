@@ -94,7 +94,7 @@ export function assembleDb(rows: StoreRows, base: DbShape): DbShape {
     invites: rows.invites,
     shares: rows.shares,
     connections: rows.connections,
-    recipes: rows.recipes.length ? rows.recipes : base.recipes,
+    recipes: Array.isArray(rows.recipes) ? rows.recipes : base.recipes,
     rules: rows.rules.length ? rows.rules : base.rules,
     members: rows.members,
     workspaceMembers: rows.workspaceMembers ?? [],

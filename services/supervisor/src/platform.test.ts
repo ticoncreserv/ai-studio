@@ -1098,6 +1098,76 @@ describe("platform", () => {
     expect(prompts[0]).not.toContain("Ana commit style is requestable only.");
     expect(prompts[0]).toContain("Reply to the user in English");
   });
+
+  it("lets a platform admin own the global recipe catalog", async () => {
+    const prompts: string[] = [];
+    const p = platform(() => ({
+      capability: {
+        id: "mock",
+        label: "Mock",
+        command: "mock",
+        args: [],
+        modes: ["agent"],
+        images: false,
+        todos: false,
+        plans: false,
+        questions: false,
+      },
+      start: async () => ({
+        prompt: async (blocks) => {
+          prompts.push(blocks[0]?.text ?? "");
+        },
+        cancel: async () => undefined,
+        stop: () => undefined,
+      }),
+    }));
+    const admin = addUser(p, "recipe-admin");
+    p.store.update((db) => {
+      const row = db.users.find((item) => item.id === admin.id)!;
+      row.platformAdmin = true;
+    });
+    const actor = p.store.read().users.find((row) => row.id === admin.id)!;
+    const other = addUser(p, "recipe-user");
+
+    expect(p.listRecipes().map((row) => row.id)).toEqual(["inertia-crud", "add-field", "fix-preview"]);
+    expect(() => p.saveAdminRecipe(other, { title: "Nope", template: "Nope {{model}}" })).toThrow(/Forbidden/);
+
+    const created = p.saveAdminRecipe(actor, {
+      title: "Name a model",
+      template: "Build CRUD for {{model}} in English.",
+    });
+    const extra = created.find((row) => row.title === "Name a model")!;
+    expect(extra.variables).toEqual(["model"]);
+
+    p.saveAdminRecipe(actor, { id: extra.id, title: "Name a model", template: "Scaffold {{model}} and {{field}}." });
+    expect(p.listRecipes().find((row) => row.id === extra.id)?.variables).toEqual(["model", "field"]);
+
+    p.deleteAdminRecipe(actor, "inertia-crud");
+    expect(p.listRecipes().some((row) => row.id === "inertia-crud")).toBe(false);
+
+    const user = await p.loginDev("recipe-runner");
+    const ws = await p.ensureWorkspace(user);
+    const session = p.createSession(ws.id, "mock");
+    await p.handleCommand({
+      user,
+      sessionId: session.id,
+      command: { type: "prompt", text: "Quote", attachments: [], mentions: [], recipeId: extra.id },
+    });
+    await settleSession(p, session.id);
+    expect(prompts[0]).toContain("Scaffold Quote and {{field}}.");
+
+    p.saveFlags({ recipes: false });
+    prompts.length = 0;
+    const sessionOff = p.createSession(ws.id, "mock");
+    await p.handleCommand({
+      user,
+      sessionId: sessionOff.id,
+      command: { type: "prompt", text: "Quote", attachments: [], mentions: [], recipeId: extra.id },
+    });
+    await settleSession(p, sessionOff.id);
+    expect(prompts[0]).toContain("Quote");
+    expect(prompts[0]).not.toContain("Scaffold Quote");
+  });
 });
 
 function addUser(p: Platform, login: string, role: UserRecord["role"] = "owner"): UserRecord {

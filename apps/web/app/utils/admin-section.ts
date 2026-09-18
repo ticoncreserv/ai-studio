@@ -7,6 +7,7 @@ export const ADMIN_SECTIONS = [
   "usage",
   "workspaces",
   "rules",
+  "recipes",
   "skills",
   "mcp",
   "flags",

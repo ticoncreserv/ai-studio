@@ -787,7 +787,6 @@ a.cx-rail-identity-link:focus-visible {
 /* User turn: fill-only card, no border and no bubble tail. The extra top margin
    opens up the gap between turns while events inside a turn stay tight. */
 .cx-turn-user {
-  margin-top: 10px;
   border-radius: var(--cx-radius-panel);
   background: var(--color-paper);
   padding: 10px 12px;
@@ -844,17 +843,49 @@ a.cx-rail-identity-link:focus-visible {
 }
 
 /* Consecutive assistant fragments in a turn sit closer than user bubbles. */
+.cx-chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cx-chat-thread > article:has(.cx-turn-user) {
+  margin-top: 8px;
+}
+
 .cx-assistant-stack {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-/* Consecutive tools sit tighter than assistant turns. */
+.cx-assistant-stack[data-voice="reply"] {
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.cx-assistant-stack[data-voice="process"] .markdown-body,
+.markdown-body[data-voice="process"] {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-ink-500);
+}
+
+.cx-assistant-stack[data-voice="reply"] .markdown-body,
+.markdown-body[data-voice="reply"] {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-ink-950);
+}
+
+/* Consecutive tools sit tighter than assistant turns. Quiet ledger, not a card. */
 .cx-tool-stack {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin: 2px 0 2px 2px;
+  padding: 4px 0 4px 12px;
+  border-left: 1px solid var(--color-line);
 }
 
 .cx-tool-stack .pulse-dot {
@@ -1156,9 +1187,95 @@ a.cx-rail-identity-link:focus-visible {
   color: var(--color-ink-400);
 }
 
-/* Segmented mode control inside the composer strip. */
+/* Recipe sits as a raised plate between the field and the tray — same
+   line, radius, and lift as the rest of the composer, not a quote bar. */
+.cx-recipe-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 2px;
+  padding: 4px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--cx-radius-control);
+  background: var(--color-raised);
+  box-shadow: var(--shadow-lift);
+  color: var(--color-ink-800);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.cx-recipe-strip-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--color-ink-600);
+}
+
+.cx-recipe-strip-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+  font-weight: 500;
+  color: var(--color-ink-950);
+}
+
+.cx-recipe-strip-title:hover {
+  color: var(--color-ink-800);
+}
+
+.cx-recipe-strip-title:focus-visible,
+.cx-recipe-strip-clear:focus-visible {
+  outline: none;
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px rgb(var(--color-coral-rgb) / 0.45);
+}
+
+.cx-recipe-strip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  color: var(--color-ink-400);
+}
+
+.cx-recipe-strip-clear:hover {
+  background: var(--cx-hover);
+  color: var(--color-ink-950);
+}
+
+.cx-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--color-line);
+}
+
+.cx-composer-bar[data-recipe="true"] {
+  border-top: 0;
+  padding-top: 6px;
+}
+
+.cx-composer-bar .cx-pill {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.04);
+}
+
+/* Segmented mode control inside the composer strip. Icon-only on the 392px tray. */
 .cx-modes {
   display: inline-flex;
+  flex-shrink: 0;
   gap: 2px;
   padding: 2px;
   border-radius: 7px;
@@ -1166,14 +1283,14 @@ a.cx-rail-identity-link:focus-visible {
 }
 
 .cx-modes button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 20px;
-  padding: 0 7px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border-radius: 5px;
-  font-size: 11px;
-  line-height: 1;
   color: var(--color-ink-500);
   transition: background-color 120ms ease, color 120ms ease;
 }
@@ -1191,6 +1308,85 @@ a.cx-rail-identity-link:focus-visible {
 .cx-modes button[data-active="true"] {
   background: var(--cx-active);
   color: var(--color-ink-950);
+}
+
+/* Bench tag: name + hint above the icon, chevron seating it on the control.
+   Top-left of the button so the 392px tray never clips the bubble. */
+.cx-tip:hover,
+.cx-tip:focus-visible {
+  z-index: 3;
+}
+
+.cx-tip-pop {
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--cx-radius-control);
+  background: var(--color-raised);
+  box-shadow: var(--shadow-lift);
+  color: var(--color-ink-950);
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms;
+}
+
+.cx-tip-label {
+  font-weight: 500;
+}
+
+.cx-tip-hint {
+  font-size: 11px;
+  color: var(--color-ink-500);
+}
+
+.cx-tip-chevron {
+  position: absolute;
+  left: 11px;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: var(--color-raised);
+  border-right: 1px solid var(--color-line-strong);
+  border-bottom: 1px solid var(--color-line-strong);
+  transform: rotate(45deg);
+}
+
+.cx-tip:hover .cx-tip-pop,
+.cx-tip:focus-visible .cx-tip-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 80ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cx-tip-pop {
+    transition: none;
+    transform: none;
+  }
+
+  .cx-tip:hover .cx-tip-pop,
+  .cx-tip:focus-visible .cx-tip-pop {
+    transition-delay: 0ms;
+  }
 }
 
 /* Browser chrome above the preview. */

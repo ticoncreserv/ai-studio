@@ -7,6 +7,7 @@ import {
   isSessionRunActive,
   mergePendingTurn,
   groupChatBlocks,
+  assistantBlockVoice,
   mergeSessionEvents,
   nextReconnectDelay,
   shouldShowWorking,
@@ -167,6 +168,75 @@ describe("chat events", () => {
     expect(blocks.map((block) => block.type)).toEqual(["event", "assistant", "event", "event"]);
     expect(blocks[1]).toMatchObject({ type: "assistant", events: [first, second] });
     expect(blocks[3]).toMatchObject({ type: "event", event: failure });
+  });
+
+  it("treats a single assistant block as the reply", () => {
+    const answer: SessionEvent = { type: "assistant_message", id: "a1", at: "t", text: "pong", streaming: false };
+    const events = [user("u", "hi"), answer];
+    const block = groupChatBlocks(events)[1];
+    expect(block?.type).toBe("assistant");
+    if (block?.type !== "assistant") return;
+    expect(assistantBlockVoice(events, block)).toBe("reply");
+  });
+
+  it("mutes earlier assistant blocks once a later reply exists", () => {
+    const looking: SessionEvent = { type: "assistant_message", id: "a1", at: "t", text: "Looking", streaming: false };
+    const found: SessionEvent = { type: "assistant_message", id: "a2", at: "t", text: "Found it", streaming: false };
+    const tool: SessionEvent = {
+      type: "tool_call",
+      id: "t1",
+      at: "t",
+      toolCallId: "c1",
+      name: "Read",
+      status: "completed",
+    };
+    const events = [user("u", "hi"), looking, tool, found];
+    const blocks = groupChatBlocks(events).filter((block) => block.type === "assistant");
+    expect(blocks).toHaveLength(2);
+    if (blocks[0]?.type !== "assistant" || blocks[1]?.type !== "assistant") return;
+    expect(assistantBlockVoice(events, blocks[0])).toBe("process");
+    expect(assistantBlockVoice(events, blocks[1])).toBe("reply");
+  });
+
+  it("keeps voice scoped to the current turn", () => {
+    const first: SessionEvent = { type: "assistant_message", id: "a1", at: "t", text: "one", streaming: false };
+    const looking: SessionEvent = { type: "assistant_message", id: "a2", at: "t", text: "Looking", streaming: false };
+    const found: SessionEvent = { type: "assistant_message", id: "a3", at: "t", text: "two", streaming: false };
+    const tool: SessionEvent = {
+      type: "tool_call",
+      id: "t1",
+      at: "t",
+      toolCallId: "c1",
+      name: "Read",
+      status: "completed",
+    };
+    const events = [user("u1", "first"), first, user("u2", "second"), looking, tool, found];
+    const blocks = groupChatBlocks(events).filter((block) => block.type === "assistant");
+    expect(blocks).toHaveLength(3);
+    if (blocks[0]?.type !== "assistant" || blocks[1]?.type !== "assistant" || blocks[2]?.type !== "assistant") return;
+    expect(assistantBlockVoice(events, blocks[0])).toBe("reply");
+    expect(assistantBlockVoice(events, blocks[1])).toBe("process");
+    expect(assistantBlockVoice(events, blocks[2])).toBe("reply");
+  });
+
+  it("treats a live delta after tools as the forming reply", () => {
+    const looking: SessionEvent = { type: "assistant_message", id: "a1", at: "t", text: "Looking", streaming: false };
+    const tool: SessionEvent = {
+      type: "tool_call",
+      id: "t1",
+      at: "t",
+      toolCallId: "c1",
+      name: "Read",
+      status: "running",
+    };
+    const live: SessionEvent = { type: "assistant_delta", id: "live", at: "t", text: "Here is" };
+    const running: SessionEvent = { type: "run", id: "r1", at: "t", v: 1, runId: "run-1", status: "running" };
+    const events = [user("u", "hi"), running, looking, tool, live];
+    const blocks = groupChatBlocks(events).filter((block) => block.type === "assistant");
+    expect(blocks).toHaveLength(2);
+    if (blocks[0]?.type !== "assistant" || blocks[1]?.type !== "assistant") return;
+    expect(assistantBlockVoice(events, blocks[0])).toBe("process");
+    expect(assistantBlockVoice(events, blocks[1])).toBe("reply");
   });
 
   it("shows turn actions on the last assistant message after the run ends", () => {

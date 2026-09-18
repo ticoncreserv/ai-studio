@@ -90,6 +90,8 @@ export type ChatBlock =
   | { type: "tools"; events: ToolCallEvent[] }
   | { type: "assistant"; events: AssistantEvent[] };
 
+export type AssistantVoice = "process" | "reply";
+
 function isAssistantEvent(event: SessionEvent): event is AssistantEvent {
   return event.type === "assistant_message" || event.type === "assistant_delta";
 }
@@ -120,6 +122,39 @@ export function assistantBlockText(events: AssistantEvent[]): string {
     .map((event) => event.text.trim())
     .filter(Boolean)
     .join("\n\n");
+}
+
+function turnSliceAround(events: SessionEvent[], index: number): SessionEvent[] {
+  let start = 0;
+  for (let i = index; i >= 0; i--) {
+    if (events[i]?.type === "user_message") {
+      start = i;
+      break;
+    }
+  }
+  let end = events.length;
+  for (let i = index + 1; i < events.length; i++) {
+    if (events[i]?.type === "user_message") {
+      end = i;
+      break;
+    }
+  }
+  return events.slice(start, end);
+}
+
+export function assistantBlockVoice(
+  events: SessionEvent[],
+  block: Extract<ChatBlock, { type: "assistant" }>,
+): AssistantVoice {
+  const firstId = block.events[0]?.id;
+  if (!firstId) return "reply";
+  const index = events.findIndex((event) => event.id === firstId);
+  if (index < 0) return "reply";
+  const turnBlocks = groupChatBlocks(turnSliceAround(events, index)).filter(
+    (item): item is Extract<ChatBlock, { type: "assistant" }> => item.type === "assistant",
+  );
+  if (turnBlocks.length <= 1) return "reply";
+  return turnBlocks.at(-1)?.events[0]?.id === firstId ? "reply" : "process";
 }
 
 export function turnActionsEventId(events: SessionEvent[]): string | null {

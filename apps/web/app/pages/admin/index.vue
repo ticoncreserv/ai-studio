@@ -2,6 +2,7 @@
 import {
   ArrowLeft,
   ArrowUpRight,
+  BookMarked,
   BookOpen,
   Flag,
   Gauge,
@@ -161,6 +162,9 @@ const ruleDraft = ref({
   alwaysApply: true,
 });
 const pendingRuleDelete = ref<(typeof rules.value)[number] | null>(null);
+const recipes = ref<Array<{ id: string; title: string; template: string; variables: string[] }>>([]);
+const recipeDraft = ref({ title: "", template: "" });
+const pendingRecipeDelete = ref<(typeof recipes.value)[number] | null>(null);
 const globalSkills = ref<Array<{ name: string; description: string; paths: string; manualOnly: boolean; body: string }>>([]);
 const skillDraft = ref({ name: "", description: "", paths: "", manualOnly: true, body: "" });
 const pendingSkillDelete = ref<string | null>(null);
@@ -229,6 +233,7 @@ const navGroups: NavItem[][] = [
   ],
   [
     { id: "rules", label: "admin.rules", icon: BookOpen },
+    { id: "recipes", label: "admin.recipes", icon: BookMarked },
     { id: "skills", label: "admin.skills", icon: Wand2 },
     { id: "mcp", label: "admin.mcp", icon: Plug },
     { id: "flags", label: "admin.flags", icon: Flag },
@@ -372,12 +377,13 @@ async function deleteUsageProfile(profileId: string, migrateTo?: string) {
 }
 
 async function refreshData() {
-  const [over, envRes, providerRes, userRes, ruleRes, skillRes, mcpRes, workspaceRes, errorRes, usageRes] = await Promise.all([
+  const [over, envRes, providerRes, userRes, ruleRes, recipeRes, skillRes, mcpRes, workspaceRes, errorRes, usageRes] = await Promise.all([
     $fetch<NonNullable<typeof overview.value>>("/api/admin/overview"),
     $fetch<{ env: Record<string, string>; raw: string }>("/api/admin/env"),
     $fetch<{ providers: typeof providers.value }>("/api/admin/providers"),
     $fetch<{ users: typeof users.value }>("/api/admin/users"),
     $fetch<{ rules: typeof rules.value }>("/api/admin/rules"),
+    $fetch<{ recipes: typeof recipes.value }>("/api/admin/recipes"),
     $fetch<{ skills: SkillDefinition[] }>("/api/admin/skills"),
     $fetch<{ servers: McpEntry[]; policy: McpPolicy }>("/api/admin/mcp"),
     $fetch<{ workspaces: typeof workspaces.value }>("/api/admin/workspaces"),
@@ -391,6 +397,7 @@ async function refreshData() {
   providerModels.value = Object.fromEntries(providerRes.providers.map((row) => [row.id, row.model ?? ""]));
   users.value = userRes.users;
   rules.value = ruleRes.rules;
+  recipes.value = recipeRes.recipes;
   hydrateSkills(skillRes.skills);
   hydrateMcp(mcpRes.servers, mcpRes.policy);
   workspaces.value = workspaceRes.workspaces;
@@ -689,6 +696,35 @@ async function confirmDeleteRule() {
     rules.value = res.rules;
     pendingRuleDelete.value = null;
   });
+}
+
+async function saveRecipe(recipe: (typeof recipes.value)[number]) {
+  await wrap(async () => {
+    const res = await $fetch<{ recipes: typeof recipes.value }>("/api/admin/recipes", { method: "PUT", body: recipe });
+    recipes.value = res.recipes;
+  });
+}
+
+async function createRecipe() {
+  await wrap(async () => {
+    const res = await $fetch<{ recipes: typeof recipes.value }>("/api/admin/recipes", { method: "PUT", body: recipeDraft.value });
+    recipes.value = res.recipes;
+    recipeDraft.value = { title: "", template: "" };
+  });
+}
+
+async function confirmDeleteRecipe() {
+  const recipe = pendingRecipeDelete.value;
+  if (!recipe) return;
+  await wrap(async () => {
+    const res = await $fetch<{ recipes: typeof recipes.value }>(`/api/admin/recipes/${encodeURIComponent(recipe.id)}`, { method: "DELETE" });
+    recipes.value = res.recipes;
+    pendingRecipeDelete.value = null;
+  });
+}
+
+function recipePlaceholders(names: string[]) {
+  return names.map((name) => `{{${name}}}`).join(" ");
 }
 
 function skillPayload(skill: { name: string; description: string; paths: string; manualOnly: boolean; body: string }) {
@@ -1682,6 +1718,49 @@ function hintDetail(hint: ErrorHint) {
                 </div>
               </section>
 
+              <section v-else-if="section === 'recipes'" class="cx-section">
+                <p class="cx-section-label">{{ t("admin.recipesSection") }}</p>
+                <p class="cx-section-note">{{ t("admin.recipesHint") }}</p>
+                <div class="cx-panel">
+                  <div v-for="recipe in recipes" :key="recipe.id" class="cx-row cx-row-stack">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="min-w-0">
+                        <p class="cx-row-title">{{ recipe.title }}</p>
+                        <p class="cx-row-desc font-mono">{{ recipe.variables.length ? recipePlaceholders(recipe.variables) : t("admin.recipeNoVariables") }}</p>
+                      </div>
+                      <UiButton size="sm" variant="ghost" :disabled="busy" @click="pendingRecipeDelete = recipe">
+                        {{ t("admin.deleteRecipe") }}
+                      </UiButton>
+                    </div>
+                    <label class="block text-[12px] text-ink-400">
+                      {{ t("admin.recipeTitle") }}
+                      <input v-model="recipe.title" class="cx-textarea cx-row-control mt-1 h-8" />
+                    </label>
+                    <label class="block text-[12px] text-ink-400">
+                      {{ t("admin.recipeTemplate") }}
+                      <textarea v-model="recipe.template" class="cx-textarea cx-row-control mt-1 h-28 font-mono" :aria-label="recipe.title" />
+                    </label>
+                    <p class="cx-row-desc">{{ t("admin.recipeModelHint") }}</p>
+                    <div class="admin-action-bar">
+                      <UiButton size="sm" variant="outline" :disabled="busy" @click="saveRecipe(recipe)">
+                        {{ t("admin.saveRecipe") }}
+                      </UiButton>
+                    </div>
+                  </div>
+                  <div class="cx-row cx-row-stack">
+                    <p class="cx-row-title">{{ t("admin.newRecipe") }}</p>
+                    <input v-model="recipeDraft.title" class="cx-textarea cx-row-control h-8" :placeholder="t('admin.recipeTitle')" />
+                    <textarea v-model="recipeDraft.template" class="cx-textarea cx-row-control h-28 font-mono" :placeholder="t('admin.recipeTemplate')" />
+                    <p class="cx-row-desc">{{ t("admin.recipeModelHint") }}</p>
+                    <div class="admin-action-bar">
+                      <UiButton size="sm" variant="outline" :disabled="busy" @click="createRecipe">
+                        {{ t("admin.saveRecipe") }}
+                      </UiButton>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
               <section v-else-if="section === 'skills'" class="cx-section">
                 <p class="cx-section-label">{{ t("admin.skillsSection") }}</p>
                 <p class="cx-section-note">{{ t("admin.skillsHint") }}</p>
@@ -1889,6 +1968,21 @@ function hintDetail(hint: ErrorHint) {
       </UiButton>
       <UiButton size="sm" variant="danger" :disabled="busy" @click="confirmDeleteRule">
         {{ t("admin.deleteRule") }}
+      </UiButton>
+    </div>
+  </UiDialog>
+  <UiDialog
+    :open="pendingRecipeDelete != null"
+    :title="t('admin.deleteRecipeTitle', { title: pendingRecipeDelete?.title ?? '' })"
+    @close="pendingRecipeDelete = null"
+  >
+    <p class="text-[13px] leading-relaxed text-ink-500">{{ t("admin.deleteRecipeBody") }}</p>
+    <div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <UiButton size="sm" variant="outline" @click="pendingRecipeDelete = null">
+        {{ t("admin.removeKeyCancel") }}
+      </UiButton>
+      <UiButton size="sm" variant="danger" :disabled="busy" @click="confirmDeleteRecipe">
+        {{ t("admin.deleteRecipe") }}
       </UiButton>
     </div>
   </UiDialog>

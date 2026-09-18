@@ -29,6 +29,7 @@ const props = defineProps<{
   commandBusy?: boolean;
   showActions?: boolean;
   copySource?: string;
+  voice?: "process" | "reply";
 }>();
 const emit = defineEmits<{
   command: [payload: { type: string; [key: string]: unknown }];
@@ -198,7 +199,7 @@ function act(key: string, payload?: { type: string; [key: string]: unknown }) {
     </div>
 
     <div v-else-if="event.type === 'assistant_message' || event.type === 'assistant_delta'">
-      <div class="markdown-body text-ink-800" v-html="html" />
+      <div class="markdown-body" :data-voice="voice ?? 'reply'" v-html="html" />
       <div v-if="event.type === 'assistant_message' && showActions" class="mt-1.5 flex items-center gap-0.5">
         <UiIconButton
           :label="t('chat.helpful')"

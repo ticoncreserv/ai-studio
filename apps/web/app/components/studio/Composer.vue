@@ -2,6 +2,7 @@
 import type { AgentMode, ProviderCapability } from "@atelier/contracts";
 import {
   ArrowUp,
+  BookMarked,
   ChevronRight,
   Cpu,
   ListTodo,
@@ -148,13 +149,16 @@ const providerLine = computed(() => (providerModel.value ? `${providerLabel.valu
 
 const activeRecipe = computed(() => props.recipes.find((recipe) => recipe.id === props.recipeId));
 
-const visibleModes = computed(() => {
+const trayModes = computed(() => {
   const selected = catalog.value.find((row) => row.id === props.provider);
   const allowed = selected?.modes ?? (["agent", "plan", "ask"] as AgentMode[]);
-  const available = modes.value.filter((item) => allowed.includes(item.id));
+  return modes.value.filter((item) => allowed.includes(item.id));
+});
+
+const visibleModes = computed(() => {
   const needle = paletteQuery.value.trim().toLowerCase();
-  if (!needle) return available;
-  return available.filter((item) => `${item.label} ${item.desc}`.toLowerCase().includes(needle));
+  if (!needle) return trayModes.value;
+  return trayModes.value.filter((item) => `${item.label} ${item.desc}`.toLowerCase().includes(needle));
 });
 
 function readAutoHeight(el: HTMLTextAreaElement): number {
@@ -277,6 +281,18 @@ async function togglePalette() {
   if (!paletteOpen.value) return;
   paletteQuery.value = "";
   recipesOpen.value = false;
+  providersOpen.value = false;
+  skillsOpen.value = false;
+  toolsOpen.value = false;
+  cursor.value = 0;
+  await nextTick();
+  paletteFilter.value?.focus();
+}
+
+async function openRecipePalette() {
+  paletteOpen.value = true;
+  paletteQuery.value = "";
+  recipesOpen.value = true;
   providersOpen.value = false;
   skillsOpen.value = false;
   toolsOpen.value = false;
@@ -727,28 +743,51 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="flex items-center gap-1.5 border-t border-line px-2 py-1.5">
+      <div v-if="activeRecipe" class="cx-recipe-strip">
+        <span class="cx-recipe-strip-mark" aria-hidden="true">
+          <BookMarked class="h-3 w-3" />
+        </span>
+        <button
+          type="button"
+          class="cx-recipe-strip-title"
+          :title="t('chat.recipe')"
+          :aria-label="t('chat.recipe')"
+          @click="openRecipePalette"
+        >
+          <span class="line-clamp-2">{{ activeRecipe.title }}</span>
+        </button>
+        <button
+          type="button"
+          class="cx-recipe-strip-clear"
+          :aria-label="t('chat.clearRecipe')"
+          @click="emit('update:recipeId', '')"
+        >
+          <X class="h-3 w-3" />
+        </button>
+      </div>
+
+      <div class="cx-composer-bar" :data-recipe="activeRecipe ? 'true' : undefined">
         <div class="cx-modes">
           <button
-            v-for="item in modes"
+            v-for="item in trayModes"
             :key="item.id"
             type="button"
+            class="cx-tip"
             :data-active="item.id === mode || undefined"
-            :title="item.desc"
+            :aria-label="item.label"
             @click="emit('update:mode', item.id)"
           >
-            {{ item.label }}
+            <component :is="item.icon" class="h-3 w-3" :class="item.id === mode ? item.tint : undefined" />
+            <span class="cx-tip-pop" role="tooltip">
+              <span class="cx-tip-label">{{ item.label }}</span>
+              <span class="cx-tip-hint">{{ item.desc }}</span>
+              <i class="cx-tip-chevron" aria-hidden="true" />
+            </span>
           </button>
         </div>
         <span class="cx-pill min-w-0" :title="providerModel ? t('chat.providerModel') : t('chat.model')">
           <Cpu class="h-3 w-3 shrink-0" />
           <span class="truncate">{{ providerLine }}</span>
-        </span>
-        <span v-if="activeRecipe" class="cx-pill min-w-0" :title="t('chat.recipe')">
-          <span class="truncate">{{ activeRecipe.title }}</span>
-          <button type="button" :aria-label="t('chat.recipeNone')" class="text-ink-400 hover:text-ink-950" @click="emit('update:recipeId', '')">
-            <X class="h-3 w-3" />
-          </button>
         </span>
         <input ref="fileInput" type="file" multiple class="hidden" @change="emit('attach', ($event.target as HTMLInputElement).files!)" />
         <UiIconButton class="ml-auto" :label="t('chat.attach')" size="sm" @click="fileInput?.click()">
