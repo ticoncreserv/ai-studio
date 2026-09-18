@@ -5,3 +5,5 @@ packages:
 allowBuilds:
   esbuild: false
   msgpackr-extract: false
+minimumReleaseAgeExclude:
+  - eslint@10.11.0
