@@ -2973,6 +2973,11 @@ iframe.preview {
   opacity: 0.45;
 }
 
+.login-cta[aria-busy="true"] {
+  pointer-events: none;
+  cursor: wait;
+}
+
 .login-sessions {
   width: 100%;
   margin-top: 22px;

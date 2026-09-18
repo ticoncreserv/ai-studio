@@ -23,6 +23,7 @@
     "title": "Sign in to the studio",
     "subtitle": "Access follows your permission on ticoncreserv/app.",
     "github": "Continue with GitHub",
+    "githubWorking": "Connecting to GitHub…",
     "localeLabel": "Interface language",
     "themeLabel": "Accent color",
     "english": "English",

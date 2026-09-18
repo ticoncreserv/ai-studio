@@ -8,9 +8,9 @@ export function useSignOut() {
     } finally {
       if (import.meta.client) {
         window.location.assign("/");
-        return;
+      } else {
+        await navigateTo("/");
       }
-      await navigateTo("/");
     }
   }
 

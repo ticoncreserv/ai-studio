@@ -70,10 +70,12 @@ export function snapshotRepoMcp(worktree: string): unknown {
   const current = worktreeMcpPath(worktree);
   const raw = existsSync(current) ? readFileSync(current, "utf8") : "";
   let parsed: unknown = {};
-  try {
-    parsed = raw ? JSON.parse(raw) : {};
-  } catch {
-    parsed = {};
+  if (raw) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // keep the empty object when the worktree MCP file is invalid JSON
+    }
   }
   const normalized = JSON.stringify(parsed);
   const repo = !raw.trim() || normalized === HARDCODED_BOOST ? { mcpServers: {} } : parsed;

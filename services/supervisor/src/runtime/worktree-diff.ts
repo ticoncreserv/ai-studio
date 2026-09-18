@@ -74,9 +74,9 @@ export async function worktreeDiffEvents(worktree: string, only?: string[]): Pro
     if (existsSync(target) && statSync(target).isDirectory()) continue;
     let contents = "";
     try {
-      contents = existsSync(target) ? readFileSync(target, "utf8") : "";
+      if (existsSync(target)) contents = readFileSync(target, "utf8");
     } catch {
-      contents = "";
+      // keep an empty fallback when the worktree file cannot be read
     }
     const diff = (await git(worktree, ["diff", "HEAD", "--", path]).catch(() => "")) || contents;
     const hunks = splitHunks(path, diff);

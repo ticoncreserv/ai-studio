@@ -5,6 +5,7 @@ const { t } = useI18n();
 const route = useRoute();
 const { leaving, signOut } = useSignOut();
 const loading = ref(false);
+const signingIn = ref(false);
 const ready = ref(false);
 const me = ref<null | {
   user: { login: string; platformAdmin?: boolean; disabled?: boolean };
@@ -48,6 +49,21 @@ async function openWorkspace(sessionId?: string) {
 
 function sessionTitle(session: { title: string }) {
   return session.title || t("chat.untitled");
+}
+
+function onGithub(event: MouseEvent) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+  if (signingIn.value) {
+    event.preventDefault();
+    return;
+  }
+  event.preventDefault();
+  signingIn.value = true;
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      window.location.assign("/api/auth/github");
+    });
+  });
 }
 </script>
 
@@ -103,9 +119,16 @@ function sessionTitle(session: { title: string }) {
           <h1 class="login-title login-rise login-rise-3">{{ t("auth.title") }}</h1>
           <p class="login-copy login-rise login-rise-4">{{ t("auth.subtitle") }}</p>
           <p v-if="error" class="login-error login-rise login-rise-4" role="alert">{{ error }}</p>
-          <a href="/api/auth/github" class="login-cta login-rise login-rise-5">
-            <UiGithub :size="16" />
-            {{ t("auth.github") }}
+          <a
+            href="/api/auth/github"
+            class="login-cta login-rise login-rise-5"
+            :aria-busy="signingIn || undefined"
+            :aria-disabled="signingIn || undefined"
+            @click="onGithub"
+          >
+            <UiSpinner v-if="signingIn" size="sm" :label="t('auth.githubWorking')" />
+            <UiGithub v-else :size="16" />
+            {{ signingIn ? t("auth.githubWorking") : t("auth.github") }}
           </a>
         </template>
 

@@ -165,7 +165,7 @@ function splitRequestUrl(raw: string): { pathname: string; search: string } {
   try {
     pathname = decodeURIComponent(encoded);
   } catch {
-    pathname = encoded;
+    // keep the encoded path when decodeURIComponent rejects the URL
   }
   return { pathname, search: q >= 0 ? raw.slice(q) : "" };
 }
@@ -210,8 +210,8 @@ export async function proxyPreviewNode(req: IncomingMessage, res: ServerResponse
   const { pathname, search } = splitRequestUrl(raw);
   const logicalPath = previewPathnameFromRequest(pathname);
   const mount = parsePreviewMountPath(pathname);
-  let token: string | null = null;
-  let rest = "";
+  let token: string | null;
+  let rest: string;
   if (mount) {
     token = mount.token;
     rest = mount.rest;

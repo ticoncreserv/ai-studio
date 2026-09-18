@@ -104,7 +104,8 @@ export class AcpSession {
         const waiter = this.pending.get(msg.id)!;
         this.pending.delete(msg.id);
         if (waiter.timer) clearTimeout(waiter.timer);
-        msg.error ? waiter.reject(toAgentError(msg.error)) : waiter.resolve(msg.result);
+        if (msg.error) waiter.reject(toAgentError(msg.error));
+        else waiter.resolve(msg.result);
         return;
       }
       if (msg.method === "session/update") {

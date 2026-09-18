@@ -23,6 +23,7 @@
     "title": "Entre no estúdio",
     "subtitle": "O acesso segue sua permissão em ticoncreserv/app.",
     "github": "Continuar com GitHub",
+    "githubWorking": "Conectando ao GitHub…",
     "localeLabel": "Idioma da interface",
     "themeLabel": "Cor de acento",
     "english": "English",
